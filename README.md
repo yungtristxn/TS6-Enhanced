@@ -4,6 +4,6 @@ More room for streams in TeamSpeak 6, with collapsible previews, chat that keeps
 
 Currently a preview for Windows x64 and TeamSpeak 6.0.0-beta5 (build 1791901251).
 
-Run **Setup.exe** to install, then open TeamSpeak from the **Start Menu**. Finish any calls or streams first, as setup may restart the client.
+[Download the installer](https://github.com/yungtristxn/TS6-Enhanced/releases), then open TeamSpeak from the **Start Menu**. Finish any calls or streams first, as setup may restart the client.
 
 [Setup and uninstall](docs/release-readme.md) · [Development](docs/development.md) · [MIT license](LICENSE)

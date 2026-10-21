@@ -6,7 +6,7 @@
   "engines": {
     "teamspeak": 1
   },
-  "repository": "https://example.invalid/ts6-enhanced-local-only",
+  "repository": "https://github.com/yungtristxn/TS6-Enhanced",
   "author": "TS6 Enhanced contributors",
   "license": "MIT",
   "image": "preview.svg",

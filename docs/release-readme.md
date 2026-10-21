@@ -10,7 +10,7 @@ After installation, open TeamSpeak from the **Start Menu**. Direct EXE launches,
 
 ## Update or uninstall
 
-Open **TS6 Enhanced** in the toolbar. Updates preserve your appearance choices and restart TeamSpeak after confirmation. Local previews have update checks disabled until a public release repository is configured.
+Open **TS6 Enhanced** in the toolbar. It checks GitHub for new previews at startup and every six hours; **Check for updates** checks immediately. Updates preserve your appearance choices and restart TeamSpeak after confirmation.
 
 Choose **Uninstall…**, or remove TS6 Enhanced through Windows Installed apps. Removal restores the saved appearance and original shortcut while keeping accounts and chats. Older development installs without a saved baseline disable the theme and retain current preferences.
 
