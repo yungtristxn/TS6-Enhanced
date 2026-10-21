@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 # Real .lnk round-trip in ignored scratch space. Never invokes a shortcut.
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
@@ -26,7 +26,7 @@ $state = Get-Content (Join-Path $stateRoot 'state.json') -Raw | ConvertFrom-Json
 Check ($state.installed) 'Install state missing'
 Check ((Get-FileHash (Join-Path $stateRoot 'original-TeamSpeak.lnk')).Hash -eq $hash) 'Backup not byte-identical'
 $owned = $shell.CreateShortcut($shortcut)
-Check ($owned.TargetPath -eq (Join-Path $PSHOME 'pwsh.exe')) 'Wrong launcher executable'
+Check ($owned.TargetPath -eq (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')) 'Wrong launcher executable'
 Check ($owned.Arguments.Contains('-WindowStyle Hidden') -and $owned.Arguments.EndsWith('-Quiet')) 'Launcher must be unobtrusive'
 Check ((Get-Content (Join-Path $state.release 'runtime.json') -Raw | ConvertFrom-Json).node -eq (Get-Command node).Source) 'Resolved Node path was not saved'
 foreach ($file in @('scripts\Start-Layout.ps1','scripts\Start-Inspection.ps1','tools\session.mjs','tools\appearance.mjs','tools\cdp.mjs','tools\client.mjs','tools\workspace-runtime.js','tools\streams-runtime.js')) {

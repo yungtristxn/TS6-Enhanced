@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 [CmdletBinding(SupportsShouldProcess)]
 param([ValidateSet('Install','Update','Uninstall')][string]$Action = 'Install', [switch]$RepairShortcut, [string]$NodePath)
 $ErrorActionPreference = 'Stop'
@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 $operation=Enter-LayoutOperation
 try {
 $project = Split-Path -Parent $PSScriptRoot
-$release = Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw | ConvertFrom-Json
+$release = Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $client = Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak'
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'TeamSpeak.lnk'
 $themeTool = Join-Path $PSScriptRoot 'Theme.ps1'
@@ -34,7 +34,6 @@ foreach ($property in $release.supportedClient.resourceHashes.PSObject.Propertie
 if (!(Test-Path -LiteralPath $shortcut)) {
     throw 'This release requires the standard per-user TeamSpeak Start Menu shortcut. Custom/all-users installations need separate validation; nothing was installed.'
 }
-& (Join-Path $PSScriptRoot 'Test-Theme.ps1') -ClientPath $client
 & $themeTool $Action -WhatIf
 & $persistenceTool Install -RepairShortcut:$RepairShortcut -NodePath $NodePath -WhatIf
 if (!$PSCmdlet.ShouldProcess('TS6 Enhanced',"$Action the official theme and automatic attachment on normal Start Menu launch")) { return }

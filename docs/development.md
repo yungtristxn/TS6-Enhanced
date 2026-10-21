@@ -1,6 +1,7 @@
 # Development
 
 Use Windows, Node 22+, PowerShell 7 and Inno Setup 6.
+The installer and installed helpers use Windows PowerShell 5.1; PowerShell 7 is only used for development checks and packaging.
 
 ```powershell
 npm ci --ignore-scripts
@@ -27,7 +28,7 @@ Files go to `dist/<version>/`. Use a new version or `-OutputDirectory` for anoth
 Run as the signed-in Windows user:
 
 ```powershell
-$installer = Start-Process '.\TS6-Enhanced-1.0.1-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+$installer = Start-Process '.\TS6-Enhanced-1.0.2-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
 $installer.WaitForExit()
 if ($installer.ExitCode -ne 0) { throw "Setup failed with exit code $($installer.ExitCode)" }
 ```

@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 [CmdletBinding()]
 param([ValidateRange(1024,65535)][int]$Port = 9988, [switch]$Quiet)
 $ErrorActionPreference = 'Stop'
@@ -8,7 +8,7 @@ try {
 $operation=Enter-LayoutOperation
 $project = Split-Path -Parent $PSScriptRoot
 $runtimeFile = Join-Path $project 'runtime.json'
-$runtime = if (Test-Path -LiteralPath $runtimeFile) { Get-Content -LiteralPath $runtimeFile -Raw | ConvertFrom-Json } else { $null }
+$runtime = if (Test-Path -LiteralPath $runtimeFile) { Get-Content -LiteralPath $runtimeFile -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
 $node = if ($runtime) { $runtime.node } else { (Get-Command node -ErrorAction Stop).Source }
 $activated = Join-Path $project '.theme-ready'
 [string[]]$setupArguments = @(if ($runtime -and !(Test-Path -LiteralPath $activated)) { if($runtime.preserveAppearance){'--upgrade'}else{'--setup'} })
@@ -25,8 +25,15 @@ if (!$running.Count) {
 }
 # session.mjs independently verifies loopback binding, owning executable,
 # main-window identity, exact build and selected theme before any mutation.
-$output = & $node (Join-Path $project 'tools\session.mjs') --port $Port @setupArguments 2>&1
-if ($LASTEXITCODE -ne 0) { throw "Layout attachment failed. $($output -join [Environment]::NewLine)" }
+# Windows PowerShell treats redirected native stderr as ErrorRecords. Collect
+# the complete message and use the exit code, instead of stopping on its first line.
+$previousErrorAction=$ErrorActionPreference
+try {
+    $ErrorActionPreference='Continue'
+    $output = & $node (Join-Path $project 'tools\session.mjs') --port $Port @setupArguments 2>&1
+    $attachmentExitCode=$LASTEXITCODE
+} finally {$ErrorActionPreference=$previousErrorAction}
+if ($attachmentExitCode -ne 0) { throw "Layout attachment failed. $($output -join [Environment]::NewLine)" }
 $output | Write-Output
 if ($setupArguments.Count) { 'Activated by native Appearance settings' | Set-Content -LiteralPath $activated -Encoding utf8 }
 if(Test-Path -LiteralPath (Join-Path $project 'tools\manager.mjs')) {
@@ -41,7 +48,7 @@ if(Test-Path -LiteralPath (Join-Path $project 'tools\manager.mjs')) {
             if($worker.HasExited -or [DateTime]::UtcNow -ge $deadline){throw 'Maintenance controls did not start. See TS6-Layout\manager-error.json in LocalAppData, then retry the Start Menu shortcut.'}
             Start-Sleep -Milliseconds 100
         }
-        $managerState=Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+        $managerState=Get-Content -LiteralPath $receipt -Raw -Encoding UTF8 | ConvertFrom-Json
         if($managerState.status -ne 'ready'){throw "Maintenance controls could not attach: $($managerState.message)"}
     }finally{$worker.Dispose();if(Test-Path -LiteralPath $receipt){Remove-Item -LiteralPath $receipt}}
 }

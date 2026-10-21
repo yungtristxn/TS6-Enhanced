@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [ValidateSet('Install','Uninstall','Status')][string]$Action = 'Install',
@@ -31,13 +31,13 @@ function Copy-Atomic([string]$Source,[string]$Destination) {
     try {
         $stream=[IO.File]::Open($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
         try{$bytes=[IO.File]::ReadAllBytes($Source);$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
-        [IO.File]::Move($temp,$Destination,$true)
+        if([IO.File]::Exists($Destination)){[IO.File]::Replace($temp,$Destination,[NullString]::Value)}else{[IO.File]::Move($temp,$Destination)}
     }finally{if([IO.File]::Exists($temp)){[IO.File]::Delete($temp)}}
 }
 function Resolve-PendingShortcut {
     if(!(Test-Path -LiteralPath $pendingPath)){return $null}
     Assert-PlainPath $pendingPath
-    $pending=Get-Content -LiteralPath $pendingPath -Raw | ConvertFrom-Json
+    $pending=Get-Content -LiteralPath $pendingPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if($pending.owner -cne $owner -or $pending.shortcut -ne $ShortcutPath -or $pending.history -notmatch '^\d{8}-\d{6}-\d{3}-[a-f0-9]{8}$'){throw 'Invalid pending shortcut transaction; recovery files were retained.'}
     $folder=Join-Path $StateRoot ('history\'+$pending.history)
     $names=@('TeamSpeak.lnk','replacement.lnk','previous-original.lnk','next-original.lnk','state.json','next-state.json')
@@ -48,7 +48,7 @@ function Resolve-PendingShortcut {
     foreach($item in @(@($ShortcutPath,'TeamSpeak.lnk','replacement.lnk'),@($original,'previous-original.lnk','next-original.lnk'),@($statePath,'state.json','next-state.json'))){
         if((Get-Hash $item[0]) -notin @($pending.hashes.($item[1]),$pending.hashes.($item[2]))){throw 'A file changed outside the pending shortcut transaction. It was left intact.'}
     }
-    $next=Get-Content -LiteralPath (Join-Path $folder 'next-state.json') -Raw | ConvertFrom-Json
+    $next=Get-Content -LiteralPath (Join-Path $folder 'next-state.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if($next.owner -cne $owner -or $next.shortcut -ne $ShortcutPath -or $next.currentHash -ne $pending.hashes.'replacement.lnk' -or $next.originalHash -ne $pending.hashes.'next-original.lnk'){throw 'Pending shortcut state does not match its saved files'}
     if(!$WhatIfPreference -and $Action -ne 'Status'){
         # Replaying any interrupted prefix is safe. The journal is removed only
@@ -74,7 +74,7 @@ $recovered=Resolve-PendingShortcut
 $state = $null
 if (Test-Path -LiteralPath $statePath) {
     Assert-PlainPath $statePath
-    $state = if($recovered){$recovered.State}else{Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json}
+    $state = if($recovered){$recovered.State}else{Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json}
     if ($state.owner -cne $owner -or $state.shortcut -ne $ShortcutPath) { throw 'Persistence ownership or shortcut mismatch.' }
     $verifiedOriginal=if($recovered){$recovered.Original}else{$original}
     Assert-PlainPath $verifiedOriginal
@@ -115,7 +115,7 @@ $files = @('scripts\Start-Layout.ps1','scripts\Start-Inspection.ps1','scripts\Ma
     'release.json','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\manager.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
     'tools\cdp.mjs','tools\client.mjs','tools\workspace-runtime.js','tools\streams-runtime.js')
 if ($Action -eq 'Install') {
-    $pwsh = Join-Path $PSHOME 'pwsh.exe'
+    $powershell = Get-LayoutPowerShell
     $node = if ($NodePath) { [IO.Path]::GetFullPath($NodePath) } else { (Get-Command node -ErrorAction Stop).Source }
     $nodeVersion = & $node --version
     if ($LASTEXITCODE -ne 0 -or [int]($nodeVersion -replace '^v(\d+).*','$1') -lt 22) { throw 'Node 22 or newer is required.' }
@@ -172,17 +172,18 @@ if ($Action -eq 'Install') {
         Copy-Item -LiteralPath (Join-Path $project $file) -Destination $destination
         if ((Get-Hash $destination) -ne (Get-Hash (Join-Path $project $file))) { throw "Copied launcher failed verification: $file" }
     }
-    # Pin the resolved executable: portable runtimes need no PATH registration.
+    # Pin the built-in Windows host and resolved Node; neither needs PATH edits.
     # An incomplete first activation must still retry setup when repaired.
     $preserveAppearance=[bool]($state.installed -and $state.release -and (Test-Path -LiteralPath (Join-Path $state.release '.theme-ready') -PathType Leaf))
     @{node=$node;preserveAppearance=$preserveAppearance} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $release 'runtime.json') -Encoding utf8
     # Installed helpers need a permanent maintenance runtime even when setup was
     # started from the source checkout rather than the EXE.
-    Write-LayoutJSON (Join-Path (Split-Path -Parent $StateRoot) 'install-runtime.json') @{node=$node;pwsh=$pwsh}
+    # Retain the receipt field name for compatibility with an older updater.
+    Write-LayoutJSON (Join-Path (Split-Path -Parent $StateRoot) 'install-runtime.json') @{node=$node;pwsh=$powershell}
     $shell = New-Object -ComObject WScript.Shell
     $staged = Join-Path $history 'replacement.lnk'
     $link = $shell.CreateShortcut($staged)
-    $link.TargetPath = $pwsh
+    $link.TargetPath = $powershell
     $link.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+(Join-Path $release 'scripts\Start-Layout.ps1')+'" -Quiet'
     $link.WorkingDirectory = $release
     $link.IconLocation = $clientExe+',0'
@@ -190,7 +191,7 @@ if ($Action -eq 'Install') {
     $link.WindowStyle = 7
     $link.Save()
     $check = $shell.CreateShortcut($staged)
-    if ($check.TargetPath -ne $pwsh -or $check.Arguments -ne $link.Arguments) { throw 'Shortcut verification failed; original remains unchanged.' }
+    if ($check.TargetPath -ne $powershell -or $check.Arguments -ne $link.Arguments) { throw 'Shortcut verification failed; original remains unchanged.' }
     $state.release = $release
     $state.installed = $true
 } else {

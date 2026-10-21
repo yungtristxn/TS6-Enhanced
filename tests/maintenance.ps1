@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '..\scripts\Maintenance.ps1') -FunctionsOnly
 $scratch=Join-Path $PSScriptRoot ('..\.local\maintenance-tests\'+[guid]::NewGuid().ToString('N'))
@@ -45,13 +45,13 @@ $ready=Join-Path $scratch 'child-ready';$release=Join-Path $scratch 'child-relea
 $operation=$null;$child=$null
 try{
     $operation=Enter-LayoutOperation
-    & pwsh -NoProfile -File $childScript $runtime $refusedMarker -Independent
+    & (Get-LayoutPowerShell) -NoProfile -File $childScript $runtime $refusedMarker -Independent
     if($LASTEXITCODE -ne 23 -or (Test-Path $refusedMarker)){throw 'Concurrent lifecycle operation reached mutation'}
-    $child=Start-Process pwsh -ArgumentList @('-NoProfile','-File',('"'+$childScript+'"'),('"'+$runtime+'"'),('"'+$ready+'"'),('"'+$release+'"')) -WindowStyle Hidden -PassThru
+    $child=Start-Process -FilePath (Get-LayoutPowerShell) -ArgumentList @('-NoProfile','-File',('"'+$childScript+'"'),('"'+$runtime+'"'),('"'+$ready+'"'),('"'+$release+'"')) -WindowStyle Hidden -PassThru
     $deadline=[DateTime]::UtcNow.AddSeconds(10)
     while(!(Test-Path $ready)){if($child.HasExited -or [DateTime]::UtcNow -gt $deadline){throw 'Child did not inherit the operation'};Start-Sleep -Milliseconds 50}
     Exit-LayoutOperation $operation;$operation=$null
-    & pwsh -NoProfile -File $childScript $runtime $refusedMarker -Independent
+    & (Get-LayoutPowerShell) -NoProfile -File $childScript $runtime $refusedMarker -Independent
     if($LASTEXITCODE -ne 23 -or (Test-Path $refusedMarker)){throw 'Parent exit released the child operation prematurely'}
     'finish' | Set-Content $release
     if(!$child.WaitForExit(10000) -or $child.ExitCode -ne 0){throw 'Child operation did not complete'}

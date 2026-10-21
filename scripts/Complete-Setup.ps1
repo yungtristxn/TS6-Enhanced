@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$NodePath,[switch]$RestartClient,[string]$ErrorFile)
 $ErrorActionPreference='Stop'
@@ -24,7 +24,7 @@ while (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.P
 }
 $phase='Installing the theme and shortcut'
 & (Join-Path $PSScriptRoot 'Setup.ps1') -NodePath $NodePath -RepairShortcut 6>&1 | Out-Null
-$state=Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'TS6-Layout\persistence\state.json') -Raw | ConvertFrom-Json
+$state=Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'TS6-Layout\persistence\state.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $phase='Activating TeamSpeak'
 & (Join-Path $state.release 'scripts\Start-Layout.ps1') | Out-Null
 Write-Host 'Layout activated. Use TeamSpeak from Start Menu next time. The extracted setup folder can be deleted.' -ForegroundColor Green

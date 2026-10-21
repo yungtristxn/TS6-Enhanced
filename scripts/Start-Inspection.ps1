@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 [CmdletBinding()]
 param([ValidateRange(1024,65535)][int]$Port = 9988)
 $ErrorActionPreference = 'Stop'

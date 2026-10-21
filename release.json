@@ -1,6 +1,6 @@
 {
   "name": "TS6 Enhanced",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "channel": "stable",
   "themeVersion": "1.0.0",
   "updates": {
@@ -19,7 +19,8 @@
     }
   },
   "requirements": {
-    "powershellMinimumMajor": 7,
+    "powershellMinimumMajor": 5,
+    "powershellMinimumVersion": "5.1",
     "nodeMinimumMajor": 22,
     "automaticRuntimeSetup": true
   }

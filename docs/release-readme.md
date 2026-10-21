@@ -2,7 +2,7 @@
 
 Requires Windows x64 and the standard per-user installation of TeamSpeak 6.0.0-beta5.
 
-Run the installer and click **Install**. Missing runtimes are downloaded automatically. Finish calls or streams first, as setup restarts TeamSpeak.
+Run the installer and click **Install**. Setup uses Windows PowerShell 5.1 and downloads Node if needed. Finish calls or streams first, as setup restarts TeamSpeak.
 
 Open TeamSpeak from the **Start Menu** after installation.
 

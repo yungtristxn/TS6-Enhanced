@@ -20,7 +20,7 @@ try {
     Assert-LayoutPackage $project
     if (!$Uninstall) {
         Write-Host '[1/3] Checking TeamSpeak...'
-        $release=Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw | ConvertFrom-Json
+        $release=Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $client=Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak'
         if (!(Test-Path -LiteralPath (Join-Path $client 'TeamSpeak.exe'))) { throw 'Install TeamSpeak 6 for this Windows user first. Expected: %LOCALAPPDATA%\Programs\TeamSpeak. This package does not include TeamSpeak.' }
         foreach ($p in $release.supportedClient.resourceHashes.PSObject.Properties) {
@@ -32,13 +32,13 @@ try {
         Write-Host '[2/3] Preparing runtimes (only missing ones are downloaded)...'
     }
     if ($Uninstall) {
-        $saved=Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'TS6-Layout\install-runtime.json') -Raw | ConvertFrom-Json
-        if(!(Test-LayoutRuntime $saved.pwsh 7) -or !(Test-LayoutRuntime $saved.node 22)){throw 'Saved maintenance runtimes are unavailable. Repair the installation before removing it.'}
-        & $saved.pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Maintenance.ps1') -Action Remove -NodePath $saved.node -Restart
+        $saved=Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'TS6-Layout\install-runtime.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        if(!(Test-LayoutRuntime $saved.node 22)){throw 'The saved Node runtime is unavailable. Repair the installation before removing it.'}
+        & (Get-LayoutPowerShell) -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Maintenance.ps1') -Action Remove -NodePath $saved.node -Restart
     } else {
-        $lock=Get-Content -LiteralPath (Join-Path $project 'runtime-lock.json') -Raw | ConvertFrom-Json
+        $lock=Get-Content -LiteralPath (Join-Path $project 'runtime-lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $runtimeRoot=Join-Path $env:LOCALAPPDATA 'TS6-Layout\runtimes'
-        $pwsh=Resolve-LayoutRuntime powershell $lock.powershell $runtimeRoot
+        $powershell=Get-LayoutPowerShell
         $node=Resolve-LayoutRuntime node $lock.node $runtimeRoot
         # Preparation must not replace the active installation's receipt.
         # Persistence publishes it only after committing the managed shortcut.
@@ -46,7 +46,7 @@ try {
         Write-Host '[3/3] Installing and activating the layout...'
         $extra=@();if($RestartClient){$extra+='-RestartClient'}
         if($ErrorFile){$extra+=@('-ErrorFile',$ErrorFile)}
-        & $pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Complete-Setup.ps1') -NodePath $node @extra
+        & $powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Complete-Setup.ps1') -NodePath $node @extra
     }
     if ($LASTEXITCODE -ne 0) { throw 'Setup did not finish. The message above explains the next step. Recovery files and logs were retained.' }
     Write-Host 'Done. You can close this window.' -ForegroundColor Green

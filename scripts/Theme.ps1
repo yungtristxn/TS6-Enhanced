@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [ValidateSet('Install','Update','Uninstall','Restore')][string]$Action = 'Install',
@@ -13,7 +13,6 @@ try {
 $identifier = 'local.tsix.layout'
 $projectId = 'ts6-layout-project-v1'
 $sourcePath = Join-Path $PSScriptRoot "..\theme\$identifier"
-$clientSchema = Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\docs\extensions.json'
 
 function Get-AbsolutePath([string]$Path) {
     return [IO.Path]::GetFullPath($Path)
@@ -45,17 +44,22 @@ function Assert-Package([string]$Path, [bool]$RequireOwner, [bool]$OwnershipOnly
     if ($RequireOwner) {
         $ownerPath = Join-Path $Path '.tsix-owner.json'
         if (!(Test-Path -LiteralPath $ownerPath)) { throw 'Existing directory has no project ownership marker; refusing to replace it.' }
-        $owner = Get-Content -LiteralPath $ownerPath -Raw | ConvertFrom-Json
+        $owner = Get-Content -LiteralPath $ownerPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($owner.project -cne $projectId -or $owner.identifier -cne $identifier) { throw 'Existing directory belongs to another project.' }
     }
     if($OwnershipOnly){return}
-    $json = Get-Content -LiteralPath (Join-Path $Path 'package.json') -Raw
+    $json = Get-Content -LiteralPath (Join-Path $Path 'package.json') -Raw -Encoding UTF8
     $manifest = $json | ConvertFrom-Json
     if ($manifest.identifier -cne $identifier) { throw 'Package identifier mismatch' }
-    # Replacement sources must be complete; damaged owned destinations are
-    # retained intact in recovery storage rather than required to validate.
-    $schemaText = (Get-Content -LiteralPath $clientSchema -Raw).Replace('"$schema": "https://json-schema.org/draft-07/schema"', '"$schema": "http://json-schema.org/draft-07/schema#"')
-    if (!(Test-Json -Json $json -Schema $schemaText)) { throw 'Package does not match the installed official extension schema.' }
+    # Full official schema validation belongs to development checks. At runtime
+    # require the project's fixed theme structure, including during restoration.
+    $themes=@($manifest.content.themes)
+    if ($manifest.engines.teamspeak -ne 1 -or $manifest.image -cne 'preview.svg' -or
+        $manifest.version -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$' -or
+        $themes.Count -ne 1 -or $themes[0].source -cne 'layout.css' -or
+        $themes[0].image -cne 'preview.svg' -or $themes[0].apiVersion -ne 1) {
+        throw 'Package does not match the supported layout theme structure.'
+    }
     foreach ($file in @('layout.css','preview.svg')) {
         if (!(Test-Path -LiteralPath (Join-Path $Path $file) -PathType Leaf)) { throw "Missing asset: $file" }
     }

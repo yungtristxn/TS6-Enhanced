@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 # Exercise native argument passing and completion markers without launching TS6.
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot

@@ -20,7 +20,7 @@ try {
                 if($errors.Count){throw ($errors -join [Environment]::NewLine)}
             }
             Run node @('--test','tests/updates.test.mjs','tests/install-state.test.mjs','tests/manager-start.test.mjs')
-            foreach($file in @('maintenance','launcher')){Run pwsh @('-NoProfile','-File',"tests/$file.ps1")}
+            foreach($file in @('maintenance','launcher')){Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"tests/$file.ps1")}
             Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File','tests/bootstrap.ps1')
         }
         Browser {
@@ -34,7 +34,8 @@ try {
             foreach($file in @('manager','stream-volume-vue','stream-resize','stream-chat-refresh')){Run node @("tests/$file.mjs")}
         }
         Installer {
-            foreach($file in @('maintenance','installer-smoke','deployment','persistence')){Run pwsh @('-NoProfile','-File',"tests/$file.ps1")}
+            foreach($file in @('maintenance','persistence')){Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"tests/$file.ps1")}
+            foreach($file in @('installer-smoke','deployment')){Run pwsh @('-NoProfile','-File',"tests/$file.ps1")}
         }
     }
     Write-Output "PASS: $Suite suite. No live TeamSpeak interaction was invoked."

@@ -1,5 +1,11 @@
 #requires -Version 5.1
-# Portable dependencies for the current user. No admin, PATH edits or winget.
+# Built-in Windows PowerShell and portable Node. No admin or PATH edits.
+if($PSVersionTable.PSEdition -eq 'Desktop'){$env:PSModulePath=Join-Path $PSHOME 'Modules'}
+function Get-LayoutPowerShell {
+    $path=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if(!(Test-Path -LiteralPath $path -PathType Leaf)){throw 'Windows PowerShell 5.1 is unavailable. Repair Windows PowerShell before running setup.'}
+    return $path
+}
 function Assert-LayoutPlainPath([string]$Path) {
     for ($cursor=[IO.Path]::GetFullPath($Path); $cursor; $cursor=Split-Path -Parent $cursor) {
         if ((Test-Path -LiteralPath $cursor) -and ((Get-Item -LiteralPath $cursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
@@ -17,14 +23,14 @@ function Test-LayoutRuntime([string]$Path, [int]$MinimumMajor) {
 }
 function Resolve-LayoutRuntime {
     param([string]$Name, $Spec, [string]$Root, [switch]$PortableOnly)
+    if($Name -ne 'node'){throw 'Only Node is downloaded; Windows PowerShell is provided by Windows.'}
     if (!$PortableOnly) {
-        $command = $(if ($Name -eq 'powershell') {'pwsh.exe'} else {'node.exe'})
-        $existing = Get-Command $command -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        $existing = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($existing -and (Test-LayoutRuntime $existing.Source $Spec.minimumMajor)) { return $existing.Source }
     }
-    if ($Name -notin @('powershell','node') -or $Spec.version -notmatch '^\d+\.\d+\.\d+$' -or $Spec.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid runtime lock.' }
+    if ($Spec.version -notmatch '^\d+\.\d+\.\d+$' -or $Spec.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid runtime lock.' }
     $uri = [uri]$Spec.url
-    if ($uri.Scheme -ne 'https' -or $uri.Host -notin @('github.com','nodejs.org')) { throw 'Runtime downloads must use the official HTTPS source.' }
+    if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'nodejs.org') { throw 'Runtime downloads must use the official HTTPS source.' }
     $Root = [IO.Path]::GetFullPath($Root)
     Assert-LayoutPlainPath $Root
     $destination = Join-Path $Root ($Name+'-'+$Spec.version)
@@ -34,7 +40,7 @@ function Resolve-LayoutRuntime {
     $receipt = Join-Path $destination '.tsix-runtime.json'
     if (Test-Path -LiteralPath $destination) {
         if (!(Test-Path -LiteralPath $receipt)) { throw "Unrecognized runtime directory. Left unchanged: $destination" }
-        $saved = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+        $saved = Get-Content -LiteralPath $receipt -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($saved.archiveHash -ne $Spec.sha256 -or !(Test-Path -LiteralPath $executable) -or
             (Get-FileHash -LiteralPath $executable).Hash -ne $saved.executableHash -or !(Test-LayoutRuntime $executable $Spec.minimumMajor)) {
             throw "The cached $Name runtime failed verification. Left unchanged: $destination"

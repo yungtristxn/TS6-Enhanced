@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 [CmdletBinding()]
 param([ValidateSet('Update','Remove','Connect')][string]$Action, [string]$NodePath, [switch]$Restart, [switch]$RestartExisting, [switch]$FunctionsOnly, [switch]$Background)
 $ErrorActionPreference='Stop'
@@ -21,7 +21,7 @@ if($Background){
     if($NodePath){$maintenanceArguments+=@('-NodePath',('"'+$NodePath+'"'))}
     if($Restart){$maintenanceArguments+='-Restart'}
     if($RestartExisting){$maintenanceArguments+='-RestartExisting'}
-    $backgroundProcess=Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -ArgumentList $maintenanceArguments -WindowStyle Hidden -PassThru
+    $backgroundProcess=Start-Process -FilePath (Get-LayoutPowerShell) -ArgumentList $maintenanceArguments -WindowStyle Hidden -PassThru
     try{$backgroundProcess.WaitForExit();$backgroundExitCode=$backgroundProcess.ExitCode}finally{$backgroundProcess.Dispose()}
     exit $backgroundExitCode
 }
@@ -41,7 +41,7 @@ if($Action -eq 'Connect') {
     return
 }
     if($Action -eq 'Update') {
-        $pending=Get-Content -LiteralPath (Join-Path $root 'pending-update.json') -Raw | ConvertFrom-Json
+        $pending=Get-Content -LiteralPath (Join-Path $root 'pending-update.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $installer=Assert-UpdateInstaller $pending $root
         foreach($name in @('html/client_ui/main.js','html/client_ui/main.css')){
             $expected=$pending.resourceHashes.$name
@@ -53,7 +53,7 @@ if($Action -eq 'Connect') {
         # Start-Process -Wait also waits for the newly reopened TeamSpeak tree.
         try{$job.WaitForExit();$installerExitCode=$job.ExitCode}finally{$job.Dispose()}
         if($installerExitCode -ne 0){
-            $state=Get-Content -LiteralPath (Join-Path $root 'persistence\state.json') -Raw | ConvertFrom-Json
+            $state=Get-Content -LiteralPath (Join-Path $root 'persistence\state.json') -Raw -Encoding UTF8 | ConvertFrom-Json
             & (Join-Path $state.release 'scripts\Start-Layout.ps1') -Quiet
             throw 'Update setup failed. The existing managed installation was reopened; see setup logs.'
         }
@@ -63,7 +63,7 @@ if($Action -eq 'Connect') {
     # Both owned-file operations must pass before changing native preferences.
     & (Join-Path $PSScriptRoot 'Install-Persistence.ps1') Uninstall -RepairShortcut -WhatIf | Out-Null
     & (Join-Path $PSScriptRoot 'Theme.ps1') Uninstall -WhatIf | Out-Null
-    if(!$NodePath){$runtime=Get-Content -LiteralPath (Join-Path $root 'install-runtime.json') -Raw | ConvertFrom-Json;$NodePath=$runtime.node}
+    if(!$NodePath){$runtime=Get-Content -LiteralPath (Join-Path $root 'install-runtime.json') -Raw -Encoding UTF8 | ConvertFrom-Json;$NodePath=$runtime.node}
     if(!(Test-LayoutRuntime $NodePath 22)){throw 'The saved Node runtime is missing. Repair the layout installation before uninstalling.'}
     & (Join-Path $PSScriptRoot 'Maintenance.ps1') Connect -Restart:$Restart
     & $NodePath (Join-Path $project 'tools\restore.mjs')
@@ -81,7 +81,7 @@ if($Action -eq 'Connect') {
     if($Restart){Start-Process -FilePath $client -WorkingDirectory (Split-Path -Parent $client) -WindowStyle Normal | Out-Null}
 } catch {
     $logs=Join-Path $root 'setup-logs';New-Item -ItemType Directory -Path $logs -Force | Out-Null
-    $_.Exception.Message | Set-Content -LiteralPath (Join-Path $logs 'maintenance-error.txt')
+    $_.Exception.Message | Set-Content -LiteralPath (Join-Path $logs 'maintenance-error.txt') -Encoding UTF8
     if($Action -eq 'Update' -and $clientStopped -and !(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $client })){
         Start-Process -FilePath $client -WorkingDirectory (Split-Path -Parent $client) -WindowStyle Normal | Out-Null
     }
