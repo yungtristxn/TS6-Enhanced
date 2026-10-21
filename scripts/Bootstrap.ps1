@@ -29,17 +29,15 @@ try {
                 throw "This package supports TS6 $($release.supportedClient.version), build $($release.supportedClient.build). Your client files do not match. No theme or shortcut was changed."
             }
         }
-        Write-Host '[2/3] Preparing runtimes (only missing ones are downloaded)...'
+        Write-Host '[2/3] Checking the bundled runtime...'
     }
     if ($Uninstall) {
         $saved=Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'TS6-Layout\install-runtime.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         if(!(Test-LayoutRuntime $saved.node 22)){throw 'The saved Node runtime is unavailable. Repair the installation before removing it.'}
         & (Get-LayoutPowerShell) -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Maintenance.ps1') -Action Remove -NodePath $saved.node -Restart
     } else {
-        $lock=Get-Content -LiteralPath (Join-Path $project 'runtime-lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-        $runtimeRoot=Join-Path $env:LOCALAPPDATA 'TS6-Layout\runtimes'
         $powershell=Get-LayoutPowerShell
-        $node=Resolve-LayoutRuntime node $lock.node $runtimeRoot
+        $node=Resolve-LayoutNode $project
         # Preparation must not replace the active installation's receipt.
         # Persistence publishes it only after committing the managed shortcut.
         if($Prepare){$result=0;return}

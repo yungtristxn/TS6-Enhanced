@@ -24,7 +24,7 @@ for ($cursor=$OutputDirectory; $cursor; $cursor=Split-Path -Parent $cursor) {
 }
 # Explicit allowlist: never archive the checkout, .local, installed client,
 # profile, screenshots, logs, runtime backups or personal launch shortcuts.
-$files = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','runtime-lock.json','LICENSE',
+$files = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE',
     'scripts\Bootstrap.ps1','scripts\Runtime.ps1','scripts\Complete-Setup.ps1','scripts\Maintenance.ps1',
     'scripts\Setup.ps1','scripts\Start-Layout.ps1','scripts\Start-Inspection.ps1',
     'scripts\Install-Persistence.ps1','scripts\Theme.ps1',
@@ -53,6 +53,37 @@ $themeManifest=Join-Path $stage 'theme\local.tsix.layout\package.json'
 $theme=Get-Content -LiteralPath $themeManifest -Raw | ConvertFrom-Json
 if($theme.version -ne $release.themeVersion){throw 'Theme manifest version does not match release.json.'}
 if($Repository){$theme.repository='https://github.com/'+$Repository;$theme | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $themeManifest -Encoding utf8}
+# Download only on the build machine. Ship just Node and its license, without npm.
+$nodeSpec=(Get-Content -LiteralPath (Join-Path $project 'runtime-lock.json') -Raw | ConvertFrom-Json).node
+if($nodeSpec.version -notmatch '^\d+\.\d+\.\d+$' -or $nodeSpec.sha256 -notmatch '^[a-f0-9]{64}$'){throw 'Invalid Node runtime lock'}
+$nodeFolder='node-v'+$nodeSpec.version+'-win-x64'
+if($nodeSpec.url -cne ('https://nodejs.org/dist/v'+$nodeSpec.version+'/'+$nodeFolder+'.zip') -or $nodeSpec.executable -cne ($nodeFolder+'/node.exe')){throw 'Node must use the pinned official Windows x64 archive'}
+$cache=Join-Path $project '.local\runtime-cache'
+. (Join-Path $project 'scripts\Runtime.ps1')
+Assert-LayoutPlainPath $cache
+New-Item -ItemType Directory -Path $cache -Force | Out-Null
+$nodeArchive=Join-Path $cache ($nodeFolder+'.zip')
+Assert-LayoutPlainPath $nodeArchive
+if(!(Test-Path -LiteralPath $nodeArchive)){
+    $partial=$nodeArchive+'.'+[guid]::NewGuid().ToString('N')+'.partial'
+    try {
+        Invoke-WebRequest -Uri $nodeSpec.url -OutFile $partial -TimeoutSec 180
+        if((Get-FileHash -LiteralPath $partial).Hash -ne $nodeSpec.sha256){throw 'Node archive checksum mismatch'}
+        [IO.File]::Move($partial,$nodeArchive)
+    }finally{if(Test-Path -LiteralPath $partial){Remove-Item -LiteralPath $partial}}
+}
+if((Get-FileHash -LiteralPath $nodeArchive).Hash -ne $nodeSpec.sha256){throw 'Cached Node archive checksum mismatch'}
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive=[IO.Compression.ZipFile]::OpenRead($nodeArchive)
+try {
+    $runtimeDirectory=Join-Path $stage 'runtime'
+    New-Item -ItemType Directory -Path $runtimeDirectory | Out-Null
+    foreach($name in @('node.exe','LICENSE')){
+        $entries=@($archive.Entries | Where-Object FullName -CEQ ($nodeFolder+'/'+$name))
+        if($entries.Count -ne 1 -or $entries[0].Length -le 0){throw "Node archive is missing $name"}
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0],(Join-Path $runtimeDirectory $name))
+    }
+}finally{$archive.Dispose()}
 $checksums = @(Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName | ForEach-Object {
     (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+$_.FullName.Substring($stage.Length+1).Replace('\','/')
 })

@@ -22,13 +22,14 @@ pwsh -NoProfile -File scripts/Upload-Release.ps1
 ```
 
 Files go to `dist/<version>/`. Use a new version or `-OutputDirectory` for another package. The upload command creates a GitHub draft; publish it when ready.
+Packaging downloads the pinned Node archive into `.local/runtime-cache`, verifies its SHA-256, and includes only `node.exe` and its license. Setup uses the bundled runtime without a download or PATH changes.
 
 ## Unattended installation
 
 Run as the signed-in Windows user:
 
 ```powershell
-$installer = Start-Process '.\TS6-Enhanced-1.0.2-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+$installer = Start-Process '.\TS6-Enhanced-1.0.3-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
 $installer.WaitForExit()
 if ($installer.ExitCode -ne 0) { throw "Setup failed with exit code $($installer.ExitCode)" }
 ```
@@ -37,6 +38,6 @@ Wait for the installer process itself; `Start-Process -Wait` also waits for the 
 
 ## Source
 
-`theme/` contains the theme, `tools/` the client helpers, and `scripts/` the installation code. `release.json` defines compatibility and updates; `runtime-lock.json` pins runtime downloads.
+`theme/` contains the theme, `tools/` the client helpers, and `scripts/` the installation code. `release.json` defines compatibility and updates; `runtime-lock.json` pins the bundled Node version.
 
 Keep extension IDs, storage paths and recovery data compatible with existing installations.

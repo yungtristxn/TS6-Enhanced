@@ -116,7 +116,14 @@ $files = @('scripts\Start-Layout.ps1','scripts\Start-Inspection.ps1','scripts\Ma
     'tools\cdp.mjs','tools\client.mjs','tools\workspace-runtime.js','tools\streams-runtime.js')
 if ($Action -eq 'Install') {
     $powershell = Get-LayoutPowerShell
-    $node = if ($NodePath) { [IO.Path]::GetFullPath($NodePath) } else { (Get-Command node -ErrorAction Stop).Source }
+    $bundledNode=(Test-Path -LiteralPath (Join-Path $project 'runtime\node.exe')) -or (Test-Path -LiteralPath (Join-Path $project 'SHA256SUMS.txt'))
+    if($bundledNode){
+        $node=Resolve-LayoutNode $project
+        $files+=@('runtime\node.exe','runtime\LICENSE')
+    }else{
+        # Source-checkout development can use an explicitly supplied/local Node.
+        $node = if ($NodePath) { [IO.Path]::GetFullPath($NodePath) } else { (Get-Command node -ErrorAction Stop).Source }
+    }
     $nodeVersion = & $node --version
     if ($LASTEXITCODE -ne 0 -or [int]($nodeVersion -replace '^v(\d+).*','$1') -lt 22) { throw 'Node 22 or newer is required.' }
     $clientExe = Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
@@ -172,6 +179,9 @@ if ($Action -eq 'Install') {
         Copy-Item -LiteralPath (Join-Path $project $file) -Destination $destination
         if ((Get-Hash $destination) -ne (Get-Hash (Join-Path $project $file))) { throw "Copied launcher failed verification: $file" }
     }
+    # Each release owns its runtime, so updates cannot replace a running helper
+    # and an extracted setup folder can be deleted after installation.
+    if($bundledNode){$node=Join-Path $release 'runtime\node.exe'}
     # Pin the built-in Windows host and resolved Node; neither needs PATH edits.
     # An incomplete first activation must still retry setup when repaired.
     $preserveAppearance=[bool]($state.installed -and $state.release -and (Test-Path -LiteralPath (Join-Path $state.release '.theme-ready') -PathType Leaf))

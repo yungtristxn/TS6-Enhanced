@@ -6,7 +6,7 @@ $project = Split-Path -Parent $PSScriptRoot
 $ArchivePath = [IO.Path]::GetFullPath($ArchivePath)
 $manifest = Get-Content (Join-Path $project 'release.json') -Raw | ConvertFrom-Json
 $prefix = 'TS6-Enhanced-'+$manifest.version+'-windows-x64/'
-$expectedFiles = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','runtime-lock.json','LICENSE','README.md','SHA256SUMS.txt',
+$expectedFiles = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE','README.md','SHA256SUMS.txt','runtime/node.exe','runtime/LICENSE',
     'scripts/Bootstrap.ps1','scripts/Runtime.ps1','scripts/Complete-Setup.ps1','scripts/Maintenance.ps1',
     'scripts/Setup.ps1','scripts/Start-Layout.ps1','scripts/Start-Inspection.ps1',
     'scripts/Install-Persistence.ps1','scripts/Theme.ps1',
@@ -42,8 +42,10 @@ foreach ($line in $checksumLines) {
     if ($relative -match '(^|/)\.\.?(/|$)|[a-z]:|^/') { throw 'Unsafe checksum path' }
     $file = Join-Path $root $relative
     if ((Get-FileHash -LiteralPath $file).Hash -ne $expected) { throw "Checksum mismatch: $relative" }
-    $content = Get-Content -LiteralPath $file -Raw
-    if ($content -match '(?i)[a-z]:[\\/]+Users[\\/]+[^\\/\s]+') { throw "Developer-specific absolute path: $relative" }
+    if($relative -ne 'runtime/node.exe'){
+        $content = Get-Content -LiteralPath $file -Raw
+        if ($content -match '(?i)[a-z]:[\\/]+Users[\\/]+[^\\/\s]+') { throw "Developer-specific absolute path: $relative" }
+    }
 }
 if ($hashedFiles.Count -ne ($hashedFiles | Sort-Object -Unique).Count -or
     (Compare-Object ($expectedFiles | Where-Object { $_ -ne 'SHA256SUMS.txt' }) $hashedFiles)) { throw 'Missing or duplicate file checksums' }

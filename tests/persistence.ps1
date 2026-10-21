@@ -10,7 +10,12 @@ New-Item -ItemType Directory -Path (Join-Path $env:LOCALAPPDATA 'Programs\TeamSp
 try {
 $shortcut = Join-Path $root 'TeamSpeak.lnk'
 $stateRoot = Join-Path $root 'state'
-$installer = Join-Path $project 'scripts\Install-Persistence.ps1'
+$package=Join-Path $root 'package'
+New-Item -ItemType Directory -Path (Join-Path $package 'runtime') -Force | Out-Null
+foreach($name in @('scripts','tools','release.json')){Copy-Item (Join-Path $project $name) $package -Recurse}
+Copy-Item (Get-Command node).Source (Join-Path $package 'runtime\node.exe')
+'Fixture license' | Set-Content (Join-Path $package 'runtime\LICENSE')
+$installer = Join-Path $package 'scripts\Install-Persistence.ps1'
 $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut($shortcut)
 $link.TargetPath = Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
@@ -28,7 +33,10 @@ Check ((Get-FileHash (Join-Path $stateRoot 'original-TeamSpeak.lnk')).Hash -eq $
 $owned = $shell.CreateShortcut($shortcut)
 Check ($owned.TargetPath -eq (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')) 'Wrong launcher executable'
 Check ($owned.Arguments.Contains('-WindowStyle Hidden') -and $owned.Arguments.EndsWith('-Quiet')) 'Launcher must be unobtrusive'
-Check ((Get-Content (Join-Path $state.release 'runtime.json') -Raw | ConvertFrom-Json).node -eq (Get-Command node).Source) 'Resolved Node path was not saved'
+$savedNode=(Get-Content (Join-Path $state.release 'runtime.json') -Raw | ConvertFrom-Json).node
+Check ($savedNode -eq (Join-Path $state.release 'runtime\node.exe')) 'Bundled Node was not pinned to the permanent release'
+Check ((Get-FileHash $savedNode).Hash -eq (Get-FileHash (Join-Path $package 'runtime\node.exe')).Hash) 'Bundled runtime changed during copying'
+Check (Test-Path (Join-Path $state.release 'runtime\LICENSE')) 'Bundled runtime license was not retained'
 foreach ($file in @('scripts\Start-Layout.ps1','scripts\Start-Inspection.ps1','tools\session.mjs','tools\appearance.mjs','tools\cdp.mjs','tools\client.mjs','tools\workspace-runtime.js','tools\streams-runtime.js')) {
     Check ((Get-FileHash (Join-Path $state.release $file)).Hash -eq (Get-FileHash (Join-Path $project $file)).Hash) "Wrong bundled file: $file"
 }
