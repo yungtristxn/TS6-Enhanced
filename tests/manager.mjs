@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';import {readFile,writeFile} from 'node:f
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href:'playwright');
 const source=await readFile(new URL('../tools/manager-runtime.js',import.meta.url),'utf8');
 import {clientPath as client} from './client-path.mjs';
+import {applyLiveStyles} from '../tools/live-update.mjs';
 const nativeIcon=await readFile(`${client}/html/client_ui/images/icons/settings.svg`,'utf8');
 const browser=await chromium.launch({headless:true,...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
 const errors=[],checks=[];
@@ -31,8 +32,8 @@ try{
  await set({configured:true,legacy:false,available:'0.11.0',message:'Version 0.11.0 is available.'});
  assert.ok(await p.locator('[data-toast]').isVisible());assert.deepEqual(await entry.boundingBox(),normal);assert.match(await entry.getAttribute('aria-label'),/update available/);await p.getByRole('button',{name:'Later',exact:true}).click();
  await set({configured:true,available:'0.11.0',message:'Version 0.11.0 is available.'});assert.equal(await p.locator('[data-toast]').isVisible(),false);
- await entry.click();await p.getByRole('button',{name:'Update…',exact:true}).click();assert.match(await dialog.innerText(),/Install version 0.11.0/);await capture('manager-update');await p.getByRole('button',{name:'Update and restart',exact:true}).click();assert.equal(await p.evaluate(()=>requests.at(-1).action),'update');
- checks.push('Update notice appears once per release without resizing the toolbar; a trusted confirmation is required before restart');
+ await entry.click();await p.getByRole('button',{name:'Update…',exact:true}).click();assert.match(await dialog.innerText(),/Download version 0.11.0/);assert.match(await dialog.innerText(),/TeamSpeak stays open/);assert.doesNotMatch(await dialog.innerText(),/restart/);await capture('manager-update');await p.getByRole('button',{name:'Download update',exact:true}).click();assert.equal(await p.evaluate(()=>requests.at(-1).action),'update');
+ checks.push('Update notice appears once per release; confirmation describes download and deferred activation without restart');
  const beforeChange=await p.evaluate(()=>requests.length);await p.getByRole('button',{name:'Update…',exact:true}).click();
  await set({configured:true,available:'0.12.0',message:'Version 0.12.0 is available.'});assert.equal(await p.getByRole('heading').innerText(),'TS6 Enhanced');assert.equal(await p.evaluate(()=>requests.length),beforeChange);
  await set({configured:true,legacy:false,message:'Couldn’t check for updates. Try again.',detail:'Download failed: <img src=x onerror=alert(1)>'});assert.equal(await p.locator('details').getAttribute('open'),null);assert.equal(await p.locator('#tsix-manager img').count(),0);await p.getByText('Details',{exact:true}).click();assert.match(await p.locator('details').innerText(),/Download failed/);
@@ -43,5 +44,21 @@ try{
  await set({legacy:false});await p.getByRole('button',{name:'Uninstall…',exact:true}).click();assert.match(await dialog.innerText(),/Restores your previous appearance/);await p.getByRole('button',{name:'Cancel',exact:true}).click();
  await p.evaluate(source);await p.evaluate(source);assert.equal(await p.locator('[data-tsix-manager-open]').count(),1);assert.equal(await p.locator('#tsix-manager').count(),1);
  await p.evaluate(()=>__tsixManager.dispose());assert.equal(await p.locator('#tsix-manager,[data-tsix-manager-open]').count(),0);assert.deepEqual(errors,[]);checks.push('Fresh-install wording, repeated attachment and cleanup preserve the action contract without duplicate UI');
+ // Exercise the live stylesheet against a real browser DOM with inert media.
+ await p.setContent('<head><link id="userStyle" href="tsui://extension/local.tsix.layout/layout.css"></head><body><video></video></body>');
+ await p.evaluate(()=>{window.originalVideo=document.querySelector('video');window.calls={refresh:0,sync:0};window.__tsixWorkspace={refresh(){calls.refresh++}};window.__tsixStreams={sync(){calls.sync++},dispose(){throw Error('Audio helper must not be disposed')}}});
+ const renderer={evaluate:expression=>p.evaluate(expression)};
+ assert.equal(await applyLiveStyles(renderer,':root{--tsix-layout-version:2.0.0;color:red}','2.0.0'),true);
+ assert.ok(await p.evaluate(()=>document.querySelector('video')===originalVideo));
+ await assert.rejects(applyLiveStyles(renderer,':root{color:blue}','2.0.1'),/version did not match/);
+ assert.equal(await p.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()),'2.0.0');
+ await p.evaluate(()=>document.getElementById('userStyle').href='tsui://extension/another.theme/style.css');
+ await p.waitForFunction(()=>document.getElementById('tsix-live-release-style').media==='not all');
+ assert.equal(await applyLiveStyles(renderer,':root{--tsix-layout-version:2.0.1}','2.0.1'),false);
+ await p.evaluate(()=>document.getElementById('userStyle').href='tsui://extension/local.tsix.layout/layout.css');
+ await p.waitForFunction(()=>document.getElementById('tsix-live-release-style').media==='all');
+ assert.ok(await p.evaluate(()=>document.querySelector('video')===originalVideo));
+ await p.evaluate(()=>__tsixLiveStyles.dispose());assert.equal(await p.locator('#tsix-live-release-style').count(),0);
+ checks.push('Live CSS preserves media elements, rolls back a wrong version and respects manual theme changes');
  console.log(JSON.stringify({result:'PASS',checks,errors,scope:'Native icon and trusted browser input with a recording-only bridge; no real restart or removal'},null,2));
 }finally{await browser.close()}

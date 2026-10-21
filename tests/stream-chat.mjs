@@ -3,9 +3,11 @@ import {createServer} from 'node:http';
 import {readFile,mkdir} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {settleLayout} from './browser-settle.mjs';
+import {clientPath} from './client-path.mjs';
+const chatIcon=(await readFile(`${clientPath}/html/client_ui/images/icons/chat.svg`,'utf8')).replace('<svg','<svg name="mode-chat"');
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href:'playwright');
 const routes=new Map([['/',new URL('./stream-tray.html',import.meta.url)],['/layout.css',new URL('../theme/local.tsix.layout/layout.css',import.meta.url)],['/streams-runtime.js',new URL('../tools/streams-runtime.js',import.meta.url)]]);
-const server=createServer(async(req,res)=>{const path=new URL(req.url,'http://localhost').pathname,file=routes.get(path);if(!file){res.writeHead(404).end();return}res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html');res.end(await readFile(file))});
+const server=createServer(async(req,res)=>{const path=new URL(req.url,'http://localhost').pathname,file=routes.get(path);if(!file){res.writeHead(404).end();return}res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html');let content=await readFile(file);if(path==='/')content=content.toString().replace('<main class="tsv-screenshare">',`<div hidden>${chatIcon}</div><main class="tsv-screenshare">`);res.end(content)});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await chromium.launch({headless:true,...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
 const errors=[],checks=[];
@@ -23,6 +25,8 @@ try{
   await page.setViewportSize({width,height});await page.goto(`http://127.0.0.1:${server.address().port}/?model=beta5&single=1&preview=1&incoming=1`);
   await page.locator('[data-tsix-preview-join]').waitFor();await setChat(true);await page.getByLabel('Chat draft').fill('Keep this unsent draft');await setChat(chat);
   const before=await box('.video-stream');assert.ok(before.width>width-100);await checkDock();
+  assert.equal(await page.locator('main > [data-tsix-stream-toolbar]').count(),0);
+  assert.equal(await page.locator('[data-tsix-chat-rail] [data-tsix-chat-icon]').count(),1);
   const join=page.getByRole('button',{name:'Watch stream',exact:true});
   assert.ok(await join.evaluate(e=>{const b=e.getBoundingClientRect(),p=e.closest('.video-stream').getBoundingClientRect();return b.width>=96&&b.height>=32&&b.top>=p.top&&b.bottom<=p.bottom&&e.contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2))}));
   if(chat){const c=await box('.ts-chat-container');assert.ok(before.y+before.height<=c.y+1);assert.ok(c.height>=120&&c.y+c.height<=height+1)}
@@ -44,8 +48,8 @@ try{
  await page.evaluate(()=>{lab.vm.resizeVideoHeightOrigin=lab.vm.gridHeight;lab.vm.overrideSplitPercentage=.45;lab.vm.maximumVideoHeight=lab.vm.maximumHeight*.45;window.__tsixStreams.sync();lab.vm.resizeVideoHeightOrigin=-1;window.__tsixStreams.sync()});await setChat(false);await setChat(true);
  assert.ok(Math.abs(await page.evaluate(()=>lab.vm.overrideSplitPercentage)-.45)<.001);checks.push('manual divider preference survives chat toggles');
  await page.goto(`http://127.0.0.1:${server.address().port}/?model=beta5&single=1&preview=1`);await page.locator('[data-tsix-preview-join]').waitFor();await settleLayout(page);
- const writes=await page.evaluate(()=>new Promise(resolve=>{let n=0;const o=new MutationObserver(e=>n+=e.length);o.observe(document.querySelector('main'),{subtree:true,childList:true,attributes:true});for(let i=0;i<50;i++)window.__tsixStreams.sync();queueMicrotask(()=>{o.disconnect();resolve(n)})}));
- assert.equal(writes,0);assert.equal(await page.locator('[data-tsix-view-action]').count(),2);checks.push('unopened controls stay stable through 50 idle reconciliations');
+ const writes=await page.evaluate(()=>new Promise(resolve=>{const changes=[];const o=new MutationObserver(es=>changes.push(...es.map(e=>({type:e.type,name:e.attributeName,tag:e.target.tagName,attributes:e.target.getAttributeNames?.().filter(n=>n.startsWith('data-tsix')),style:e.target.getAttribute?.('style')}))));o.observe(document.querySelector('main'),{subtree:true,childList:true,attributes:true});for(let i=0;i<50;i++)window.__tsixStreams.sync();queueMicrotask(()=>{o.disconnect();resolve(changes)})}));
+ assert.deepEqual(writes,[]);assert.equal(await page.locator('[data-tsix-view-action]').count(),2);checks.push('unopened controls stay stable through 50 idle reconciliations');
  await page.evaluate(()=>window.__tsixStreams.dispose());
  assert.equal(await page.locator('[data-tsix-preview-join],[data-tsix-stream-layout],[data-tsix-stream-region],[data-tsix-stream-row],[data-tsix-view-actions],[data-tsix-stream-footer],[data-tsix-source-actions]').count(),0);checks.push('cleanup removes join/dock controls and restores native sources and stage markers');
  assert.deepEqual(errors,[]);console.log(JSON.stringify({result:'PASS',checks,errors},null,2));

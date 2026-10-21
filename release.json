@@ -1,12 +1,13 @@
 {
   "name": "TS6 Enhanced",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "channel": "stable",
-  "themeVersion": "1.0.0",
+  "themeVersion": "1.0.4",
   "updates": {
     "repository": "yungtristxn/TS6-Enhanced",
     "channel": "stable",
-    "checkIntervalHours": 6
+    "checkIntervalHours": 6,
+    "deferredInstall": 1
   },
   "supportedClient": {
     "version": "6.0.0-beta5",

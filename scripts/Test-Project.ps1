@@ -20,7 +20,7 @@ try {
                 if($errors.Count){throw ($errors -join [Environment]::NewLine)}
             }
             Run node @('--test','tests/updates.test.mjs','tests/install-state.test.mjs','tests/manager-start.test.mjs')
-            foreach($file in @('maintenance','launcher')){Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"tests/$file.ps1")}
+            foreach($file in @('maintenance','launcher','deferred-update')){Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"tests/$file.ps1")}
             Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File','tests/bootstrap.ps1')
         }
         Browser {

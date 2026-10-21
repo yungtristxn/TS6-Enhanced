@@ -1,6 +1,6 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$NodePath,[switch]$RestartClient,[string]$ErrorFile)
+param([Parameter(Mandatory)][string]$NodePath,[switch]$RestartClient,[switch]$DeferredUpdate,[string]$ErrorFile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Runtime.ps1')
 $operation=$null
@@ -8,13 +8,15 @@ $phase='Preparing TeamSpeak'
 try {
 $operation=Enter-LayoutOperation
 $client=Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
-if($RestartClient -and (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $client })){
+if($DeferredUpdate -and (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object {$_.Path -eq $client})){throw 'TeamSpeak reopened before the queued update. It was left running; retry on the next launch.'}
+if($RestartClient -and !$DeferredUpdate -and (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $client })){
     # Keep native startup/shortcut registration out of the install transaction.
     # Start-Layout opens the client once, after theme and shortcut commits.
     Stop-LayoutClient $client
 }
 $announced=$false
 while (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $client }) {
+    if($DeferredUpdate){throw 'TeamSpeak reopened before the queued update. It was left running.'}
     if (!$announced) {
         Write-Host 'Setup is not complete. Close TeamSpeak when your call is finished to continue.' -ForegroundColor Yellow
         Write-Host 'Keep this setup window open. If you close it, run setup again later.'

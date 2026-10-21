@@ -18,6 +18,28 @@ if ($LASTEXITCODE -ne 0 -or [int]($nodeVersion -replace '^v(\d+).*','$1') -lt 22
 }
 $taskExe = Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
 $running = @(Get-Process -Name TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $taskExe })
+if(!$running.Count){
+    $pendingPath=Join-Path $env:LOCALAPPDATA 'TS6-Layout\pending-update.json'
+    if(Test-Path -LiteralPath $pendingPath){
+        Assert-LayoutPlainPath $pendingPath
+        try{$pending=Get-Content -LiteralPath $pendingPath -Raw -Encoding UTF8 | ConvertFrom-Json}
+        catch{$pending=$null;Write-Warning 'The queued update could not be read. Check for updates again after TeamSpeak opens.'}
+        $release=Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        if($pending.schema -eq 2 -and $pending.mode -eq 'next-launch' -and $pending.fromVersion -ceq $release.version){
+            try { & (Join-Path $PSScriptRoot 'Maintenance.ps1') -Action Update }
+            catch {
+                $logs=Join-Path $env:LOCALAPPDATA 'TS6-Layout\setup-logs'
+                Assert-LayoutPlainPath $logs;New-Item -ItemType Directory -Path $logs -Force | Out-Null
+                $_.Exception.Message | Set-Content -LiteralPath (Join-Path $logs 'update-error.txt') -Encoding UTF8
+                # A queued update must never prevent access to the native client.
+                if(!(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object {$_.Path -eq $taskExe})){
+                    Start-Process -FilePath $taskExe -WorkingDirectory (Split-Path -Parent $taskExe) -WindowStyle Normal | Out-Null
+                }
+            }
+            return
+        }
+    }
+}
 if (!$running.Count) {
     & (Join-Path $PSScriptRoot 'Start-Inspection.ps1') -Port $Port
 } elseif (!(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)) {

@@ -68,7 +68,21 @@ export async function checkUpdate(current,config,{fetcher=fetch}={}){
   const hashes=manifest.supportedClient?.resourceHashes;
   if(!hashes||Object.keys(hashes).length!==2||!['html/client_ui/main.js','html/client_ui/main.css'].every(p=>/^[a-f0-9]{64}$/i.test(hashes[p]||'')))throw Error('Invalid TeamSpeak compatibility metadata');
   const installer=releaseAsset(selected,`TS6-Enhanced-${v}-Setup.exe`,config.repository,512*1024*1024);
-  return {version:v,manifest,installer};
+  const live=manifest.liveUpdate;
+  const stylesheet=live?.schema===1&&/^[a-f0-9]{64}$/.test(live.runtimeHash||'')?
+    releaseAsset(selected,`TS6-Enhanced-${v}-layout.css`,config.repository,2*1024*1024):null;
+  return {version:v,manifest,installer,stylesheet};
+}
+export function canApplyStyles(current,update){
+  const a=current.liveUpdate,b=update.manifest.liveUpdate;
+  return !!update.stylesheet&&a?.schema===1&&b?.schema===1&&/^[a-f0-9]{64}$/.test(a.runtimeHash||'')&&a.runtimeHash===b.runtimeHash;
+}
+export async function downloadStyles(update,options={}){
+  if(!update.stylesheet)throw Error('This release has no live stylesheet');
+  const bytes=verifyBytes(await fetchBytes(update.stylesheet.browser_download_url,{...options,limit:update.stylesheet.size}),update.stylesheet);
+  const css=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+  if(/@import|url\s*\(/i.test(css))throw Error('Live styles must not load external content');
+  return css;
 }
 export async function compatible(update,client){
   for(const [file,hash]of Object.entries(update.manifest.supportedClient.resourceHashes)){

@@ -6,7 +6,8 @@ import {spawn} from 'node:child_process';
 import {connect} from './cdp.mjs';
 import {atomicJSON,readJSON,captureBaseline,stateRoot,plainPath} from './install-state.mjs';
 import {claimManager} from './manager-lock.mjs';
-import {checkUpdate,compatible,stageUpdate,displayVersion} from './updates.mjs';
+import {checkUpdate,compatible,stageUpdate,displayVersion,compareVersions,canApplyStyles,downloadStyles} from './updates.mjs';
+import {applyLiveStyles} from './live-update.mjs';
 const root=stateRoot(),project=fileURLToPath(new URL('../',import.meta.url));
 const readyIndex=process.argv.indexOf('--ready-file'),readyFile=readyIndex<0?null:process.argv[readyIndex+1];
 const report=async value=>{if(readyFile)await atomicJSON(readyFile,value)};
@@ -24,6 +25,10 @@ try{
   if(build!==release.supportedClient.build)throw Error('Unsupported TeamSpeak build; maintenance UI was not attached');
   const baseline=await captureBaseline(c);
   let state={version:displayVersion(release.version),configured:!!release.updates?.repository,legacy:baseline.legacy,busy:false,available:null,detail:null,message:release.updates?.repository?'Checking for updates…':'Updates aren’t configured.'};
+  const queued=await readJSON(join(root,'pending-update.json')).catch(()=>null);
+  if(queued?.schema===2&&queued.mode==='next-launch'&&queued.fromVersion===release.version&&compareVersions(queued.version,release.version)>0){
+    state.pending=displayVersion(queued.version);state.message=`Version ${state.pending} is ready. It will install next time you open TeamSpeak.`;
+  }
   const publish=async(patch={})=>{state={...state,...patch,busy};await c.evaluate(`window.__tsixManager?.setState(${JSON.stringify(state)},${JSON.stringify(nonce)})`)};
   const ui=await readFile(join(project,'tools/manager-runtime.js'),'utf8');
   let contextId;
@@ -38,7 +43,7 @@ try{
   await c.evaluate(`window.__tsixManager.setIcon(${JSON.stringify(settingsIcon)})`);
   await publish();
   const check=async()=>{
-    if(busy||!release.updates?.repository)return;
+    if(busy||state.pending||!release.updates?.repository)return;
     busy=true;await publish({message:'Checking for updates…',detail:null});
     try{
       update=await checkUpdate(release.version,release.updates);
@@ -67,11 +72,18 @@ try{
     try{
       if(request.action==='update'){
         if(!update)throw Error('Check for updates first');
+        if(update.manifest.updates?.deferredInstall!==1)throw Error('This release requires a manual installation');
         if(!await compatible(update,join(process.env.LOCALAPPDATA,'Programs/TeamSpeak')))throw Error('TeamSpeak changed; this update is no longer compatible');
         const path=await stageUpdate(update,join(root,'updates'));
-        await atomicJSON(join(root,'pending-update.json'),{schema:1,path,version:update.version,sha256:update.installer.sha256,resourceHashes:update.manifest.supportedClient.resourceHashes});
-        await publish({message:'Restarting TeamSpeak…'});
-        launch(runtime.pwsh,['-NoProfile','-ExecutionPolicy','Bypass','-File',join(project,'scripts/Maintenance.ps1'),'-Action','Update','-Background'],'Update');
+        await atomicJSON(join(root,'pending-update.json'),{schema:2,mode:'next-launch',fromVersion:release.version,path,version:update.version,sha256:update.installer.sha256,resourceHashes:update.manifest.supportedClient.resourceHashes});
+        let applied=false,detail=null;
+        if(canApplyStyles(release,update)){
+          try{applied=await applyLiveStyles(c,await downloadStyles(update),update.manifest.themeVersion)}
+          catch(error){detail='The update is saved, but its appearance will apply on the next launch. '+error.message}
+        }
+        busy=false;
+        await publish({available:null,pending:displayVersion(update.version),detail,message:(applied?'Appearance updated. ':'')+`Version ${displayVersion(update.version)} will finish installing next time you open TeamSpeak.`});
+        update=null;
       }else{
         const uninstall=join(root,'app','unins000.exe');await plainPath(uninstall);
         if(await stat(uninstall).catch(()=>null))launch(uninstall,['/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'],'Uninstall');

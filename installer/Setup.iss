@@ -169,6 +169,7 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var Arguments: String;
 begin
   Result := '';
   if not EnterOperation then begin
@@ -176,15 +177,20 @@ begin
     exit;
   end;
   ExtractTemporaryFiles('{tmp}\tsix-setup\*');
-  if not RunBootstrap(ExpandConstant('{tmp}\tsix-setup'), '-Prepare') then
+  Arguments := '-Prepare';
+  if ExpandConstant('{param:TSIXDEFERRED|0}') = '1' then Arguments := Arguments + ' -DeferredUpdate';
+  if not RunBootstrap(ExpandConstant('{tmp}\tsix-setup'), Arguments) then
     Result := SetupFailure('Setup could not continue.');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var Arguments: String;
 begin
   if CurStep = ssPostInstall then begin
     WizardForm.StatusLabel.Caption := 'Activating the layout in TeamSpeak...';
-    if not RunBootstrap(ExpandConstant('{app}'), '-RestartClient') then
+    Arguments := '-RestartClient';
+    if ExpandConstant('{param:TSIXDEFERRED|0}') = '1' then Arguments := '-DeferredUpdate';
+    if not RunBootstrap(ExpandConstant('{app}'), Arguments) then
       RaiseException(SetupFailure('Automatic activation could not finish.'));
   end;
 end;

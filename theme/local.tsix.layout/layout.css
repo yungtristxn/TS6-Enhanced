@@ -1,7 +1,7 @@
 /* TS6 beta5 / 1791901251. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 1.0.0;
+  --tsix-layout-version: 1.0.4;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
@@ -448,3 +448,261 @@
     outline-color: Highlight !important;
   }
 }
+
+/* Shared navigation typography and spacing. */
+:root {
+  --tsix-classic-row: 32px;
+  --tsix-classic-detail-row: 44px;
+  --tsix-classic-type: 16px;
+  --tsix-classic-line: 24px;
+  --tsix-classic-nav-row: 28px;
+  --channel-height: var(--tsix-classic-row) !important;
+  --channel-spacing: 0px !important;
+  --ts-tree-channel-height-default: var(--tsix-classic-row) !important;
+  --ts-tree-spacer-height-default: var(--tsix-classic-row) !important;
+  --ts-tree-client-height-compact: var(--tsix-classic-row) !important;
+  --ts-tree-client-height-default: var(--tsix-classic-detail-row) !important;
+}
+:root:has(.tsv-window-scale-small) {
+  --tsix-classic-row: 28px;
+  --tsix-classic-detail-row: 40px;
+  --tsix-classic-type: 14px;
+  --tsix-classic-line: 20px;
+  --tsix-classic-nav-row: 28px;
+}
+:root:has(.tsv-window-scale-large) {
+  --tsix-classic-row: 36px;
+  --tsix-classic-detail-row: 48px;
+  --tsix-classic-type: 18px;
+  --tsix-classic-line: 24px;
+  --tsix-classic-nav-row: 28px;
+}
+:is(.sidebar-pane-layout,.main-pane-layout) {
+  --tsv-bg: #242d3a;
+  --tsv-shaded-bg: #1f2733;
+  --tsv-header-bg: #191f29;
+  --tsv-font-color: #edf2f7;
+  --tsv-font-subtitle-color: #a9b7c9;
+  --tsv-tab-item-single-font-color: #a9b7c9;
+  --tsv-separation-border-color: #364355;
+  --tsv-border-radius: 3px;
+  --tsv-border-radius-large: 3px;
+  --tsv-border-radius-pill: 3px;
+  --tsv-tint: #78b7f5;
+  --tsv-font-size: var(--tsix-classic-type);
+  --tsv-font-size-content: var(--tsix-classic-type);
+  --tsv-font-size-small: 14px;
+  --tsv-font-size-minimal: 13px;
+  --tsv-font-weight-normal: 400;
+  font-family: var(--tsv-font-family);
+  font-size: var(--tsix-classic-type);
+  font-weight: 400;
+  color: var(--tsv-font-color);
+  text-shadow: none;
+}
+.sidebar-pane-layout { background: #171e28; box-shadow: inset -1px 0 #364355; }
+.sidebar-pane-layout > :is(.tsv-header,.tsv-body,.tsv-footer) { background: #171e28; background-image: none; }
+.sidebar-pane-layout .tsv-title-bar { height: 44px; min-height: 44px; }
+.sidebar-pane-layout .tsv-search-bar {
+  height: 34px; min-height: 34px; box-sizing: border-box;
+  display: flex; align-items: center;
+  border: 1px solid #44546b; border-radius: 4px; background: #222c3a;
+}
+.sidebar-pane-layout .tsv-search-input { font: 400 14px/20px var(--tsv-font-family); height: 32px; padding: 6px 8px; box-sizing: border-box; }
+.sidebar-pane-layout .tsv-search-input::placeholder { color: #a9b7c9; opacity: 1; }
+/* Give section names a full line. Keep every native tool visible below it. */
+.sidebar-pane-layout .tsv-tabs {
+  display: grid; grid-template-columns: minmax(0,1fr) 28px; grid-template-rows: 28px;
+  align-items: center; height: auto; min-height: 36px; width: auto;
+  margin: 12px 16px 4px; padding: 8px 0 0; border-top: 1px solid #364355;
+  border-radius: 0; background: transparent;
+}
+.sidebar-pane-layout .tsv-tabs:has(.ts-sidebar-tab-sub-panel-accessory) { grid-template-rows: 28px 28px; }
+.sidebar-pane-layout .tsv-tabs::before { background: transparent; border-radius: 0; }
+.sidebar-pane-layout .tsv-tabs > .tsv-tab-item { grid-column: 1; grid-row: 1; min-width: 0; padding: 0; margin: 0; gap: 8px; justify-content: flex-start; }
+.sidebar-pane-layout .tsv-tabs > .tsv-tab-item > .tsv-action { flex: 0 0 22px; }
+.sidebar-pane-layout .tsv-tabs > .tsv-tab-item > .tsv-text-truncate { justify-content: flex-start; }
+.sidebar-pane-layout .tsv-tabs > .tsv-extended-expander-click-area { display: contents; }
+.sidebar-pane-layout .tsv-tabs > .tsv-extended-expander-click-area > .tsv-flex-grow { display: none; }
+.sidebar-pane-layout .tsv-tabs .ts-expander { grid-column: 2; grid-row: 1; width: 28px; height: 28px; padding: 0; margin: 0; }
+.sidebar-pane-layout .tsv-tabs .tsv-sidebar-header-accessories {
+  grid-column: 1 / -1; grid-row: 2; justify-self: start; justify-content: flex-start;
+  gap: 8px; min-height: 28px; padding: 0; margin: 0 0 0 -3px;
+}
+.sidebar-pane-layout .tsv-tabs:not(:has(.ts-sidebar-tab-sub-panel-accessory)) .tsv-sidebar-header-accessories { display: none; }
+.sidebar-pane-layout .ts-sidebar-tab-sub-panel-accessory { min-width: 28px; min-height: 28px; display: flex; align-items: center; justify-content: center; }
+.sidebar-pane-layout .tsv-bar-item-title { margin: 0; color: #d6e0ed; font: 600 14px/20px var(--tsv-font-family); }
+.sidebar-pane-layout > .tsv-body .tsv-item { font-size: var(--tsix-classic-type); border-radius: 3px; padding: 0 16px; min-height: var(--tsix-classic-nav-row); box-sizing: border-box; }
+.sidebar-pane-layout .tsv-item-highlight { border-radius: 3px; }
+.sidebar-pane-layout > .tsv-body .tsv-item-container { min-height: var(--tsix-classic-nav-row); box-sizing: border-box; padding-top: 2px; padding-bottom: 2px; }
+.sidebar-pane-layout > .tsv-body .tsv-item-content { min-height: var(--tsix-classic-line); }
+.sidebar-pane-layout > .tsv-body .tsv-item-content > .tsv-item-text { margin-left: 8px; }
+.sidebar-pane-layout .tsv-activities .tsv-item-content-primary { height: var(--tsix-classic-line); min-height: var(--tsix-classic-line); }
+.sidebar-pane-layout .tsv-item-text { font: 400 var(--tsix-classic-type)/var(--tsix-classic-line) var(--tsv-font-family); }
+.sidebar-pane-layout .tsv-sidebar-tab-header-title { color: #d6e0ed; font: 600 14px/20px var(--tsv-font-family); }
+.sidebar-pane-layout .tsv-sidebar-tab-header { padding: 0; }
+.sidebar-pane-layout .tsv-sidebar-tab-header .tsv-item-container { min-height: 32px; padding: 0 16px; }
+.sidebar-pane-layout .tsv-sidebar-header-content { padding-left: 30px; min-height: 32px; box-sizing: border-box; }
+.sidebar-pane-layout > .tsv-body .tsv-sidebar-header-content > .tsv-item-text { margin: 0; }
+.sidebar-pane-layout .tsv-item-action .tsv-item-text { font-size: 14px; color: #8bc4ff; }
+.sidebar-pane-layout .resources-section .ts-collapsible-expander { display: flex; width: auto; min-height: 28px; margin: 4px 16px; padding: 0; box-sizing: border-box; color: #a9b7c9; font: 400 13px/20px var(--tsv-font-family); }
+.sidebar-pane-layout .resources-section .ts-collapsible-expander .label { margin: 0 0 0 30px; padding: 0; }
+.sidebar-pane-layout .tsv-icon-primary { --tsv-icon-size: 22px; }
+.sidebar-pane-layout .ts-join-community { margin-top: 4px; padding: 0 16px; }
+.sidebar-pane-layout .ts-join-community .tsv-button {
+  width: 100%; height: var(--tsix-classic-nav-row); min-height: var(--tsix-classic-nav-row); padding: 2px 0; box-sizing: border-box;
+  border: 0; border-radius: 3px; background: transparent; color: #8bc4ff; box-shadow: none; justify-content: flex-start;
+}
+.sidebar-pane-layout .ts-join-community .tsv-button-content { width: 100%; justify-content: flex-start; gap: 8px; font: 400 14px/24px var(--tsv-font-family); white-space: nowrap; }
+[data-tsix-community-icon] { width: 22px; height: 22px; flex: 0 0 22px; pointer-events: none; }
+[data-tsix-community-icon] .tsv-icon-base-stroke,
+.sidebar-pane-layout .tsv-item-action .tsv-icon-base-stroke { stroke: #8bc4ff; }
+.sidebar-pane-layout .ts-join-community .tsv-button:is(:hover,:focus-visible) { background: #243448; }
+.main-pane-layout > .tsv-body { background: #202936; }
+.main-pane-layout > .tsv-header { background: #191f29; box-shadow: inset 0 -1px #364355; }
+.main-pane-layout .ts-server-tree-wrapper {
+  --tsv-servertree-bg-gradient: #202936;
+  --ts-tree-channel-bg-start: transparent; --ts-tree-channel-bg-end: transparent;
+  --tsv-padding-v-minimal: 0px;
+  --tsv-border-radius: 3px; --tsv-border-radius-large: 3px; --tsv-border-radius-pill: 3px;
+}
+.main-pane-layout .ts-server-header { --tsv-icon-size-xlarge: 22px; }
+.main-pane-layout .ts-server-header .tsv-view-banner {
+  margin: 0 8px 8px; box-sizing: border-box; height: 48px; min-height: 48px;
+  padding: 8px 4px; border-bottom: 1px solid #364355; border-radius: 0; background: transparent;
+}
+.main-pane-layout .ts-server-header .tsv-view-background,
+.main-pane-layout .ts-server-header .tsv-view-background::before,
+.main-pane-layout .ts-server-header .tsv-view-background::after { background: transparent; border-radius: 0; }
+.main-pane-layout .ts-server-header .tsv-view-content { font: 600 16px/24px var(--tsv-font-family); }
+.main-pane-layout .ts-server-tree-item-leaf { font: 400 var(--tsix-classic-type)/var(--tsix-classic-line) var(--tsv-font-family); }
+.main-pane-layout .ts-server-tree-channel-info { color: #edf2f7; font: 600 var(--tsix-classic-type)/var(--tsix-classic-line) var(--tsv-font-family); }
+.main-pane-layout :is(.ts-server-tree-client-info,.ts-client-nick,.ts-server-tree-item-text-wrapper) { font: 400 var(--tsix-classic-type)/var(--tsix-classic-line) var(--tsv-font-family); }
+.main-pane-layout :is(.ts-server-tree-channel-info,.ts-server-tree-client-info) { margin-top: 0; margin-bottom: 0; }
+.main-pane-layout .tsv-server-tree-icon { --tsv-icon-size: 22px; }
+.main-pane-layout .ts-server-tree-item-leaf .tsv-item-highlight { border-radius: 3px; }
+.main-pane-layout .ts-server-tree-item-leaf.tsv-active .tsv-item-highlight { background: #354d68; box-shadow: inset 3px 0 #86c1fa; border-radius: 3px; }
+.sidebar-pane-layout > .tsv-footer,
+.main-pane-layout .ts-server-status-bar { min-height: 48px; height: 48px; background: #191f29; border-top: 1px solid #364355; }
+.sidebar-pane-layout > .tsv-footer > .tsv-bar { min-height: 48px; height: 48px; }
+
+/* Shared chrome; native media layout and status colors stay owned by TS. */
+:root {
+  --tsix-chrome-bg: #18212e;
+  --tsix-content-bg: #202936;
+  --tsix-control-bg: #27374b;
+  --tsix-control-hover: #344b64;
+  --tsix-chrome-border: #3b4c61;
+  --tsix-chrome-text: #edf2f7;
+  --tsix-chrome-muted: #b6c5d8;
+  --tsix-chrome-accent: #8bc4ff;
+  --tsix-chrome-radius: 4px;
+}
+.tsv-window { background: var(--tsix-chrome-bg); }
+.tsv-activity-detail {
+  --tsv-bg: #27374b; --tsv-shaded-bg: #202936; --tsv-header-bg: #18212e;
+  --tsv-font-color: #edf2f7; --tsv-font-subtitle-color: #b6c5d8;
+  --tsv-separation-border-color: #3b4c61;
+}
+.tsv-activity-detail > .tsv-body { background: var(--tsix-content-bg); }
+.tsv-window-bar,
+.sidebar-pane-layout > .tsv-header { background: var(--tsix-chrome-bg); }
+/* A shared 48px header band beneath the existing 44px window title bar. */
+.tsv-activity-detail.tsv-has-content-header > .tsv-header {
+  flex: 0 0 92px; height: 92px; min-height: 92px;
+  display: flex; flex-direction: column; justify-content: flex-start;
+}
+.tsv-activity-detail.tsv-has-content-header > .tsv-header > .tsv-window-bar {
+  flex: 0 0 44px; height: 44px; min-height: 44px; margin: 0;
+}
+.sidebar-pane-layout > .tsv-header > .tsv-bar:not(.tsv-title-bar) {
+  height: 48px; min-height: 48px; box-sizing: border-box; padding: 0 12px;
+  background: var(--tsix-content-bg); border-bottom: 0; box-shadow: inset 0 -1px var(--tsix-chrome-border);
+}
+.sidebar-pane-layout > .tsv-header > .tsv-bar:not(.tsv-title-bar) > .tsv-bar-item { margin: 0; }
+.sidebar-pane-layout .tsv-search-bar { width: 100%; border-color: var(--tsix-chrome-border); background: var(--tsix-chrome-bg); }
+.tsv-activity-detail .tsv-content-header-bar {
+  flex: 0 0 48px; height: 48px; min-height: 48px; box-sizing: border-box;
+  padding: 0 16px; background: var(--tsix-content-bg); border-bottom: 0; box-shadow: inset 0 -1px var(--tsix-chrome-border);
+}
+.ts-server-header .tsv-view-banner { padding: 0 4px; border-bottom: 0; box-shadow: inset 0 -1px var(--tsix-chrome-border); }
+.ts-server-header .tsv-view-image { margin: 0 10px 0 0; }
+.ts-server-header :is(.tsv-view-content,.tsv-view-accessory) { margin: 0; align-self: center; }
+.tsv-content-header-item {
+  --tsv-icon-size: 32px; --tsv-icon-size-large: 32px;
+  --tsv-icon-size-xlarge: 32px; --tsv-font-size-title-small: 18px;
+  min-height: 0; padding: 0 !important; font: 600 18px/24px var(--tsv-font-family);
+}
+.tsv-content-header-item .tsv-item-content-primary { min-height: 32px; height: 32px; }
+.tsv-content-header-item .tsv-icon-primary { width: 32px; height: 32px; flex: 0 0 32px; }
+.tsv-content-header-item .tsv-item-text { font: 600 18px/24px var(--tsv-font-family); margin-left: 12px; }
+.tsv-activity-detail > .tsv-header > .ts-horizontal-separator { display: none; }
+/* Match toolbar sizing, without changing mute, sharing, destructive or unread state. */
+:is(.tsv-central-toolbar,.ts-server-status-bar,.tsv-content-header-bar) .tsv-tool-buttons {
+  min-height: 32px; border-radius: var(--tsix-chrome-radius);
+}
+.tsv-central-toolbar .tsv-tool-buttons::before,
+.ts-server-status-bar .tsv-tool-buttons::before {
+  border-radius: var(--tsix-chrome-radius); background: var(--tsix-control-bg);
+}
+:is(.tsv-central-toolbar,.ts-server-status-bar,.tsv-content-header-bar) .tsv-tool-button {
+  min-height: 32px; border-radius: var(--tsix-chrome-radius); box-sizing: border-box;
+}
+.tsv-content-header-bar .tsv-segmented-control { padding: 2px; gap: 2px; border-radius: var(--tsix-chrome-radius); background: var(--tsix-chrome-bg); }
+.tsv-content-header-bar .tsv-segmented-button { min-width: 32px; min-height: 32px; border-radius: 3px; }
+.tsv-content-header-bar .tsv-segmented-button.active { background: var(--tsix-control-hover); }
+[data-tsix-manager-open] { border-radius: var(--tsix-chrome-radius); color: var(--tsix-chrome-muted); }
+/* Remove the native 55px flex basis so both 48px footers actually align. */
+.sidebar-pane-layout > .tsv-footer,
+.main-pane-layout > .tsv-body > .tsv-item-view > .tsv-footer {
+  flex: 0 0 48px; height: 48px; min-height: 48px; box-sizing: border-box;
+  border-top: 0; box-shadow: inset 0 1px var(--tsix-chrome-border); background: var(--tsix-chrome-bg);
+}
+.sidebar-pane-layout > .tsv-footer > .tsv-bar,
+.main-pane-layout .ts-server-status-bar {
+  height: 100%; min-height: 0; box-sizing: border-box; padding: 0 12px; margin: 0;
+  border-top: 0; background: var(--tsix-chrome-bg);
+}
+.sidebar-pane-layout > .tsv-footer .tsv-item-text { font: 400 14px/20px var(--tsv-font-family); }
+.sidebar-pane-layout > .tsv-footer .tsv-action-subtle { min-width: 32px; min-height: 32px; border-radius: var(--tsix-chrome-radius); }
+/* Shared compact controls, including the existing live status badge. */
+[data-tsix-broadcast-bar]:not([data-fullscreen]) {
+  left: 12px; max-width: calc(100% - 24px); border-radius: var(--tsix-chrome-radius);
+  border-color: var(--tsix-chrome-border); border-left-color: var(--tsix-live-color);
+  background: var(--tsix-chrome-bg); box-shadow: none;
+}
+[data-tsix-broadcast-state] { font-size: 12px; font-weight: 600; letter-spacing: 0; line-height: 20px; }
+[data-tsix-viewer-count] { font-size: 13px; line-height: 20px; color: var(--tsix-chrome-muted); }
+[data-tsix-viewer-list] { background: var(--tsix-chrome-bg); border-color: var(--tsix-chrome-border); border-radius: var(--tsix-chrome-radius); font-size: 14px; }
+[data-tsix-chat-toggle] {
+  min-height: 32px; box-sizing: border-box; padding: 5px 10px;
+  font: 400 14px/20px var(--tsv-font-family); color: var(--tsix-chrome-text);
+  background: var(--tsix-control-bg); border: 1px solid var(--tsix-chrome-border); border-radius: var(--tsix-chrome-radius);
+}
+[data-tsix-chat-toggle]:hover { background: var(--tsix-control-hover); }
+.tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__bottom { background: var(--tsix-chrome-bg); border-top-color: var(--tsix-chrome-border); }
+.tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__bottom .tsv-button,
+[data-tsix-view-action] { min-height: 32px; border-radius: var(--tsix-chrome-radius); }
+:is([data-tsix-chat-toggle],[data-tsix-view-action],[data-tsix-manager-open],.tsv-tool-button,.tsv-segmented-button):focus-visible { outline: 2px solid var(--tsix-chrome-accent); outline-offset: -2px; }
+/* The actual chat button stays attached to its original handler; only its host moves. */
+[data-tsix-chat-host] { position: relative; }
+[data-tsix-chat-rail] {
+  position: absolute; z-index: 3; left: 0; top: var(--tsix-chat-top,50%);
+  display: block; flex: none; width: 28px; height: 28px; min-height: 0;
+  margin: 0; padding: 0; border: 0;
+}
+[data-tsix-chat-rail] [data-tsix-chat-toggle] {
+  display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px;
+  padding: 0; font-size: 0; line-height: 0; overflow: hidden; white-space: nowrap;
+  background: var(--tsix-control-bg); color: var(--tsix-chrome-muted);
+  border: 1px solid var(--tsix-chrome-border); border-radius: var(--tsix-chrome-radius);
+}
+[data-tsix-chat-icon] { width: 22px; height: 22px; pointer-events: none; }
+[data-tsix-chat-icon] .tsv-icon-base-fill { fill: currentColor; }
+[data-tsix-chat-icon] .tsv-icon-base-stroke { stroke: currentColor; }
+[data-tsix-chat-rail] [data-tsix-chat-toggle][aria-expanded="true"] { color: var(--tsix-chrome-accent); background: var(--tsix-control-hover); }
+[data-tsix-chat-rail] [data-tsix-chat-toggle]:hover { color: var(--tsix-chrome-text); background: var(--tsix-control-hover); }
+.tsv-screenshare [data-tsix-tray-toggle] { border-radius: var(--tsix-chrome-radius); border-color: var(--tsix-chrome-border); background: var(--tsix-control-bg); color: var(--tsix-chrome-muted); }
+:root:has(:fullscreen) [data-tsix-chat-rail] { display: none; }
+/* Hide the native pin indicator without changing the stream's focus state. */
+.tsv-screenshare .screen-host-indicators > svg[name="item-pin"] { display: none !important; }

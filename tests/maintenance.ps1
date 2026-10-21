@@ -6,7 +6,7 @@ $scratch=[IO.Path]::GetFullPath($scratch)
 New-Item -ItemType Directory -Path (Join-Path $scratch 'updates') -Force | Out-Null
 $file=Join-Path $scratch 'updates\TS6-Enhanced-1.0.0-Setup.exe'
 [IO.File]::WriteAllText($file,'fixture - never executable')
-$pending=[pscustomobject]@{schema=1;version='1.0.0';path=$file;sha256=(Get-FileHash $file).Hash}
+$pending=[pscustomobject]@{schema=2;mode='next-launch';version='1.0.0';path=$file;sha256=(Get-FileHash $file).Hash}
 if((Assert-UpdateInstaller $pending $scratch) -ne $file){throw 'Valid staged installer not recognized'}
 $pending.path=Join-Path $scratch '..\escape.exe';$refused=$false
 try{Assert-UpdateInstaller $pending $scratch}catch{$refused=$true};if(!$refused){throw 'Escaping installer path was accepted'}

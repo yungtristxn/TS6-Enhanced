@@ -89,6 +89,7 @@
     const retainedToggle = record.toggle;
     if (!canToggle || document.fullscreenElement) {
       clearTray(record);
+      syncChatRail(record,active);
       return;
     }
     const nodes=new Set(state.tiles.map(t=>t.node));
@@ -117,7 +118,7 @@
     const label = collapsed ? 'Show other streams' : 'Hide other streams';
     setAttr(record.toggle,'aria-label',label);setAttr(record.toggle,'title',label);setAttr(record.toggle,'aria-expanded',!collapsed);
     const host=wrapper.parentElement.querySelector('.screenshare__global-hover-actions-wrapper:last-child');
-    if(!host){clearTray(record);return}
+    if(!host){clearTray(record);syncChatRail(record,active);return}
     if(record.toggle.parentElement!==host)host.append(record.toggle);
     const previews=state.tiles.filter(t=>t!==focused);
     const side=previews.some(t=>t.x>=focused.x+focused.w-2);
@@ -127,6 +128,42 @@
     const offset=`${Math.round(center/Math.max(1,height)*10000)/100}%`;
     if(record.toggle.style.getPropertyValue('--tsix-tray-position')!==offset)record.toggle.style.setProperty('--tsix-tray-position',offset);
     setAttr(element,trayMarker,collapsed?'collapsed':'expanded');
+    syncChatRail(record,active);
+  }
+  function clearChatRail(record){
+    record.chatResize?.disconnect();record.chatResize=null;
+    if(record.chatHost){
+      if(record.chatHostBefore===null)record.chatHost.removeAttribute('data-tsix-chat-host');
+      else record.chatHost.setAttribute('data-tsix-chat-host',record.chatHostBefore);
+      record.chatHost=null;
+    }
+  }
+  function syncChatRail(record,enabled){
+    const bar=record.chatToolbar;if(!bar)return;
+    const button=bar.firstChild,row=record.element.querySelector('.screen-grid-wrapper')?.parentElement;
+    const host=enabled&&!document.fullscreenElement?row?.querySelector(':scope > .screenshare__global-hover-actions-wrapper:last-child'):null;
+    const native=document.querySelector('svg[name="mode-chat"]');
+    if(!host||(!record.chatIcon&&!native)){
+      clearChatRail(record);bar.removeAttribute('data-tsix-chat-rail');
+      const label=button.getAttribute('aria-label');if(button.textContent!==label)button.textContent=label;
+      if(bar.parentElement!==record.element)record.element.insertBefore(bar,record.element.querySelector(':scope > .tsv-body'));
+      return;
+    }
+    if(record.chatHost!==host){
+      clearChatRail(record);record.chatHost=host;record.chatHostBefore=host.getAttribute('data-tsix-chat-host');host.setAttribute('data-tsix-chat-host','');
+      record.chatResize=new ResizeObserver(schedule);record.chatResize.observe(host);
+    }
+    if(!record.chatIcon){
+      record.chatIcon=native.cloneNode(true);record.chatIcon.setAttribute('aria-hidden','true');record.chatIcon.setAttribute('data-tsix-chat-icon','');
+      for(const n of [record.chatIcon,...record.chatIcon.querySelectorAll('[id]')])n.removeAttribute('id');
+    }
+    if(button.firstChild!==record.chatIcon)button.replaceChildren(record.chatIcon);
+    if(bar.parentElement!==host)host.append(bar);
+    if(!bar.hasAttribute('data-tsix-chat-rail'))bar.setAttribute('data-tsix-chat-rail','');
+    const toggle=record.toggle,r=host.getBoundingClientRect();
+    const y=toggle?.isConnected?toggle.getBoundingClientRect().bottom-r.top+8:r.height/2-14;
+    const top=Math.round(Math.max(4,Math.min(y,r.height-32)))+'px';
+    if(bar.style.getPropertyValue('--tsix-chat-top')!==top)bar.style.setProperty('--tsix-chat-top',top);
   }
   function update(record, enabled) {
     const {element, vm} = record;
@@ -163,9 +200,9 @@
       syncChatVisibility(record, chat, !chatVisible);
       setAttr(element,'data-tsix-chat',chatVisible?'shown':'hidden');
       const button=record.chatToolbar.firstChild,label=chatVisible?'Hide chat':'Show chat';
-      if(button.textContent!==label)button.textContent=label;
-      setAttr(button,'aria-label',label);setAttr(button,'aria-expanded',chatVisible);
-    } else { syncChatVisibility(record, null, false); record.chatToolbar?.remove(); record.chatToolbar=null; element.removeAttribute('data-tsix-chat'); }
+      if(!record.chatToolbar.hasAttribute('data-tsix-chat-rail')&&button.textContent!==label)button.textContent=label;
+      setAttr(button,'aria-label',label);setAttr(button,'title',label);setAttr(button,'aria-expanded',chatVisible);
+    } else { syncChatVisibility(record, null, false); clearChatRail(record);record.chatToolbar?.remove(); record.chatToolbar=null; element.removeAttribute('data-tsix-chat'); }
     // Native fullscreen mode changes before requestFullscreen completes.
     // Stop allocating pane heights during that transition as well.
     if (document.fullscreenElement || vm.item?.layoutMode?.kind==='fullscreen' || vm.presented) { element.removeAttribute(marker);element.removeAttribute(layoutMarker);updateTray(record, false,state);syncFocusActions(record,false,state);return; }
@@ -418,6 +455,7 @@
   }
   function release(record) {
     record.unwatch();
+    clearChatRail(record);
     clearActionDock(record);
     record.chatLayout?.dispose();
     syncChatVisibility(record, null, false);
@@ -888,7 +926,7 @@
   document.addEventListener('loadeddata',schedule,true);
   document.addEventListener('fullscreenchange',onFullscreenChange);
   window.__tsixStreams = {
-    version:'1.0.0', sync,
+    version:'1.0.4', sync,
     status: () => ({trayCollapsed,chatVisible,viewers:[...records.values()].map(r=>({stage:r.element.getAttribute(marker),savedSplit:r.savedSplit,tray:r.element.getAttribute(trayMarker)})),keyboardControls:buttons.size}),
     dispose() {
       if (document.fullscreenElement) throw Error('Exit fullscreen before removing or replacing the stream helper');

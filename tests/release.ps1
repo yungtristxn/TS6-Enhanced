@@ -10,7 +10,7 @@ $expectedFiles = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','
     'scripts/Bootstrap.ps1','scripts/Runtime.ps1','scripts/Complete-Setup.ps1','scripts/Maintenance.ps1',
     'scripts/Setup.ps1','scripts/Start-Layout.ps1','scripts/Start-Inspection.ps1',
     'scripts/Install-Persistence.ps1','scripts/Theme.ps1',
-    'tools/cdp.mjs','tools/client.mjs','tools/session.mjs','tools/appearance.mjs','tools/install-state.mjs','tools/restore.mjs','tools/updates.mjs','tools/manager.mjs','tools/manager-lock.mjs','tools/manager-runtime.js','tools/streams-runtime.js','tools/workspace-runtime.js',
+    'tools/cdp.mjs','tools/client.mjs','tools/session.mjs','tools/appearance.mjs','tools/install-state.mjs','tools/restore.mjs','tools/updates.mjs','tools/live-update.mjs','tools/manager.mjs','tools/manager-lock.mjs','tools/manager-runtime.js','tools/streams-runtime.js','tools/workspace-runtime.js',
     'theme/local.tsix.layout/package.json','theme/local.tsix.layout/layout.css','theme/local.tsix.layout/preview.svg')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::OpenRead($ArchivePath)
@@ -50,6 +50,9 @@ foreach ($line in $checksumLines) {
 if ($hashedFiles.Count -ne ($hashedFiles | Sort-Object -Unique).Count -or
     (Compare-Object ($expectedFiles | Where-Object { $_ -ne 'SHA256SUMS.txt' }) $hashedFiles)) { throw 'Missing or duplicate file checksums' }
 $artifacts = @($ArchivePath)
+$styleAsset=Join-Path (Split-Path -Parent $ArchivePath) ('TS6-Enhanced-'+$manifest.version+'-layout.css')
+if((Get-FileHash $styleAsset).Hash -ne (Get-FileHash (Join-Path $root 'theme/local.tsix.layout/layout.css')).Hash){throw 'Live stylesheet differs from the package'}
+if($packagedRelease.liveUpdate.schema -ne 1 -or $packagedRelease.liveUpdate.runtimeHash -notmatch '^[a-f0-9]{64}$'){throw 'Missing live-update compatibility fingerprint'}
 if ($Installer) {
     $directory = Split-Path -Parent $ArchivePath
     $metadata = Join-Path $directory 'release.json'

@@ -86,7 +86,7 @@ export async function restoreAppearance(c,baseline){
     }
     const available=unwrap(await c.send('Runtime.callFunctionOn',{objectId:app.objectId,returnByValue:true,arguments:[{value:baseline.appearance.user_style}],functionDeclaration:'function(theme){return !theme||!!this.getThemeForIdentifier(theme)}'})).value;
     if(!available)throw Error('The original theme is missing; restore it before uninstalling');
-    await c.evaluate('window.__tsixStreams?.dispose();window.__tsixWorkspace?.dispose()');
+    await c.evaluate('window.__tsixLiveStyles?.dispose();window.__tsixStreams?.dispose();window.__tsixWorkspace?.dispose()');
     unwrap(await c.send('Runtime.callFunctionOn',{objectId:app.objectId,arguments:[{value:baseline.appearance}],
       functionDeclaration:`function(saved){
         if(saved.user_style&&!this.getThemeForIdentifier(saved.user_style))throw Error('The original theme is missing; restore it before uninstalling');

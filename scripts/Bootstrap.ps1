@@ -1,6 +1,6 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([switch]$Uninstall, [switch]$Prepare, [switch]$RestartClient, [string]$ErrorFile)
+param([switch]$Uninstall, [switch]$Prepare, [switch]$RestartClient, [switch]$DeferredUpdate, [string]$ErrorFile)
 # Inno/Node can pass PowerShell 7 module paths into Windows PowerShell 5.1.
 # Bootstrap only uses this host's built-ins; keep incompatible modules out.
 $env:PSModulePath = [IO.Path]::Combine($PSHOME,'Modules')
@@ -22,6 +22,7 @@ try {
         Write-Host '[1/3] Checking TeamSpeak...'
         $release=Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $client=Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak'
+        if($DeferredUpdate -and (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object {$_.Path -eq (Join-Path $client 'TeamSpeak.exe')})){throw 'TeamSpeak reopened before the queued update. It was left running; retry on the next launch.'}
         if (!(Test-Path -LiteralPath (Join-Path $client 'TeamSpeak.exe'))) { throw 'Install TeamSpeak 6 for this Windows user first. Expected: %LOCALAPPDATA%\Programs\TeamSpeak. This package does not include TeamSpeak.' }
         foreach ($p in $release.supportedClient.resourceHashes.PSObject.Properties) {
             $file=Join-Path $client $p.Name
@@ -43,6 +44,7 @@ try {
         if($Prepare){$result=0;return}
         Write-Host '[3/3] Installing and activating the layout...'
         $extra=@();if($RestartClient){$extra+='-RestartClient'}
+        if($DeferredUpdate){$extra+='-DeferredUpdate'}
         if($ErrorFile){$extra+=@('-ErrorFile',$ErrorFile)}
         & $powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Complete-Setup.ps1') -NodePath $node @extra
     }

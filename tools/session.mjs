@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {activateAppearance} from './appearance.mjs';
 const i=process.argv.indexOf('--port'),port=Number(i<0?9988:process.argv[i+1]);
+const release=JSON.parse(await readFile(new URL('../release.json',import.meta.url),'utf8'));
 export async function attachSession(c,{setup=false,preserve=false,refreshTree=()=>execFileSync(process.execPath,[fileURLToPath(new URL('./client.mjs',import.meta.url)), 'refresh-tree','--allow-empty','--port',String(port)],{windowsHide:true,stdio:'pipe'})}={}) {
   // A listening CEF port is not evidence that the main app and native bridge
   // have initialized. Wait before asking the Appearance adapter to mutate it.
@@ -29,7 +30,7 @@ export async function attachSession(c,{setup=false,preserve=false,refreshTree=()
     ready=await c.evaluate(`!!document.querySelector('.tsv-window')?.__vue__?.windowLayout &&
       (${!activated} || (getComputedStyle(document.documentElement).getPropertyValue('--tsix-workspace-api').trim()==='1' &&
       getComputedStyle(document.documentElement).getPropertyValue('--tsix-stream-stage-api').trim()==='1' &&
-      getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()==='1.0.0'))`);
+      getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()===${JSON.stringify(release.themeVersion)}))`);
     if(ready)break;
     await new Promise(r=>setTimeout(r,250));
   }

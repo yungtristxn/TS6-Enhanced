@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';import {mkdtemp,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,compatible} from '../tools/updates.mjs';
+import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,compatible,canApplyStyles,downloadStyles} from '../tools/updates.mjs';
 const repo='example/layout',config={repository:repo,channel:'stable'};
 const body=Buffer.alloc(128);body.write('MZ');body.writeUInt32LE(64,60);body.writeUInt32LE(0x4550,64);body.writeUInt16LE(0x14c,68);
 const digest=b=>'sha256:'+createHash('sha256').update(b).digest('hex');
@@ -51,4 +51,22 @@ test('installer format and installed TeamSpeak resources are checked before rest
  const hashes={'html/client_ui/main.js':digest(Buffer.from('js fixture')).slice(7),'html/client_ui/main.css':digest(Buffer.from('css fixture')).slice(7)},update={manifest:{supportedClient:{resourceHashes:hashes}}};
  assert.equal(await compatible(update,root),true);await writeFile(join(root,'html/client_ui/main.js'),'client update');assert.equal(await compatible(update,root),false);
  await assert.rejects(compatible({manifest:{supportedClient:{resourceHashes:{'../outside':'a'.repeat(64)}}}},root),/Unexpected/);
+});
+
+test('live styles require the same runtime and verified self-contained CSS',async()=>{
+ const bytes=Buffer.from(':root { --tsix-layout-version: 1.1.0; }');
+ const liveUpdate={schema:1,runtimeHash:'c'.repeat(64)};
+ const metadata=Buffer.from(JSON.stringify({...manifest,liveUpdate}));
+ const cssAsset=asset('TS6-Enhanced-1.1.0-layout.css',bytes);
+ const candidate={...release,assets:[asset('release.json',metadata),release.assets[1],cssAsset]};
+ const fetcher=async url=>new Response(url.includes('api.github.com')?JSON.stringify([candidate]):url.endsWith('release.json')?metadata:bytes);
+ const update=await checkUpdate('1.0.0',config,{fetcher});
+ assert.equal(canApplyStyles({liveUpdate},update),true);
+ assert.equal(canApplyStyles({liveUpdate:{...liveUpdate,runtimeHash:'d'.repeat(64)}},update),false);
+ assert.equal(canApplyStyles({},update),false);
+ assert.equal(await downloadStyles(update,{fetcher}),bytes.toString());
+ await assert.rejects(downloadStyles(update,{fetcher:async()=>new Response('tampered')}),/SHA-256/);
+ const external=Buffer.from('@import "https://example.com/style.css";');
+ const remote={...update,stylesheet:{size:external.length,sha256:digest(external).slice(7),browser_download_url:cssAsset.browser_download_url}};
+ await assert.rejects(downloadStyles(remote,{fetcher:async()=>new Response(external)}),/external content/);
 });

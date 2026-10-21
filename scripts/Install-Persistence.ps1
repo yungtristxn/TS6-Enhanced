@@ -112,7 +112,7 @@ if ($Action -eq 'Status') {
 }
 if ($Action -eq 'Uninstall' -and (!$state -or !$state.installed)) { Write-Output 'Shortcut persistence is already absent.'; return }
 $files = @('scripts\Start-Layout.ps1','scripts\Start-Inspection.ps1','scripts\Maintenance.ps1','scripts\Runtime.ps1','scripts\Theme.ps1','scripts\Install-Persistence.ps1',
-    'release.json','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\manager.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
+    'release.json','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\live-update.mjs','tools\manager.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
     'tools\cdp.mjs','tools\client.mjs','tools\workspace-runtime.js','tools\streams-runtime.js')
 if ($Action -eq 'Install') {
     $powershell = Get-LayoutPowerShell

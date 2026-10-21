@@ -12,12 +12,28 @@
   const attributes = ['role', 'tabindex', 'aria-label', 'aria-expanded', 'title'];
   const attr=(node,key,value)=>{if(node.getAttribute(key)!==value)node.setAttribute(key,value)};
   let queued = false, disposed = false;
+  let community=null;
+  function syncCommunity(enabled){
+    const node=root.querySelector('.sidebar-pane-layout .ts-join-community .tsv-button-content');
+    if(community&&(!enabled||community.node!==node)){
+      if(community.node.isConnected)community.node.replaceChildren(...community.children);
+      community=null;
+    }
+    if(!enabled||!node||community)return;
+    const native=root.querySelector('.sidebar-pane-layout .tsv-item-action svg[name="chat-contact-add"]');
+    if(!native)return;
+    community={node,children:[...node.childNodes]};
+    const icon=native.cloneNode(true);icon.setAttribute('data-tsix-community-icon','');icon.setAttribute('aria-hidden','true');
+    for(const n of [icon,...icon.querySelectorAll('[id]')])n.removeAttribute('id');
+    node.replaceChildren(icon,document.createTextNode('Create community'));
+  }
   function schedule() { if (queued || disposed) return; queued = true; queueMicrotask(() => { queued = false; if (!disposed) sync(); }); }
   function sync() {
     if(disposed)return;
     const enabled = getComputedStyle(document.documentElement).getPropertyValue('--tsix-workspace-api').trim() === '1';
     syncTreeMetrics();
     syncControls(enabled);
+    syncCommunity(enabled);
     for (const node of enabled ? root.querySelectorAll(selector) : []) {
       if (!tracked.has(node)) {
         const before = Object.fromEntries(attributes.map(key => [key, node.getAttribute(key)]));
@@ -171,10 +187,11 @@
   const unwatch = vm.$watch('collapsedSidebar', sync);
   sync();
   window.__tsixWorkspace = {
-    version: '1.0.0',
+    version: '1.0.4',
     refresh: schedule,
     dispose() {
       disposed = true;
+      syncCommunity(false);
       observer.disconnect(); themeObserver.disconnect(); unwatch();
       for (const [node, record] of controls) releaseControl(node, record);
       document.removeEventListener('load',sync,true);

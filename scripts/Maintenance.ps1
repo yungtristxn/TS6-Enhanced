@@ -5,7 +5,7 @@ $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'Runtime.ps1')
 function Assert-UpdateInstaller($Pending,[string]$Root) {
-    if($Pending.schema -ne 1 -or $Pending.version -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$' -or $Pending.sha256 -notmatch '^[a-fA-F0-9]{64}$'){throw 'Invalid pending update receipt'}
+    if($Pending.schema -ne 2 -or $Pending.mode -ne 'next-launch' -or $Pending.version -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$' -or $Pending.sha256 -notmatch '^[a-fA-F0-9]{64}$'){throw 'Invalid pending update receipt'}
     $expected=[IO.Path]::GetFullPath((Join-Path $Root ('updates\TS6-Enhanced-'+$Pending.version+'-Setup.exe')))
     if([IO.Path]::GetFullPath($Pending.path) -cne $expected){throw 'Update installer escaped its managed location'}
     Assert-LayoutPlainPath $expected
@@ -29,7 +29,6 @@ $root=Join-Path $env:LOCALAPPDATA 'TS6-Layout'
 $client=Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
 Assert-LayoutPlainPath $root
 $operation=Enter-LayoutOperation
-$clientStopped=$false
 try {
 if($Action -eq 'Connect') {
     if(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $client }) {
@@ -41,23 +40,24 @@ if($Action -eq 'Connect') {
     return
 }
     if($Action -eq 'Update') {
+        if(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object {$_.Path -eq $client}){throw 'The update is ready for the next TeamSpeak launch. The current session was left running.'}
         $pending=Get-Content -LiteralPath (Join-Path $root 'pending-update.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $installed=Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        if($pending.fromVersion -cne $installed.version){throw 'The queued update belongs to a different installation'}
         $installer=Assert-UpdateInstaller $pending $root
         foreach($name in @('html/client_ui/main.js','html/client_ui/main.css')){
             $expected=$pending.resourceHashes.$name
             if($expected -notmatch '^[a-fA-F0-9]{64}$' -or (Get-FileHash -LiteralPath (Join-Path (Split-Path -Parent $client) $name)).Hash -ne $expected){throw 'TeamSpeak no longer matches the staged update. It was left running.'}
         }
-        Stop-LayoutClient $client
-        $clientStopped=$true
-        $job=Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -WindowStyle Hidden -PassThru
+        $job=Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TSIXDEFERRED=1' -WindowStyle Hidden -PassThru
         # Start-Process -Wait also waits for the newly reopened TeamSpeak tree.
         try{$job.WaitForExit();$installerExitCode=$job.ExitCode}finally{$job.Dispose()}
         if($installerExitCode -ne 0){
-            $state=Get-Content -LiteralPath (Join-Path $root 'persistence\state.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-            & (Join-Path $state.release 'scripts\Start-Layout.ps1') -Quiet
-            throw 'Update setup failed. The existing managed installation was reopened; see setup logs.'
+            throw 'Update setup failed. Recovery files were retained; see setup logs.'
         }
-        Remove-Item -LiteralPath (Join-Path $root 'pending-update.json')
+        $receipt=Join-Path $root 'pending-update.json'
+        $current=Get-Content -LiteralPath $receipt -Raw -Encoding UTF8 | ConvertFrom-Json
+        if($current.version -ceq $pending.version -and $current.sha256 -ceq $pending.sha256){Remove-Item -LiteralPath $receipt}
         return
     }
     # Both owned-file operations must pass before changing native preferences.
@@ -71,6 +71,8 @@ if($Action -eq 'Connect') {
     Stop-LayoutClient $client
     & (Join-Path $PSScriptRoot 'Install-Persistence.ps1') Uninstall -RepairShortcut
     & (Join-Path $PSScriptRoot 'Theme.ps1') Uninstall
+    $queued=Join-Path $root 'pending-update.json';Assert-LayoutPlainPath $queued
+    if(Test-Path -LiteralPath $queued){Remove-Item -LiteralPath $queued}
     # Keep the first-install receipt as recovery history; a future fresh install
     # captures its own baseline rather than reusing this one.
     $baseline=Join-Path $root 'before-install.json'
@@ -82,8 +84,5 @@ if($Action -eq 'Connect') {
 } catch {
     $logs=Join-Path $root 'setup-logs';New-Item -ItemType Directory -Path $logs -Force | Out-Null
     $_.Exception.Message | Set-Content -LiteralPath (Join-Path $logs 'maintenance-error.txt') -Encoding UTF8
-    if($Action -eq 'Update' -and $clientStopped -and !(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $client })){
-        Start-Process -FilePath $client -WorkingDirectory (Split-Path -Parent $client) -WindowStyle Normal | Out-Null
-    }
     throw
 } finally {Exit-LayoutOperation $operation}

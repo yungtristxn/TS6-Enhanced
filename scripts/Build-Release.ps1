@@ -28,14 +28,15 @@ $files = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.
     'scripts\Bootstrap.ps1','scripts\Runtime.ps1','scripts\Complete-Setup.ps1','scripts\Maintenance.ps1',
     'scripts\Setup.ps1','scripts\Start-Layout.ps1','scripts\Start-Inspection.ps1',
     'scripts\Install-Persistence.ps1','scripts\Theme.ps1',
-    'tools\cdp.mjs','tools\client.mjs','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\manager.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
+    'tools\cdp.mjs','tools\client.mjs','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\live-update.mjs','tools\manager.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
     'tools\streams-runtime.js','tools\workspace-runtime.js',
     'theme\local.tsix.layout\package.json','theme\local.tsix.layout\layout.css','theme\local.tsix.layout\preview.svg')
 $zipPath = Join-Path $OutputDirectory ($packageName+'.zip')
 $hashPath = $zipPath+'.sha256'
 $metadataPath=Join-Path $OutputDirectory 'release.json'
 $exe=Join-Path $OutputDirectory ('TS6-Enhanced-'+$release.version+'-Setup.exe')
-foreach($target in @($zipPath,$hashPath,$metadataPath)+$(if($Installer){@($exe,($exe+'.sha256'))}else{@()})){
+$styleAsset=Join-Path $OutputDirectory ('TS6-Enhanced-'+$release.version+'-layout.css')
+foreach($target in @($zipPath,$hashPath,$metadataPath,$styleAsset)+$(if($Installer){@($exe,($exe+'.sha256'))}else{@()})){
     if(Test-Path -LiteralPath $target){throw 'Release already exists. Use a new version or output directory; artifacts are never overwritten.'}
 }
 $stage = Join-Path $project ('.local\release-staging\'+[guid]::NewGuid().ToString('N')+'\'+$packageName)
@@ -84,11 +85,24 @@ try {
         [IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0],(Join-Path $runtimeDirectory $name))
     }
 }finally{$archive.Dispose()}
+# Live CSS is eligible only when every nonvisual runtime input is identical.
+$runtimeInputs=@(Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName | ForEach-Object {
+    $relative=$_.FullName.Substring($stage.Length+1).Replace('\','/')
+    if($relative -match '^(scripts/|tools/|runtime/|Install\.|Uninstall\.)'){
+        (Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant()+'  '+$relative
+    }
+})
+$runtimeInputs+=((Get-FileHash -LiteralPath (Join-Path $project 'installer\Setup.iss')).Hash.ToLowerInvariant()+'  installer/Setup.iss')
+$hasher=[Security.Cryptography.SHA256]::Create()
+try{$runtimeHash=([BitConverter]::ToString($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes(($runtimeInputs -join "`n"))))).Replace('-','').ToLowerInvariant()}finally{$hasher.Dispose()}
+$release | Add-Member -NotePropertyName liveUpdate -NotePropertyValue @{schema=1;runtimeHash=$runtimeHash} -Force
+$release | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stage 'release.json') -Encoding utf8
 $checksums = @(Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName | ForEach-Object {
     (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+$_.FullName.Substring($stage.Length+1).Replace('\','/')
 })
 $checksums | Set-Content -LiteralPath (Join-Path $stage 'SHA256SUMS.txt') -Encoding utf8
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $stage 'theme\local.tsix.layout\layout.css') -Destination $styleAsset
 Compress-Archive -LiteralPath $stage -DestinationPath $zipPath -CompressionLevel Optimal
 $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 ($zipHash+'  '+[IO.Path]::GetFileName($zipPath)) | Set-Content -LiteralPath $hashPath -Encoding utf8
