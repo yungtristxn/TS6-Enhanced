@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="680" viewBox="0 0 1280 680" role="img" aria-labelledby="title desc">
   <title id="title">TS6 Enhanced — more stream, less clutter</title>
-  <desc id="desc">Concept illustration of a compact channel list beside focused streams. Toolbar controls hide and show the preview tray. Native navigation and chat are omitted from this conceptual illustration.</desc>
+  <desc id="desc">TS6 Enhanced with a compact channel list, focused streams and collapsible previews.</desc>
   <defs>
     <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101926"/><stop offset="1" stop-color="#0a1019"/></linearGradient>
     <linearGradient id="stream" x2="1" y2="1"><stop stop-color="#224e65"/><stop offset="1" stop-color="#142f43"/></linearGradient>

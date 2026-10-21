@@ -22,12 +22,5 @@
     "powershellMinimumMajor": 7,
     "nodeMinimumMajor": 22,
     "automaticRuntimeSetup": true
-  },
-  "limitations": [
-    "Live fullscreen acceptance covers one incoming audio stream; multiple simultaneous live sources remain unverified.",
-    "Stream tray interactions pass synthetic browser tests; multiple live TS6 streams remain unverified.",
-    "Extended playback and active pop-out playback remain unverified.",
-    "Second-PC installation and physical Windows DPI transitions remain unverified.",
-    "Normal launch coverage is the installed per-user Start Menu shortcut; direct EXE, protocol links and existing taskbar pins bypass attachment."
-  ]
+  }
 }
