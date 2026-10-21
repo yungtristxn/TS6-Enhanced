@@ -171,7 +171,7 @@
   const unwatch = vm.$watch('collapsedSidebar', sync);
   sync();
   window.__tsixWorkspace = {
-    version: '0.9.4',
+    version: '1.0.0',
     refresh: schedule,
     dispose() {
       disposed = true;

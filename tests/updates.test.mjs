@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';import {mkdtemp,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {version,compareVersions,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,compatible} from '../tools/updates.mjs';
+import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,compatible} from '../tools/updates.mjs';
 const repo='example/layout',config={repository:repo,channel:'stable'};
 const body=Buffer.alloc(128);body.write('MZ');body.writeUInt32LE(64,60);body.writeUInt32LE(0x4550,64);body.writeUInt16LE(0x14c,68);
 const digest=b=>'sha256:'+createHash('sha256').update(b).digest('hex');
@@ -10,10 +10,12 @@ const asset=(name,bytes)=>({name,state:'uploaded',size:bytes.length,digest:diges
 const release={tag_name:'v1.1.0',draft:false,prerelease:false,published_at:'2026-10-21T10:00:00Z',assets:[asset('release.json',metadata),asset('TS6-Enhanced-1.1.0-Setup.exe',body)]};
 const fetcher=async url=>new Response(url.includes('api.github.com')?JSON.stringify([release]):url.endsWith('release.json')?metadata:body,{status:200});
 test('semantic versions order stable and numeric prereleases correctly',()=>{
+ assert.equal(displayVersion('1.0.0'),'1.0');assert.equal(displayVersion('1.0.1'),'1.0.1');assert.ok(compareVersions('1.0.0','0.10.0-preview.10')>0);
  assert.ok(compareVersions('1.10.0','1.9.9')>0);assert.ok(compareVersions('1.0.0-preview.10','1.0.0-preview.2')>0);assert.ok(compareVersions('1.0.0','1.0.0-preview.10')>0);assert.equal(compareVersions('v1.0.0','1.0.0'),0);
  for(const bad of ['latest','../1.0.0','01.2.3','1.0.0;start'])assert.throws(()=>version(bad));
 });
 test('only newer published releases in the selected channel are offered',()=>{
+ assert.equal(selectRelease([{...release,tag_name:'v1.0.0'}],'0.10.0-preview.10',{...config,channel:'preview'}).tag_name,'v1.0.0');
  const candidates=[{...release,draft:true,tag_name:'v9.0.0'},{...release,prerelease:true,tag_name:'v2.0.0-preview.1'},{...release,tag_name:'v3.0.0-dev.1'},release];
  assert.equal(selectRelease(candidates,'1.0.0',config).tag_name,'v1.1.0');assert.equal(selectRelease(candidates,'1.0.0',{...config,channel:'preview'}).tag_name,'v2.0.0-preview.1');assert.equal(selectRelease([release],'1.1.0',config),null);
 });

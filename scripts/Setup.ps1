@@ -23,16 +23,16 @@ if ($Action -eq 'Uninstall') {
 
 # Read-only preflight finishes before either installation is touched.
 if (!(Test-Path -LiteralPath (Join-Path $client 'TeamSpeak.exe'))) {
-    throw 'This preview supports the default per-user TS6 installation: %LOCALAPPDATA%\Programs\TeamSpeak.'
+    throw 'This release supports the default per-user TS6 installation: %LOCALAPPDATA%\Programs\TeamSpeak.'
 }
 foreach ($property in $release.supportedClient.resourceHashes.PSObject.Properties) {
     $path = Join-Path $client $property.Name
     if (!(Test-Path -LiteralPath $path) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $property.Value) {
-        throw "Unsupported or modified TS6 UI resources. This preview supports $($release.supportedClient.version), build $($release.supportedClient.build). Nothing was installed."
+        throw "Unsupported or modified TS6 UI resources. This release supports $($release.supportedClient.version), build $($release.supportedClient.build). Nothing was installed."
     }
 }
 if (!(Test-Path -LiteralPath $shortcut)) {
-    throw 'This preview requires the standard per-user TeamSpeak Start Menu shortcut. Custom/all-users installations need separate validation; nothing was installed.'
+    throw 'This release requires the standard per-user TeamSpeak Start Menu shortcut. Custom/all-users installations need separate validation; nothing was installed.'
 }
 & (Join-Path $PSScriptRoot 'Test-Theme.ps1') -ClientPath $client
 & $themeTool $Action -WhatIf

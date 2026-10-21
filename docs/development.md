@@ -43,6 +43,18 @@ pwsh -NoProfile -File scripts/Upload-Release.ps1
 
 Use `-Directory` for a custom build folder. Review the draft and publish it on GitHub. Builds, checks and uploads are manual. This repository configures no CI or scheduled dependency updates.
 
+## Unattended installation
+
+Run as the signed-in Windows user. Setup has no dialogs in this mode, but still restarts TeamSpeak to activate the layout:
+
+```powershell
+$installer = Start-Process '.\TS6-Enhanced-1.0.0-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+$installer.WaitForExit()
+if ($installer.ExitCode -ne 0) { throw "Setup failed with exit code $($installer.ExitCode)" }
+```
+
+Wait for the installer process itself; `Start-Process -Wait` also waits for the TeamSpeak process it opens. Exit code 0 means setup completed; failures return a nonzero code and retain logs under `%LOCALAPPDATA%\TS6-Layout\setup-logs`. `/NORESTART` prevents a Windows reboot, not the TeamSpeak restart. The uninstaller accepts the same silent flags.
+
 ## Code boundaries
 
 The theme is in `theme/`, client helpers in `tools/`, and installation code in `scripts/` and `installer/`. `release.json` defines the supported client and known limitations; `runtime-lock.json` pins runtime downloads.

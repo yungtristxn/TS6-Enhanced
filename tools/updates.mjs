@@ -16,6 +16,10 @@ export function compareVersions(a,b){
     const n=/^\d+$/.test(p),m=/^\d+$/.test(q);if(n&&m)return Math.sign(Number(p)-Number(q));if(n!==m)return n?-1:1;return p<q?-1:1;
   }return 0;
 }
+export function displayVersion(value){
+  const v=version(value);
+  return !v.pre.length&&v.core[2]===0?v.core.slice(0,2).join('.'):v.text;
+}
 export function repository(value){if(typeof value!=='string'||! /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/.test(value)||value.split('/')[1]==='..')throw Error('Invalid GitHub repository');return value}
 export function selectRelease(releases,current,config){
   repository(config.repository);version(current);

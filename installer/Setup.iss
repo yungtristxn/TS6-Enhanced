@@ -4,16 +4,21 @@
 #ifndef AppVersion
   #error AppVersion is required
 #endif
+#ifndef AppDisplayVersion
+  #define AppDisplayVersion AppVersion
+#endif
 [Setup]
 AppId={{AB06CE8F-2DB9-4F7A-96C5-A4D5874C3562}
 AppName=TS6 Enhanced
 AppVersion={#AppVersion}
+AppVerName=TS6 Enhanced {#AppDisplayVersion}
 AppPublisher=TS6 Enhanced contributors
 DefaultDirName={localappdata}\TS6-Layout\app
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableWelcomePage=yes
 DisableFinishedPage=yes
+DisableStartupPrompt=yes
 DisableReadyPage=no
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -121,7 +126,7 @@ end;
 function InitializeUninstall: Boolean;
 begin
   Result := EnterOperation;
-  if not Result then MsgBox('Another TS6 Enhanced operation is running, or its recovery path is unavailable. Finish it and retry.', mbError, MB_OK);
+  if not Result then SuppressibleMsgBox('Another TS6 Enhanced operation is running, or its recovery path is unavailable. Finish it and retry.', mbError, MB_OK, IDOK);
 end;
 
 procedure DeinitializeUninstall;

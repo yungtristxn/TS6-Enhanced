@@ -10,7 +10,7 @@ try{
  await p.setContent('<title>TS6 Enhanced maintenance fixture</title><style>body{margin:0;background:#131d2b;font:13px "Segoe UI",sans-serif}.tsv-window{height:100vh;color:#edf1fa;--tsv-font-color:#edf1fa;--tsv-font-subtitle-color:#aeb9ca;--tsv-shaded-bg:#202a3c;--tsv-header-bg:#172034}.tsv-central-toolbar{height:44px;display:flex;align-items:center;padding-left:200px;background:#172034}.native-art{display:none}</style><div class="tsv-window"><div class="tsv-central-toolbar"><button>Mic</button><button>Audio</button></div><div class="native-art">'+nativeIcon+'</div><p>TeamSpeak workspace</p></div>');
  await p.evaluate(()=>{window.requests=[];window.__tsixMaintenanceRequest=value=>requests.push(JSON.parse(value));document.querySelector('.native-art').remove()});await p.evaluate(source);
  await p.evaluate(icon=>__tsixManager.setIcon(icon),nativeIcon);
- const base={version:'0.10.0-preview.2',configured:false,legacy:true,busy:false,available:null,detail:null,message:'Updates aren’t available in this preview.'};
+ const base={version:'1.0',configured:false,legacy:true,busy:false,available:null,detail:null,message:'Updates aren’t configured.'};
  const set=patch=>p.evaluate(state=>__tsixManager.setState(state,'fixture-token'),{...base,...patch});
  const entry=p.locator('[data-tsix-manager-open]'),dialog=p.locator('#tsix-manager dialog');
  const capture=async name=>{if(!process.env.TSIX_SCREENSHOT_DIR)return;const c=await p.context().newCDPSession(p);const r=await dialog.boundingBox();const shot=await c.send('Page.captureScreenshot',{format:'png',clip:{...r,scale:1}});await writeFile(`${process.env.TSIX_SCREENSHOT_DIR}/${name}.png`,Buffer.from(shot.data,'base64'));await c.detach()};

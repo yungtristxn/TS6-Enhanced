@@ -19,6 +19,7 @@ if ($release.version -notmatch '^\d+\.\d+\.\d+(-[a-z0-9.]+)?$' -or
     throw 'Release version and channels do not agree.'
 }
 $tag = 'v'+$release.version
+$displayVersion=$release.version -replace '^(\d+\.\d+)\.0$','$1'
 $zip = Join-Path $Directory ('TS6-Enhanced-'+$release.version+'-windows-x64.zip')
 $exe = Join-Path $Directory ('TS6-Enhanced-'+$release.version+'-Setup.exe')
 & (Join-Path $project 'tests/release.ps1') -ArchivePath $zip -PackageOnly -Installer -ExpectedRepository $repository
@@ -29,7 +30,7 @@ $assets | ForEach-Object { Write-Output ([IO.Path]::GetFileName($_)) }
 if (!$PSCmdlet.ShouldProcess("github.com/$repository / $tag",'Create a draft release and upload the five validated files')) { return }
 if (!(Get-Command gh -ErrorAction SilentlyContinue)) { throw 'Install GitHub CLI and run gh auth login first.' }
 $releaseArgs = @('release','create',$tag,'--repo',"github.com/$repository",'--verify-tag','--draft',
-    '--title',('TS6 Enhanced '+$release.version),'--generate-notes')
+    '--title',('TS6 Enhanced '+$displayVersion),'--generate-notes')
 if ($release.channel -eq 'preview') { $releaseArgs += @('--prerelease','--latest=false') }
 & gh @releaseArgs @assets
 if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed. Inspect the GitHub release before retrying; existing releases and assets are not replaced.' }

@@ -65,7 +65,8 @@ Write-Output $zipPath
 Write-Output "SHA256: $zipHash"
 Copy-Item -LiteralPath (Join-Path $stage 'release.json') -Destination $metadataPath
 if($Installer){
-    & $Compiler /Qp ("/DPayload=$stage") ("/DAppVersion=$($release.version)") ("/O$OutputDirectory") (Join-Path $project 'installer\Setup.iss')
+    $displayVersion=$release.version -replace '^(\d+\.\d+)\.0$','$1'
+    & $Compiler /Qp ("/DPayload=$stage") ("/DAppVersion=$($release.version)") ("/DAppDisplayVersion=$displayVersion") ("/O$OutputDirectory") (Join-Path $project 'installer\Setup.iss')
     if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
     ((Get-FileHash -LiteralPath $exe).Hash.ToLowerInvariant()+'  '+[IO.Path]::GetFileName($exe)) | Set-Content -LiteralPath ($exe+'.sha256') -Encoding utf8
     Write-Output $exe

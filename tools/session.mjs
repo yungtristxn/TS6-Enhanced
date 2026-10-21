@@ -18,7 +18,7 @@ export async function attachSession(c,{setup=false,preserve=false,refreshTree=()
     ready=await c.evaluate(`!!document.querySelector('.tsv-window')?.__vue__?.windowLayout &&
       (${!activated} || (getComputedStyle(document.documentElement).getPropertyValue('--tsix-workspace-api').trim()==='1' &&
       getComputedStyle(document.documentElement).getPropertyValue('--tsix-stream-stage-api').trim()==='1' &&
-      getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()==='0.9.4'))`);
+      getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()==='1.0.0'))`);
     if(ready)break;
     await new Promise(r=>setTimeout(r,250));
   }

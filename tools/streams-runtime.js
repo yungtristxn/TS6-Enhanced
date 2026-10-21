@@ -888,7 +888,7 @@
   document.addEventListener('loadeddata',schedule,true);
   document.addEventListener('fullscreenchange',onFullscreenChange);
   window.__tsixStreams = {
-    version:'0.9.4', sync,
+    version:'1.0.0', sync,
     status: () => ({trayCollapsed,chatVisible,viewers:[...records.values()].map(r=>({stage:r.element.getAttribute(marker),savedSplit:r.savedSplit,tray:r.element.getAttribute(trayMarker)})),keyboardControls:buttons.size}),
     dispose() {
       if (document.fullscreenElement) throw Error('Exit fullscreen before removing or replacing the stream helper');

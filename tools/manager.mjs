@@ -6,7 +6,7 @@ import {spawn} from 'node:child_process';
 import {connect} from './cdp.mjs';
 import {atomicJSON,readJSON,captureBaseline,stateRoot,plainPath} from './install-state.mjs';
 import {claimManager} from './manager-lock.mjs';
-import {checkUpdate,compatible,stageUpdate} from './updates.mjs';
+import {checkUpdate,compatible,stageUpdate,displayVersion} from './updates.mjs';
 const root=stateRoot(),project=fileURLToPath(new URL('../',import.meta.url));
 const readyIndex=process.argv.indexOf('--ready-file'),readyFile=readyIndex<0?null:process.argv[readyIndex+1];
 const report=async value=>{if(readyFile)await atomicJSON(readyFile,value)};
@@ -23,7 +23,7 @@ try{
   const build=await c.evaluate('new Promise(r=>tsclient_internal.getClientLibVersion((e,b)=>r(e?-1:b)))');
   if(build!==release.supportedClient.build)throw Error('Unsupported TeamSpeak build; maintenance UI was not attached');
   const baseline=await captureBaseline(c);
-  let state={version:release.version,configured:!!release.updates?.repository,legacy:baseline.legacy,busy:false,available:null,detail:null,message:release.updates?.repository?'Checking for updates…':'Updates aren’t available in this preview.'};
+  let state={version:displayVersion(release.version),configured:!!release.updates?.repository,legacy:baseline.legacy,busy:false,available:null,detail:null,message:release.updates?.repository?'Checking for updates…':'Updates aren’t configured.'};
   const publish=async(patch={})=>{state={...state,...patch,busy};await c.evaluate(`window.__tsixManager?.setState(${JSON.stringify(state)},${JSON.stringify(nonce)})`)};
   const ui=await readFile(join(project,'tools/manager-runtime.js'),'utf8');
   let contextId;
@@ -43,7 +43,7 @@ try{
     try{
       update=await checkUpdate(release.version,release.updates);
       if(update&&!await compatible(update,join(process.env.LOCALAPPDATA,'Programs/TeamSpeak'))){update=null;await publish({available:null,message:'This update needs a different TeamSpeak version.'})}
-      else await publish({available:update?.version||null,message:update?`Version ${update.version} is available.`:'You’re up to date.'});
+      else await publish({available:update?displayVersion(update.version):null,message:update?`Version ${displayVersion(update.version)} is available.`:'You’re up to date.'});
     }catch(e){update=null;await publish({available:null,message:'Couldn’t check for updates. Try again.',detail:e.message})}
     finally{busy=false;await publish()}
   };

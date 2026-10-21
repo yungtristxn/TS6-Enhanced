@@ -30,7 +30,7 @@ $script=[IO.File]::ReadAllText((Join-Path $project 'installer\Setup.iss'))
 $script=$script.Replace('AB06CE8F-2DB9-4F7A-96C5-A4D5874C3562',$id).Replace('DefaultDirName={localappdata}\TS6-Layout\app',('DefaultDirName='+$installed)).Replace('TS6 Enhanced',('TSIX isolated fixture '+$id))
 $script=$script.Replace('{localappdata}\TS6-Layout\operation.lock',(Join-Path $scratch 'profile\TS6-Layout\operation.lock'))
 $iss=Join-Path $scratch 'Fixture.iss';[IO.File]::WriteAllText($iss,$script)
-& $Compiler /Q ("/DPayload=$payload") /DAppVersion=1.0.0 ("/O$output") $iss
+& $Compiler /Q ("/DPayload=$payload") /DAppVersion=1.0.0 /DAppDisplayVersion=1.0 ("/O$output") $iss
 if($LASTEXITCODE){throw 'Smoke fixture compilation failed'}
 $exe=Join-Path $output ('TS6-Enhanced-1.0.0-Setup.exe')
 function Invoke-Fixture([string]$Path){
@@ -53,6 +53,13 @@ try{
 }finally{Exit-LayoutOperation $operation;$env:LOCALAPPDATA=$previousLocalData}
 $uninstaller=Join-Path $installed 'unins000.exe'
 if(!(Test-Path -LiteralPath $uninstaller)){throw 'Uninstaller was not retained'}
+$previousLocalData=$env:LOCALAPPDATA;$env:LOCALAPPDATA=Join-Path $scratch 'profile'
+$operation=$null
+try{
+    $operation=Enter-LayoutOperation;$env:TSIX_OPERATION_TOKEN=$null
+    if((Invoke-Fixture $uninstaller) -eq 0){throw 'Unattended uninstall bypassed lifecycle exclusion'}
+    if(!(Test-Path (Join-Path $installed 'scripts\Bootstrap.ps1'))){throw 'Blocked uninstall removed installed files'}
+}finally{Exit-LayoutOperation $operation;$env:LOCALAPPDATA=$previousLocalData}
 New-Item -ItemType File -Path (Join-Path $scratch 'fail-restore') | Out-Null
 if((Invoke-Fixture $uninstaller) -eq 0){throw 'Failed restoration did not abort uninstall'}
 if(!(Test-Path -LiteralPath (Join-Path $installed 'scripts\Bootstrap.ps1')) -or !(Test-Path -LiteralPath $uninstaller)){throw 'Failed restoration deleted maintenance tools'}
