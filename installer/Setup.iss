@@ -49,6 +49,7 @@ ConfirmUninstall=Remove TS6 Enhanced and restore the saved appearance settings a
 
 [Code]
 var OperationLease: TFileStream;
+    LastSetupError: String;
 
 function AdmissionMutex(Attributes: LongWord; InitialOwner: Boolean; Name: String): THandle;
   external 'CreateMutexW@kernel32.dll stdcall';
@@ -135,12 +136,30 @@ begin
 end;
 
 function RunBootstrap(Root, Arguments: String): Boolean;
-var Code: Integer;
+var Code, I: Integer;
+    ErrorFile: String;
+    Lines: TArrayOfString;
 begin
+  LastSetupError := '';
+  ErrorFile := ExpandConstant('{tmp}\tsix-setup-error.txt');
+  DeleteFile(ErrorFile);
   Result := Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "' + Root + '\scripts\Bootstrap.ps1" ' + Arguments,
+    '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "' + Root + '\scripts\Bootstrap.ps1" ' + Arguments + ' -ErrorFile "' + ErrorFile + '"',
     Root, SW_HIDE, ewWaitUntilTerminated, Code);
   Result := Result and (Code = 0);
+  if not Result then begin
+    if LoadStringsFromFile(ErrorFile, Lines) then
+      for I := 0 to GetArrayLength(Lines) - 1 do
+        LastSetupError := LastSetupError + Lines[I] + #13#10;
+    LastSetupError := Copy(Trim(LastSetupError), 1, 1500);
+  end;
+end;
+
+function SetupFailure(Summary: String): String;
+begin
+  Result := Summary;
+  if LastSetupError <> '' then Result := Result + #13#10#13#10 + LastSetupError;
+  Result := Result + #13#10#13#10 + 'Details: %LOCALAPPDATA%\TS6-Layout\setup-logs';
 end;
 
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
@@ -158,7 +177,7 @@ begin
   end;
   ExtractTemporaryFiles('{tmp}\tsix-setup\*');
   if not RunBootstrap(ExpandConstant('{tmp}\tsix-setup'), '-Prepare') then
-    Result := 'Setup preflight failed. No theme or shortcut was changed. Details are in %LOCALAPPDATA%\TS6-Layout\setup-logs.';
+    Result := SetupFailure('Setup could not continue.');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -166,7 +185,7 @@ begin
   if CurStep = ssPostInstall then begin
     WizardForm.StatusLabel.Caption := 'Activating the layout in TeamSpeak...';
     if not RunBootstrap(ExpandConstant('{app}'), '-RestartClient') then
-      RaiseException('Layout activation did not finish. Recovery files were retained. See %LOCALAPPDATA%\TS6-Layout\setup-logs, then rerun this installer.');
+      RaiseException(SetupFailure('Automatic activation could not finish.'));
   end;
 end;
 
@@ -174,6 +193,6 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then begin
     if not RunBootstrap(ExpandConstant('{app}'), '-Uninstall') then
-      RaiseException('Settings could not be restored. Removal stopped before deleting the installed maintenance tools. See %LOCALAPPDATA%\TS6-Layout\setup-logs.');
+      RaiseException(SetupFailure('Settings could not be restored. Removal stopped; recovery files were retained.'));
   end;
 end;

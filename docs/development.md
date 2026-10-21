@@ -27,7 +27,7 @@ Files go to `dist/<version>/`. Use a new version or `-OutputDirectory` for anoth
 Run as the signed-in Windows user:
 
 ```powershell
-$installer = Start-Process '.\TS6-Enhanced-1.0.0-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+$installer = Start-Process '.\TS6-Enhanced-1.0.1-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
 $installer.WaitForExit()
 if ($installer.ExitCode -ne 0) { throw "Setup failed with exit code $($installer.ExitCode)" }
 ```

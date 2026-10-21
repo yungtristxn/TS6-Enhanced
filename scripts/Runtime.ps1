@@ -91,6 +91,15 @@ function Write-LayoutJSON([string]$Path,$Value) {
     }finally{if([IO.File]::Exists($temp)){[IO.File]::Delete($temp)}}
 }
 
+function Write-LayoutFailure([string]$Path,[string]$Message) {
+    if(!$Path){return}
+    try {
+        Assert-LayoutPlainPath $Path
+        $text=($Message -replace '\x1b\[[0-9;]*m','').Trim()
+        [IO.File]::WriteAllText($Path,$text,[Text.UTF8Encoding]::new($true))
+    }catch{Write-Warning 'Could not write the setup error summary; details remain in the setup log.'}
+}
+
 # A short mutex serializes admission; shared read handles retain the operation
 # across parent/child handoffs, including an updater waiting for Inno. Windows
 # releases handles after a crash. Only descendants with the current token join.

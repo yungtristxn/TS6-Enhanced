@@ -1,10 +1,16 @@
 // Development-only transport. No client launch, native bridge mutations or remote hosts.
 import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
 
 export function verifyListener(port) {
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw Error('Invalid port');
   const script = `$ErrorActionPreference='Stop'; $listeners=@(Get-NetTCPConnection -LocalPort ${port} -State Listen); if (!$listeners.Count) { throw 'No listener' }; $expected=Join-Path $env:LOCALAPPDATA 'Programs\\TeamSpeak\\TeamSpeak.exe'; foreach($listener in $listeners) { if($listener.LocalAddress -notin @('127.0.0.1','::1')) { throw 'Non-loopback listener refused' }; $owner=Get-CimInstance Win32_Process -Filter ('ProcessId = '+$listener.OwningProcess); if($owner.ExecutablePath -ne $expected) { throw 'Listener is not the installed TeamSpeak client' } }; 'verified'`;
-  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, stdio: 'pipe' });
+  // Node does not perform PowerShell 7's WinPSModulePath handoff. In particular,
+  // a portable PS7 install must not supply its modules to Windows PowerShell.
+  const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>key.toUpperCase()!=='PSMODULEPATH'));
+  const powershell=join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+  try {execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, stdio: 'pipe', env, timeout:30000 });}
+  catch(error){throw Error(`Could not verify TeamSpeak's local connection. ${String(error.stderr||error.message).trim()}`);}
 }
 
 export async function targets(port = 9988) {
@@ -55,8 +61,10 @@ export async function connect({ port = 9988, targetId, context = 'main' } = {}) 
     if (result.exceptionDetails) throw Error(result.exceptionDetails.text + ': ' + (result.exceptionDetails.exception?.description ?? ''));
     return result.result.value;
   };
-  const identity = await evaluate('({origin:location.origin,path:location.pathname,popup:new URLSearchParams(location.search).has("popup"),bridge:typeof tsclient_internal})');
-  if (identity.origin !== 'tsui://default' || identity.path !== '/index.html' || identity.bridge !== 'object' || identity.popup !== (context === 'popup')) { ws.close(); throw Error('TS6 document identity check failed'); }
+  try {
+    const identity = await evaluate('({origin:location.origin,path:location.pathname,popup:new URLSearchParams(location.search).has("popup"),bridge:typeof tsclient_internal})');
+    if (identity.origin !== 'tsui://default' || identity.path !== '/index.html' || identity.bridge !== 'object' || identity.popup !== (context === 'popup')) throw Error('TS6 document identity check failed');
+  } catch(error) {ws.close();failAll();throw error;}
   return { send, evaluate, on(method,callback){if(!listeners.has(method))listeners.set(method,new Set());listeners.get(method).add(callback);return()=>listeners.get(method)?.delete(callback)},
     onClose(callback){ws.addEventListener('close',callback,{once:true})},close: () => ws.close(), targetId: target.id, context: actualContext };
 }

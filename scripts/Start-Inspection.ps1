@@ -11,12 +11,13 @@ if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyCon
 # This launches the interactive TS6 client for inspection; it never terminates it.
 Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -ArgumentList "--remote-debugging-address=127.0.0.1","--remote-debugging-port=$Port" -WindowStyle Normal
 $listeners = @()
-for ($attempt = 0; $attempt -lt 20; $attempt++) {
+$deadline=[DateTime]::UtcNow.AddSeconds(60)
+while ([DateTime]::UtcNow -lt $deadline) {
     $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
     if ($listeners.Count) { break }
     Start-Sleep -Milliseconds 250
 }
-if (!$listeners.Count) { throw 'No debugger listener appeared. No connection was attempted; inspect the client manually.' }
+if (!$listeners.Count) { throw 'TeamSpeak did not finish starting within 60 seconds. Let the client finish opening, then launch its Start Menu shortcut again.' }
 foreach ($listener in $listeners) {
     if ($listener.LocalAddress -notin @('127.0.0.1','::1')) { throw 'Debugger is not loopback-only. No connection attempted. Close this inspection session manually.' }
     $owner = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $listener.OwningProcess)

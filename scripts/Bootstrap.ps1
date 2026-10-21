@@ -1,6 +1,6 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([switch]$Uninstall, [switch]$Prepare, [switch]$RestartClient)
+param([switch]$Uninstall, [switch]$Prepare, [switch]$RestartClient, [string]$ErrorFile)
 # Inno/Node can pass PowerShell 7 module paths into Windows PowerShell 5.1.
 # Bootstrap only uses this host's built-ins; keep incompatible modules out.
 $env:PSModulePath = [IO.Path]::Combine($PSHOME,'Modules')
@@ -45,12 +45,16 @@ try {
         if($Prepare){$result=0;return}
         Write-Host '[3/3] Installing and activating the layout...'
         $extra=@();if($RestartClient){$extra+='-RestartClient'}
+        if($ErrorFile){$extra+=@('-ErrorFile',$ErrorFile)}
         & $pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Complete-Setup.ps1') -NodePath $node @extra
     }
     if ($LASTEXITCODE -ne 0) { throw 'Setup did not finish. The message above explains the next step. Recovery files and logs were retained.' }
     Write-Host 'Done. You can close this window.' -ForegroundColor Green
     $result=0
 } catch {
+    if($ErrorFile -and (!(Test-Path -LiteralPath $ErrorFile) -or ![IO.File]::ReadAllText($ErrorFile).Trim())){
+        Write-LayoutFailure $ErrorFile $_.Exception.Message
+    }
     Write-Host "`nSetup needs attention: $($_.Exception.Message)" -ForegroundColor Red
     if ($log) { Write-Host "Details to share if needed: $log" }
 } finally {

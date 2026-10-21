@@ -1,10 +1,12 @@
 #requires -Version 7.0
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$NodePath,[switch]$RestartClient)
+param([Parameter(Mandatory)][string]$NodePath,[switch]$RestartClient,[string]$ErrorFile)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Runtime.ps1')
-$operation=Enter-LayoutOperation
+$operation=$null
+$phase='Preparing TeamSpeak'
 try {
+$operation=Enter-LayoutOperation
 $client=Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
 if($RestartClient -and (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $client })){
     # Keep native startup/shortcut registration out of the install transaction.
@@ -20,8 +22,13 @@ while (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.P
     }
     Start-Sleep -Seconds 1
 }
+$phase='Installing the theme and shortcut'
 & (Join-Path $PSScriptRoot 'Setup.ps1') -NodePath $NodePath -RepairShortcut 6>&1 | Out-Null
 $state=Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'TS6-Layout\persistence\state.json') -Raw | ConvertFrom-Json
+$phase='Activating TeamSpeak'
 & (Join-Path $state.release 'scripts\Start-Layout.ps1') | Out-Null
 Write-Host 'Layout activated. Use TeamSpeak from Start Menu next time. The extracted setup folder can be deleted.' -ForegroundColor Green
+}catch{
+    Write-LayoutFailure $ErrorFile ($phase+': '+$_.Exception.Message)
+    throw
 }finally{Exit-LayoutOperation $operation}

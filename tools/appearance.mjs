@@ -5,21 +5,21 @@ import {captureBaseline,ownedPreferences,validateBaseline} from './install-state
 export async function withAppearance(c,operation) {
   const group='tsix-appearance-setup';
   const unwrap=r=>{if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result;};
-  await c.evaluate(`(async()=>{
-    const build=await new Promise(r=>tsclient_internal.getClientLibVersion((e,b)=>r(e?-1:b)));
-    if(build!==1791901251)throw Error('Unsupported TS6 build; no appearance settings changed');
-    if(document.fullscreenElement)throw Error('Exit fullscreen and launch TeamSpeak from Start Menu again to finish setup');
-  })()`);
   try {
     let getter;
     for(let i=0;i<120;i++) {
       getter=unwrap(await c.send('Runtime.evaluate',{
-        expression:"document.querySelector('main')?.__vue__?.$options.computed?.appearanceSettings?.get",
+        expression:"typeof tsclient_internal!=='undefined' && typeof tsclient_internal?.getClientLibVersion==='function' && document.querySelector('main')?.__vue__?.$options.computed?.appearanceSettings?.get",
         objectGroup:group}));
       if(getter.type==='function')break;
       await new Promise(r=>setTimeout(r,250));
     }
     if(getter?.type!=='function')throw Error('TeamSpeak did not finish loading. Launch its Start Menu entry again.');
+    await c.evaluate(`(async()=>{
+      const build=await new Promise(r=>tsclient_internal.getClientLibVersion((e,b)=>r(e?-1:b)));
+      if(build!==1791901251)throw Error('Unsupported TS6 build; no appearance settings changed');
+      if(document.fullscreenElement)throw Error('Exit fullscreen and launch TeamSpeak from Start Menu again to finish setup');
+    })()`);
     const properties=await c.send('Runtime.getProperties',{objectId:getter.objectId,ownProperties:true});
     const scopes=properties.internalProperties?.find(p=>p.name==='[[Scopes]]')?.value.objectId;
     if(!scopes)throw Error('Native appearance adapter is unavailable; no settings changed');
