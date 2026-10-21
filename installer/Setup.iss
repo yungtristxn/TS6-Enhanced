@@ -12,6 +12,8 @@ AppPublisher=TS6 Enhanced contributors
 DefaultDirName={localappdata}\TS6-Layout\app
 DisableDirPage=yes
 DisableProgramGroupPage=yes
+DisableWelcomePage=yes
+DisableFinishedPage=yes
 DisableReadyPage=no
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -29,7 +31,6 @@ SetupLogging=yes
 SetupMutex=TS6CompactLayoutInstaller
 AllowCancelDuringInstall=no
 UninstallLogging=yes
-LicenseFile={#Payload}\LICENSE
 
 [Files]
 Source: "{#Payload}\*"; DestDir: "{tmp}\tsix-setup"; Flags: dontcopy recursesubdirs createallsubdirs
@@ -139,10 +140,8 @@ end;
 
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
 begin
-  Result := 'Install the layout for your Windows account.' + NewLine + NewLine +
-    'Setup prepares any missing runtimes, activates the official theme and adds update/uninstall controls inside TeamSpeak.' + NewLine + NewLine +
-    'If TeamSpeak needs to restart, current calls and streams will end. Finish them before clicking Install.' + NewLine + NewLine +
-    'Original appearance settings and the Start Menu shortcut are saved for removal. Personal TeamSpeak data is kept.';
+  Result := 'Install TS6 Enhanced for your Windows account.' + NewLine + NewLine +
+    'TeamSpeak will restart. Finish any calls or streams before clicking Install.';
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

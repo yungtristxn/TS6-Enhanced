@@ -7,12 +7,12 @@ $operation=Enter-LayoutOperation
 try {
 $client=Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
 if($RestartClient -and (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $client })){
-    & (Join-Path $PSScriptRoot 'Maintenance.ps1') Connect -Restart -RestartExisting
+    # Keep native startup/shortcut registration out of the install transaction.
+    # Start-Layout opens the client once, after theme and shortcut commits.
+    Stop-LayoutClient $client
 }
 $announced=$false
-while ((Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $client }) -and
-    !(Get-NetTCPConnection -LocalPort 9988 -State Listen -ErrorAction SilentlyContinue)) {
-    if($RestartClient){& (Join-Path $PSScriptRoot 'Maintenance.ps1') Connect -Restart;break}
+while (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $client }) {
     if (!$announced) {
         Write-Host 'Setup is not complete. Close TeamSpeak when your call is finished to continue.' -ForegroundColor Yellow
         Write-Host 'Keep this setup window open. If you close it, run setup again later.'

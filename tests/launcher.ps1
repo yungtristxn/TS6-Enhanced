@@ -52,5 +52,34 @@ function Start-Sleep {param($Seconds) throw 'Fixture ends while setup waits for 
 $waiting=$false
 try{& (Join-Path $scratch 'scripts\Complete-Setup.ps1') -NodePath (Get-Command node).Source}catch{$waiting=$_.Exception.Message.StartsWith('Fixture ends')}
 Check ($waiting -and ($messages -join ' ').Contains('Setup is not complete') -and ($messages -join ' ').Contains('Keep this setup window open')) 'Waiting setup gave advice for an installation that does not exist yet'
+# Setup must finish its file transaction while TeamSpeak is closed, including
+# when it was already running with inspection enabled. No early native launch.
+$phases=Join-Path $scratch 'setup-phases.txt'
+function Get-Process {
+    param($Name,$ErrorAction)
+    if(!(Test-Path $phases)){
+        $p=[pscustomobject]@{Path=(Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe');MainWindowHandle=1}
+        $p | Add-Member ScriptMethod CloseMainWindow { 'closed' | Set-Content $phases;return $true }
+        return $p
+    }
+}
+@'
+param($NodePath,[switch]$RepairShortcut)
+$root=Split-Path -Parent $PSScriptRoot
+$phases=Join-Path $root 'setup-phases.txt'
+if((Get-Content $phases -Raw).Trim() -ne 'closed'){throw 'TeamSpeak restarted before file installation'}
+if(!$NodePath){throw 'Setup lost the resolved runtime path'}
+'files' | Add-Content $phases
+$state=Join-Path $env:LOCALAPPDATA 'TS6-Layout\persistence\state.json'
+New-Item -ItemType Directory -Path (Split-Path -Parent $state) -Force | Out-Null
+@{release=$root} | ConvertTo-Json | Set-Content $state
+'@ | Set-Content (Join-Path $scratch 'scripts\Setup.ps1')
+@'
+$phases=Join-Path (Split-Path -Parent $PSScriptRoot) 'setup-phases.txt'
+if((Get-Content $phases) -join ',' -ne 'closed,files'){throw 'Activation preceded file installation'}
+'launched' | Add-Content $phases
+'@ | Set-Content (Join-Path $scratch 'scripts\Start-Layout.ps1')
+& (Join-Path $scratch 'scripts\Complete-Setup.ps1') -NodePath (Get-Command node).Source -RestartClient
+Check (((Get-Content $phases) -join ',') -eq 'closed,files,launched') 'Setup did not close, install, and launch in that order'
 Write-Output 'PASS: first-launch native arguments, saved completion, subsequent opt-out, failed activation retry and error details.'
 }finally{$env:LOCALAPPDATA=$previousLocalData}

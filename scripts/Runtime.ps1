@@ -125,3 +125,17 @@ function Enter-LayoutOperation {
 function Exit-LayoutOperation($Operation) {
     if($Operation){$Operation.Lease.Dispose();$env:TSIX_OPERATION_TOKEN=$Operation.Previous}
 }
+
+function Stop-LayoutClient([string]$ClientPath) {
+    $running=@(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ClientPath })
+    $windows=@($running | Where-Object { [long]$_.MainWindowHandle -ne 0 })
+    if($running.Count -and !$windows.Count){throw 'Open the TeamSpeak window, then retry. Background renderer processes were left alone.'}
+    foreach($process in $windows) {
+        if (!$process.CloseMainWindow()) { throw 'TeamSpeak could not close normally. Exit it yourself, then retry. No process was killed.' }
+    }
+    $deadline=[DateTime]::UtcNow.AddSeconds(20)
+    while(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ClientPath }) {
+        if([DateTime]::UtcNow -gt $deadline){throw 'TeamSpeak is still running. Finish its dialog or exit it yourself, then retry. No process was killed.'}
+        Start-Sleep -Milliseconds 200
+    }
+}

@@ -116,6 +116,17 @@ $refused=$false
 try { & $installer Uninstall -ShortcutPath $shortcut -StateRoot $stateRoot -RepairShortcut } catch { $refused=$true }
 Check $refused 'Repair must refuse changed execution flags'
 Check ((Get-FileHash $shortcut).Hash -eq $flagHash) 'Repair changed execution-flag edit'
+# Even an exact match must not let a contaminated managed recovery copy become
+# the native baseline during reinstall. Detect it in preflight without writes.
+$badState=Join-Path $root 'managed-original';New-Item -ItemType Directory -Path $badState | Out-Null
+$badLink=Join-Path $root 'managed-original.lnk';Copy-Item $recorded $badLink
+$badHash=(Get-FileHash $badLink).Hash
+Copy-Item $recorded (Join-Path $badState 'original-TeamSpeak.lnk')
+@{owner='ts6-layout-shortcut-v1';shortcut=$badLink;originalHash=$badHash;currentHash=$badHash;installed=$false;release=$state.release} | ConvertTo-Json | Set-Content (Join-Path $badState 'state.json')
+$refused=$false
+try{& $installer Install -ShortcutPath $badLink -StateRoot $badState -WhatIf}catch{$refused=$_.Exception.Message.Contains('managed shortcut cannot become')}
+Check $refused 'A managed original passed reinstall preflight'
+Check ((Get-FileHash $badLink).Hash -eq $badHash) 'Preflight changed the contaminated fixture'
 $collision=Join-Path $root 'foreign-state'
 New-Item -ItemType Directory -Path $collision | Out-Null
 $refused=$false

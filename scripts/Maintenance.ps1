@@ -4,19 +4,6 @@ param([ValidateSet('Update','Remove','Connect')][string]$Action, [string]$NodePa
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'Runtime.ps1')
-function Stop-LayoutClient([string]$ClientPath) {
-    $running=@(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ClientPath })
-    $windows=@($running | Where-Object { [long]$_.MainWindowHandle -ne 0 })
-    if($running.Count -and !$windows.Count){throw 'Open the TeamSpeak window, then retry. Background renderer processes were left alone.'}
-    foreach($process in $windows) {
-        if (!$process.CloseMainWindow()) { throw 'TeamSpeak could not close normally. Exit it yourself, then retry. No process was killed.' }
-    }
-    $deadline=[DateTime]::UtcNow.AddSeconds(20)
-    while(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ClientPath }) {
-        if([DateTime]::UtcNow -gt $deadline){throw 'TeamSpeak is still running. Finish its dialog or exit it yourself, then retry. No process was killed.'}
-        Start-Sleep -Milliseconds 200
-    }
-}
 function Assert-UpdateInstaller($Pending,[string]$Root) {
     if($Pending.schema -ne 1 -or $Pending.version -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$' -or $Pending.sha256 -notmatch '^[a-fA-F0-9]{64}$'){throw 'Invalid pending update receipt'}
     $expected=[IO.Path]::GetFullPath((Join-Path $Root ('updates\TS6-Enhanced-'+$Pending.version+'-Setup.exe')))

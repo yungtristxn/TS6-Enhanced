@@ -127,12 +127,16 @@ if ($Action -eq 'Install') {
         if (!(Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing launcher source: $file" }
     }
 }
-if (!$PSCmdlet.ShouldProcess($ShortcutPath, "$Action automatic layout attachment; retain byte-for-byte shortcut recovery")) { return }
-New-Item -ItemType Directory -Path $StateRoot -Force | Out-Null
 if((!$state -or !$state.installed) -and $Action -eq 'Install'){
-    $native=(New-Object -ComObject WScript.Shell).CreateShortcut($ShortcutPath)
+    # For an exact restored link, inspect the verified recovery copy instead of
+    # resolving the live Start Menu path again. A matching hash alone does not
+    # prove it native: a managed original must still be rejected.
+    $inspect=if($state -and $state.currentHash -eq $state.originalHash){$original}else{$ShortcutPath}
+    $native=(New-Object -ComObject WScript.Shell).CreateShortcut($inspect)
     if($native.Arguments -match 'Start-Layout\.ps1'){throw 'A managed shortcut cannot become the native original. Restore the verified original shortcut from recovery history first.'}
 }
+if (!$PSCmdlet.ShouldProcess($ShortcutPath, "$Action automatic layout attachment; retain byte-for-byte shortcut recovery")) { return }
+New-Item -ItemType Directory -Path $StateRoot -Force | Out-Null
 if ($state -and !$state.installed -and $Action -eq 'Install') {
     # Once removed, the native client/user owns the link again. A fresh install
     # saves that current link and keeps the preceding baseline as history.
