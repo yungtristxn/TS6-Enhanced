@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TS6 Enhanced · synthetic CSS validation</title>
+<link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/base-theme.css"><link rel="stylesheet" href="/layout.css" id="theme">
+<style>
+html,body {margin:0;width:100%;height:100%;overflow:hidden;font-family:Segoe UI,sans-serif}
+.lab-heading {height:48px;box-sizing:border-box;padding:12px 16px;background:var(--tsv-contrast-bg);display:flex;align-items:center;gap:16px}
+#viewer {height:calc(100% - 48px);width:100%}
+#full-area {min-height:0}
+.lab-video {width:100%;height:100%;background:linear-gradient(135deg,#182f42,#31526a);display:flex;align-items:center;justify-content:center;color:white}
+.lab-chat {height:100%;min-height:140px;background:var(--tsv-bg);display:flex;flex-direction:column}
+.lab-messages {flex:1;min-height:0;overflow:auto;padding:16px}
+.lab-compose {min-height:48px;padding:12px;box-sizing:border-box;display:flex;gap:8px}
+.lab-compose input {width:100%;min-width:0;background:var(--tsv-contrast-bg);color:var(--tsv-font-color);border:1px solid var(--tsv-tint);padding:8px}
+.lab-divider {height:8px;flex:none}
+.lab-tile-controls {display:flex;position:absolute;bottom:0;left:0;right:0;height:32px!important;align-items:center;justify-content:space-around}
+.lab-tile-controls button {font:inherit;color:var(--tsv-font-color);background:var(--tsv-contrast-bg);border:none;padding:4px;cursor:pointer}
+.lab-note {padding:8px 16px;color:var(--tsv-font-subtitle-color)}
+</style></head><body>
+<header class="lab-heading"><strong>Synthetic CSS lab</strong><span>No live video; geometry and focus checks only</span></header>
+<div id="viewer" class="tsv-view tsv-screenshare tsv-flex-grow" data-v-0e1b9834>
+ <div class="tsv-body tsv-view tsv-flex-column" data-v-0e1b9834>
+  <div id="full-area" class="tsv-flex-column tsv-scroll-area-v tsv-flex-grow" data-v-0e1b9834>
+   <div id="stream-region" class="tsv-flex" data-v-0e1b9834>
+    <div class="screenshare__global-hover-actions-wrapper tsv-flex-column tsv-flex-end" data-v-0e1b9834><div style="width:var(--tsv-icon-size)"></div></div>
+    <div class="screen-grid-wrapper tsv-flex-grow" data-v-0e1b9834>
+     <div id="grid" class="screen-grid" data-v-0e1b9834>
+      <div id="hero" class="screen-video-wrapper" data-v-0e1b9834>
+       <div class="video-stream tsv-flex-column" data-v-e8f748aa style="width:100%;height:100%">
+        <div class="lab-video">Synthetic 16:9 stream</div>
+        <div class="screen-overlay" data-v-e8f748aa>
+         <div class="screen-overlay__bottom lab-tile-controls" data-v-e8f748aa>
+          <button class="tsv-button" id="mute">Mute</button><button class="tsv-button" id="fullscreen">Fullscreen</button><button class="tsv-button" id="popout">Pop out</button>
+         </div>
+        </div>
+       </div>
+      </div>
+      <div id="participant" class="screen-small-bar" data-v-0e1b9834><div class="screen-small-bar__content" data-v-0e1b9834><div class="screen-small-bar__client tsv-flex tsv-pad-h-small show-outline" data-v-0e1b9834><span class="ts-server-tree-item-text">Participant tile</span></div></div></div>
+     </div>
+    </div>
+    <div class="screenshare__global-hover-actions-wrapper tsv-flex-column" data-v-0e1b9834><div style="width:var(--tsv-icon-size)"></div></div>
+   </div>
+   <div class="tsv-mar-t-small lab-divider" style="position:relative" data-v-0e1b9834></div>
+   <div id="chat" class="ts-chat-container tsv-view ts-chat-view small-chat is-detailed tsv-pad-t lab-chat" data-v-0e1b9834>
+    <div class="lab-messages" id="messages"><strong>Chat returns when the stream closes</strong><p>Chat and its divider collapse while a stream tile is displayed, at every pane width.</p><p>This fixture uses a simplified measuring loop. It does not prove native playback, pagination or pop-out behavior.</p></div>
+    <div class="lab-compose"><input aria-label="Synthetic chat draft" placeholder="Local draft only; never sent"></div>
+   </div>
+  </div>
+ </div>
+</div>
+<script>
+// Match the observed width source and 66% default height cap, not TS6's full
+// stream arranger. Native playback and real participant layouts need live QA.
+const fullArea=document.getElementById('full-area'),grid=document.getElementById('grid'),hero=document.getElementById('hero'),participant=document.getElementById('participant');
+const layout=()=>{const w=fullArea.clientWidth,h=fullArea.clientHeight,rail=44;const vw=Math.max(80,Math.min(w-rail-16,(h*.66-64)*16/9)),vh=vw*9/16;hero.style.cssText=`--grid-x:8px;--grid-y:8px;--grid-w:${vw}px;--grid-h:${vh}px`;participant.style.cssText=`height:32px;width:${Math.min(vw,240)}px;transform:translate(8px,${vh+24}px)`;grid.style.height=`${vh+64}px`;window.labMeasurement={w,h,vw,vh};};
+new ResizeObserver(layout).observe(fullArea);
+document.getElementById('fullscreen').onclick=()=>document.querySelector('.video-stream').requestFullscreen();
+document.getElementById('mute').onclick=e=>e.target.textContent=e.target.textContent==='Mute'?'Unmute':'Mute';
+document.getElementById('popout').onclick=()=>document.getElementById('messages').append(' Pop-out is a native-client check, not simulated here.');
+const streamRegion=document.getElementById('stream-region'),divider=document.querySelector('.lab-divider');
+window.labSetStreamVisible=visible=>{if(visible)fullArea.prepend(streamRegion,divider);else {streamRegion.remove();divider.remove();}};
+window.labReport=()=>{const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}};const chat=document.getElementById('chat');return {viewport:{w:innerWidth,h:innerHeight,dpr:devicePixelRatio},measurement:window.labMeasurement,viewer:rect(document.getElementById('viewer')),fullArea:rect(fullArea),hero:rect(hero),chat:rect(chat),input:rect(document.querySelector('input')),chatVisible:!!chat.getClientRects().length,dividerVisible:!!divider.getClientRects().length,overflow:document.documentElement.scrollWidth>innerWidth,controls:hero.isConnected?getComputedStyle(hero.querySelector('.screen-overlay__bottom')).opacity:null};};
+</script></body></html>

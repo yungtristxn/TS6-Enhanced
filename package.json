@@ -1,0 +1,17 @@
+{
+  "name": "ts6-enhanced-dev",
+  "private": true,
+  "description": "Development checks for TS6 Enhanced; no npm packages are shipped to users.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Core",
+    "test:browser": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Browser",
+    "test:native": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Native",
+    "test:installer": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Installer"
+  },
+  "devDependencies": {
+    "playwright": "1.60.0"
+  }
+}

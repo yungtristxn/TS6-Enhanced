@@ -1,0 +1,15 @@
+/.local/
+/node_modules/
+/dist/
+/playwright-report/
+/test-results/
+/coverage/
+*.pfx
+*.p12
+*.log
+*.db
+*.db-*
+.env
+.env.*
+Thumbs.db
+.DS_Store

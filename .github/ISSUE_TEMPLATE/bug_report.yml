@@ -1,0 +1,22 @@
+name: Bug report
+description: Report a problem with the layout, installer or updater.
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include layout version, TeamSpeak version/build, Windows version and how you launched TeamSpeak.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: What happened?
+      description: Give the steps, the expected result and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Optional evidence
+      description: Add relevant error text or a cropped screenshot. Remove usernames, server addresses, chat content and personal paths. Never attach your TeamSpeak profile or identity files.

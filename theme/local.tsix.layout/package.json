@@ -1,0 +1,23 @@
+{
+  "name": "TS6 Enhanced",
+  "description": "Native navigation, compact rows, bounded unopened previews, and focused streams with accessible chat and 300% volume. Built on the official TS6 theme loader with optional layout helpers.",
+  "version": "0.9.4",
+  "identifier": "local.tsix.layout",
+  "engines": {
+    "teamspeak": 1
+  },
+  "repository": "https://example.invalid/ts6-enhanced-local-only",
+  "author": "TS6 Enhanced contributors",
+  "license": "MIT",
+  "image": "preview.svg",
+  "content": {
+    "themes": [
+      {
+        "name": "TS6 Enhanced",
+        "source": "layout.css",
+        "image": "preview.svg",
+        "apiVersion": 1
+      }
+    ]
+  }
+}
