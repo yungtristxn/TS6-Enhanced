@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="680" viewBox="0 0 1280 680" role="img" aria-labelledby="title desc">
+  <title id="title">TS6 Enhanced — more stream, less clutter</title>
+  <desc id="desc">Concept illustration of a compact channel list beside focused streams. Toolbar controls hide and show the preview tray. Native navigation and chat are omitted from this conceptual illustration.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101926"/><stop offset="1" stop-color="#0a1019"/></linearGradient>
+    <linearGradient id="stream" x2="1" y2="1"><stop stop-color="#224e65"/><stop offset="1" stop-color="#142f43"/></linearGradient>
+  </defs>
+  <rect width="1280" height="680" rx="20" fill="url(#bg)"/>
+  <g font-family="Segoe UI, sans-serif">
+    <text x="48" y="57" fill="#75cde8" font-size="15" font-weight="600" letter-spacing="2">TS6 ENHANCED</text>
+    <text x="48" y="116" fill="#edf3fa" font-size="42" font-weight="600">More stream. Less clutter.</text>
+    <text x="48" y="151" fill="#94a5bb" font-size="19">Your channel stays close. Your stream gets the room.</text>
+    <text x="48" y="204" fill="#c9d4e3" font-size="14" font-weight="600" letter-spacing="1">KEEP THE ROOM IN VIEW</text>
+    <text x="704" y="204" fill="#c9d4e3" font-size="14" font-weight="600" letter-spacing="1">FOLD AWAY THE DISTRACTIONS</text>
+    <rect x="48" y="226" width="528" height="342" rx="10" fill="#151f2c" stroke="#344354"/>
+    <rect x="704" y="226" width="528" height="342" rx="10" fill="#151f2c" stroke="#344354"/>
+    <g fill="#1c2939"><rect x="49" y="227" width="118" height="340" rx="10"/><rect x="705" y="227" width="118" height="340" rx="10"/></g>
+    <g fill="#aab8cb" font-size="12"><text x="65" y="253">Your channel</text><text x="721" y="253">Your channel</text></g>
+    <g fill="#536780">
+      <rect x="67" y="278" width="77" height="6" rx="3"/><rect x="79" y="302" width="61" height="6" rx="3"/><rect x="79" y="326" width="48" height="6" rx="3"/><rect x="67" y="370" width="77" height="6" rx="3"/><rect x="79" y="394" width="61" height="6" rx="3"/>
+      <rect x="723" y="278" width="77" height="6" rx="3"/><rect x="735" y="302" width="61" height="6" rx="3"/><rect x="735" y="326" width="48" height="6" rx="3"/><rect x="723" y="370" width="77" height="6" rx="3"/><rect x="735" y="394" width="61" height="6" rx="3"/>
+    </g>
+    <g fill="#75cde8"><circle cx="70" cy="305" r="3"/><circle cx="726" cy="305" r="3"/></g>
+    <rect x="182" y="242" width="378" height="200" rx="6" fill="url(#stream)"/>
+    <rect x="838" y="242" width="378" height="286" rx="6" fill="url(#stream)"/>
+    <g fill="#75cde8"><path d="M358 315v42l32-21z"/><path d="M1014 347v48l37-24z"/></g>
+    <g fill="#203244"><rect x="182" y="417" width="378" height="25" rx="4"/><rect x="838" y="503" width="378" height="25" rx="4"/></g>
+    <g fill="#d6e4ee" font-size="11"><text x="194" y="434">Focused stream</text><text x="850" y="520">Focused stream</text></g>
+    <rect x="182" y="478" width="181" height="73" rx="5" fill="#314a46"/>
+    <rect x="379" y="478" width="181" height="73" rx="5" fill="#3f3856"/>
+    <g fill="#cad5e0" font-size="11"><text x="195" y="535">Stream 2</text><text x="392" y="535">Stream 3</text></g>
+    <g fill="#202e40" stroke="#75cde8"><rect x="353" y="449" width="36" height="22" rx="5"/><rect x="1009" y="536" width="36" height="22" rx="5"/></g>
+    <g fill="none" stroke="#75cde8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m367 458 4 4 4-4"/><path d="m1023 549 4-4 4 4"/></g>
+    <path d="M613 398h52m-9-9 9 9-9 9" fill="none" stroke="#64778e" stroke-width="2"/>
+    <text x="48" y="614" fill="#b5c4d7" font-size="16">Compact channels</text><text x="270" y="614" fill="#b5c4d7" font-size="16">Full-height streams</text><text x="507" y="614" fill="#b5c4d7" font-size="16">One-click focus</text>
+    <text x="48" y="649" fill="#74869e" font-size="12">Layout illustration · not a client screenshot · independent community project</text>
+  </g>
+</svg>

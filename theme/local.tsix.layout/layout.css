@@ -1,0 +1,450 @@
+/* TS6 beta5 / 1791901251. Native components retain state and ownership.
+ * Shared root metrics feed both CSS and the native tree virtualizer. */
+:root {
+  --tsix-layout-version: 0.9.4;
+  --tsix-workspace-api: 1;
+  --tsix-stream-stage-api: 1;
+  --tsix-broadcast-api: 1;
+  --tsix-unit: 15px;
+  --tsix-row: 30px;
+  --tsix-detailed-row: 44px;
+  --channel-height: calc(var(--tsix-row) - 4px) !important;
+  --channel-spacing: 4px !important;
+  --ts-tree-channel-height-default: var(--tsix-row) !important;
+  --ts-tree-spacer-height-default: var(--tsix-row) !important;
+  --ts-tree-client-height-compact: var(--tsix-row) !important;
+  --ts-tree-client-height-default: var(--tsix-detailed-row) !important;
+}
+:root:has(.tsv-window-scale-small) { --tsix-unit: 14px; --tsix-row: 28px; --tsix-detailed-row: 40px; }
+:root:has(.tsv-window-scale-large) { --tsix-unit: 16px; --tsix-row: 34px; --tsix-detailed-row: 48px; }
+.tsv-window {
+  --tsix-control-height: calc(var(--tsix-unit) * 2.4);
+  --tsix-stage-inset: 6px;
+  --tsix-text-secondary: color-mix(in srgb, var(--tsv-font-color) 76%, var(--tsv-header-bg));
+  --tsix-focus: color-mix(in srgb, var(--tsv-tint) 65%, var(--tsv-font-color));
+}
+.main-pane-layout > .tsv-body { background: var(--tsv-shaded-bg); }
+.tsv-activity-detail > .tsv-body { background: var(--tsv-header-bg); }
+.ts-server-tree-wrapper { --tsv-servertree-bg-gradient: var(--tsv-shaded-bg); --ts-tree-channel-bg-start: transparent; --ts-tree-channel-bg-end: transparent; --tsv-padding-v-minimal: 2px; --tsv-border-radius: 4px; --tsv-border-radius-large: 4px; --tsv-border-radius-pill: 4px; }
+.ts-server-tree-item-leaf.tsv-active .tsv-item-highlight { box-shadow: inset 2px 0 var(--tsv-tint); border-radius: 4px; }
+.ts-server-tree-channel-info,.ts-server-tree-client-info { margin-top: 2px; margin-bottom: 2px; }
+.ts-server-tree-scroller:focus-visible,.ts-server-tree-item-leaf:focus-visible,[data-tsix-keyboard]:focus-visible { outline: 2px solid var(--tsix-focus) !important; outline-offset: -2px; }
+
+/* Native sidebar, search, bookmarks, voice toolbar and panel splitters stay
+ * in normal flow. Only density and accessible target sizes are adjusted. */
+.ts-server-header { --tsv-icon-size-xlarge: 32px; }
+.ts-server-header .tsv-view-banner { min-height: 48px; margin: 4px 8px; padding: 6px 8px; }
+.main-pane-layout .tsv-central-toolbar .tsv-tool-button { min-height: 30px; min-width: 30px; }
+.main-pane-layout .tsv-tool-button-context-menu-toggle { min-height: 24px; min-width: 24px; }
+.tsv-activity-detail .tsv-segmented-button { min-height: 30px; min-width: 30px; }
+.tsv-activity-detail { min-width: 0; }
+.ts-chat-container { container-type: inline-size; }
+.ts-chat-message-system-body.compact .ts-chat-message-system-body-contents { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.ts-chat-message-system-body.compact .ts-chat-message-system-time { flex: 0 0 auto; margin-left: 12px; }
+@container (max-width: 520px) {
+  .ts-chat-message-system-body.compact { flex-wrap: wrap; row-gap: 2px; }
+  .ts-chat-message-system-body.compact .ts-chat-message-system-body-contents { flex: 1 1 100%; }
+  .ts-chat-message-system-body.compact .ts-chat-message-system-time { margin-left: 0; }
+}
+
+/* Outbound state stays in the middle column above Start Stream, without
+ * resizing native panes or covering the video and chat workspace. */
+[data-tsix-broadcast-bar] {
+  --tsix-live-color: #ff7a86;
+  position: absolute;
+  left: 8px;
+  bottom: var(--tsix-broadcast-bottom, 8px);
+  width: max-content;
+  max-width: calc(100% - 16px);
+  height: 32px;
+  box-sizing: border-box;
+  z-index: 6;
+  pointer-events: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 2px 6px 2px 8px;
+  color: var(--tsv-font-color);
+  background: var(--tsv-shaded-bg);
+  border: 1px solid var(--tsv-separation-border-color);
+  border-left: 3px solid var(--tsix-live-color);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px #0003;
+  -webkit-app-region: no-drag;
+}
+[data-tsix-broadcast-bar][data-state="paused"] { --tsix-live-color: #efc575; }
+[data-tsix-broadcast-control]:focus-visible,
+[data-tsix-broadcast-control] [role="button"]:focus-visible {
+  outline: 2px solid var(--tsv-tint);
+  outline-offset: -2px;
+}
+[data-tsix-broadcast-state] {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  max-width: none;
+  white-space: nowrap;
+  line-height: 16px;
+  color: var(--tsix-live-color);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .25px;
+}
+[data-tsix-broadcast-state]::before { content: '●'; margin-right: 5px; }
+[data-tsix-viewer-toggle] {
+  pointer-events: auto;
+  min-width: 0;
+  flex: 0 1 auto;
+  height: 26px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  color: inherit;
+  font: inherit;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+[data-tsix-viewer-toggle]:hover { background: var(--tsv-header-bg); }
+[data-tsix-viewer-toggle]:focus-visible { outline: 2px solid var(--tsv-tint); outline-offset: 1px; }
+[data-tsix-viewer-count] { font-size: 12px; white-space: nowrap; }
+/* Names and avatars remain in the disclosure; the idle badge stays compact. */
+[data-tsix-viewer-icons] { display: none; }
+[data-tsix-viewer-icon] {
+  position: relative;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+  color: #e0f0ff;
+  background: #354c69;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+[data-tsix-viewer-icon] img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+[data-tsix-viewer-list] {
+  pointer-events: auto;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: -1px;
+  box-sizing: border-box;
+  width: min(360px, calc(var(--tsix-broadcast-column-width, 100vw) - 16px));
+  max-height: min(300px, calc(100vh - var(--tsix-broadcast-bottom, 8px) - 52px));
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--tsv-separation-border-color);
+  border-radius: 6px;
+  background: var(--tsv-shaded-bg);
+  box-shadow: 0 6px 24px #0006;
+  font-size: 12px;
+}
+[data-tsix-viewer-list][hidden] { display: none; }
+[data-tsix-viewer-list] ul { padding: 0; margin: 8px 0 0; list-style: none; }
+[data-tsix-viewer-list] li { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+[data-tsix-viewer-list] li > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-tsix-broadcast-bar][data-fullscreen] { position: fixed; top: 12px; bottom: auto; left: auto; right: 12px; max-width: calc(100% - 24px); }
+[data-tsix-broadcast-bar][data-fullscreen] [data-tsix-viewer-list] { top: calc(100% + 6px); bottom: auto; left: auto; right: -1px; width: min(360px, calc(100vw - 24px)); max-height: min(300px, calc(100vh - 64px)); }
+
+/* Let the native viewer measure the entire available pane. */
+.tsv-screenshare {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Keep names and activity outlines; do not change JS-assigned tile geometry. */
+.tsv-screenshare .screen-small-bar__client {
+  padding-left: 8px;
+  padding-right: 8px;
+  border-radius: 4px;
+}
+
+/* Keep the native grid/focused-stream arranger, speaking outlines and labels. */
+.tsv-screenshare .video-stream {
+  --tsv-video-border-radius: 4px;
+  container-type: inline-size;
+}
+.tsv-screenshare .video-stream:not(:fullscreen) { --bar-inset: 4px; }
+.tsv-screenshare .video-stream .screen-overlay:not(.is-fullscreen) { inset: 0; width: auto; height: auto; padding: 0; box-sizing: border-box; }
+
+/* One frame for available, joining and playing streams. Chat allocation is
+ * owned by the viewer, so filling this stage cannot cover the composer. */
+[data-tsix-stream-region] { flex: 0 0 auto; min-width: 0; min-height: 0; }
+[data-tsix-stream-row] { position: relative; min-width: 0; }
+.tsv-screenshare:is([data-tsix-stream-layout="single"], [data-tsix-stream-tray="collapsed"]) .screen-grid > :where(.screen-video-wrapper, .screen-tile-wrapper:has(> .video-stream)) {
+  width: 100%; height: 100%; transform: none; padding: var(--tsix-stage-inset);
+}
+.tsv-screenshare[data-tsix-stream-stage] :is(.screen-video-wrapper, .screen-tile-wrapper:not(.screen-tile-wrapper--pip)) > .video-stream:not(.is-fullscreen) {
+  display: block; width: 100%; height: 100%; max-height: 100%; box-sizing: border-box; aspect-ratio: auto; margin: 0;
+  background: var(--tsv-contrast-strong-bg);
+}
+.tsv-screenshare[data-tsix-stream-stage] .video-stream > .stream-preview { width: 100%; height: 100%; min-width: 0; }
+.tsv-screenshare[data-tsix-stream-stage] .video-stream:has(> [data-tsix-stream-footer]) > .stream-preview { height: calc(100% - var(--tsix-control-height)); }
+.tsv-screenshare[data-tsix-stream-stage] .stream-preview__static-bg { object-fit: cover; }
+.tsv-screenshare[data-tsix-stream-stage] :is(.stream-preview__avatar, .stream-preview__join) { width: clamp(64px, 18cqw, 160px); max-width: 40%; }
+.tsv-screenshare[data-tsix-stream-stage] .stream-preview.is-joinable:has([data-tsix-preview-join]) .stream-preview__join,
+.tsv-screenshare[data-tsix-stream-stage] .video-stream:has(> .stream-preview.is-joinable) > .screen-overlay { display: none; }
+[data-tsix-preview-join] {
+  flex: 0 0 auto; min-height: 36px; margin-top: 16px; padding: 6px 16px;
+  border: 1px solid var(--tsv-tint); border-radius: 6px; font: inherit;
+  background: var(--tsv-tint); color: var(--tsv-contrast-strong-bg); cursor: pointer;
+}
+[data-tsix-preview-join]:hover { filter: brightness(1.12); }
+[data-tsix-preview-join]:focus-visible { outline: 2px solid var(--tsv-font-color); outline-offset: 3px; }
+.tsv-screenshare[data-tsix-stream-stage] :is(.screen-video-wrapper, .screen-tile-wrapper:not(.screen-tile-wrapper--pip)) > .video-stream:has(> video):not(.is-fullscreen) > video.video {
+  display: block; width: 100%; height: calc(100% - var(--tsix-control-height)); margin: 0; object-fit: contain;
+}
+.tsv-screenshare[data-tsix-stream-stage] :is(.screen-video-wrapper, .screen-tile-wrapper:not(.screen-tile-wrapper--pip)) > .video-stream:has(> video):not(.is-fullscreen) .screen-overlay {
+  inset: 0; width: 100%; height: 100%; padding: 0; box-sizing: border-box; flex-direction: column; align-items: stretch; justify-content: flex-end;
+}
+.tsv-screenshare[data-tsix-stream-stage] :is(.screen-video-wrapper, .screen-tile-wrapper:not(.screen-tile-wrapper--pip)) > .video-stream:has(> video):not(.is-fullscreen) .screen-overlay__bottom {
+  position: relative; left: 0; right: 0; bottom: 0; width: 100%; opacity: 1; transform: none; transition: none; border-radius: 0;
+  border-top: 1px solid var(--tsv-separation-border-color); box-sizing: border-box; padding: 0 6px; backdrop-filter: none; background: var(--tsv-header-bg);
+}
+.tsv-screenshare[data-tsix-stream-stage] :is(.screen-video-wrapper, .screen-tile-wrapper:not(.screen-tile-wrapper--pip)) > .video-stream:has(> video):not(.is-fullscreen) .always-visible-overlay {
+  bottom: calc(var(--tsix-control-height) + 4px);
+}
+.tsv-screenshare[data-tsix-stream-stage] .screen-grid-wrapper { min-width: 0; }
+.tsv-screenshare[data-tsix-stream-stage] .video-stream:not(:fullscreen) .screen-overlay__bottom {
+  height: var(--tsix-control-height); min-height: var(--tsix-control-height);
+}
+.tsv-screenshare[data-tsix-stream-stage] .screen-overlay__bottom .tsv-button { min-width: 30px; min-height: 30px; }
+/* Native Vue nodes retain ownership; the stream helper exposes their actions
+ * in the bottom strip. The side rails remain only for pagination/previews. */
+.tsv-screenshare .screenshare__global-hover-actions { transform: none; margin-left: 0; }
+.tsv-screenshare .screenshare__global-hover-actions .tsv-button { width: 32px; min-width: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+.tsv-screenshare .ts-stream-view-settings { position: relative; }
+.tsv-screenshare .ts-stream-view-settings .tsv-badge-count { pointer-events: none; }
+.tsv-screenshare [data-tsix-source-actions] { display: none; }
+.tsv-screenshare[data-tsix-stream-stage] [data-tsix-stream-row] > .screenshare__global-hover-actions-wrapper {
+  flex: 0 0 32px; width: 32px; min-width: 32px; box-sizing: border-box;
+}
+[data-tsix-stream-footer] {
+  display: flex; align-items: center; justify-content: flex-end; box-sizing: border-box;
+  height: var(--tsix-control-height); min-height: var(--tsix-control-height); padding: 0 6px;
+  background: var(--tsv-header-bg); border-top: 1px solid var(--tsv-separation-border-color);
+}
+[data-tsix-stream-footer][data-tsix-footer-grid] { margin: 0 38px; }
+.tsv-screenshare .screen-overlay__bottom > .tsv-button,
+[data-tsix-view-action] {
+  flex: 0 0 32px; width: 32px; height: 32px; min-width: 32px; min-height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; padding: 0; margin: 0; border: 0; border-radius: 4px;
+}
+[data-tsix-view-actions] { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+[data-tsix-view-action] { background: transparent; color: var(--tsv-font-color); cursor: pointer; }
+[data-tsix-view-action] > svg { width: 22px; height: 22px; flex: 0 0 22px; pointer-events: none; }
+[data-tsix-view-action]:hover { background: var(--tsv-contrast-strong-bg); }
+[data-tsix-view-action]:focus-visible { outline: 2px solid var(--tsv-tint); outline-offset: -2px; }
+[data-tsix-view-action]:disabled { opacity: .45; cursor: default; }
+.tsv-screenshare .screen-overlay__bottom { align-items: center; min-width: 0; }
+.tsv-screenshare .screen-overlay__bottom > .tsv-flex-grow { min-width: 0; }
+
+/* Incoming audio uses a helper range through 300% (native session gain for
+ * TS6 tracks, Web Audio for standard audio tracks). The native animation
+ * otherwise grows a zero-width slider inside a tiny capped container. Keep
+ * the track visible and let it shrink with a preview tile, never under tools. */
+.tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__hero-actions__action-volume-wrapper {
+  flex: 1 1 160px;
+  min-width: 82px;
+  max-width: 180px;
+  align-items: center;
+  gap: 4px;
+  transform: none;
+}
+.tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__hero-actions__action-volume-wrapper > .tsv-button {
+  flex: 0 0 30px;
+  transform: none;
+}
+.tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__hero-actions__action-volume {
+  flex: 1 1 0;
+  min-width: 40px;
+  width: auto;
+  padding: 0 4px;
+  box-sizing: border-box;
+  align-items: center;
+  transform: none;
+}
+.tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__hero-actions__action-volume-slider {
+  animation: none !important;
+  opacity: 1;
+  transform: none;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+.tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__hero-actions__action-volume-slider.ts-slider {
+  height: 32px;
+  min-width: 0;
+}
+/* Keep the original slider measurable, hidden out of flow while the custom
+ * range owns input. Native component observers can retain valid dimensions. */
+.tsv-screenshare .screen-overlay__hero-actions__action-volume { position: relative; }
+.tsv-screenshare [data-tsix-native-volume] { position: absolute !important; left: 0; top: 0; visibility: hidden !important; pointer-events: none !important; }
+.tsv-screenshare [data-tsix-volume-control] {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+}
+.tsv-screenshare [data-tsix-volume-control] input[type="range"] {
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 40px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  accent-color: #8faaff;
+  cursor: pointer;
+}
+.tsv-screenshare [data-tsix-volume-control] input:focus-visible {
+  outline: 2px solid #8faaff;
+  outline-offset: 2px;
+}
+.tsv-screenshare [data-tsix-volume-control] output {
+  flex: 0 0 4ch;
+  font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tsv-screenshare .video-stream:not(:fullscreen) .always-visible-overlay { bottom: calc(var(--tsix-control-height) + 4px); }
+@container (max-width: 300px) {
+  .tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__bottom { padding-left: 4px; padding-right: 4px; }
+  .tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__hero-actions__action-volume-wrapper { flex: 1 1 82px; min-width: 82px; }
+  .tsv-screenshare [data-tsix-volume-control] output { display: none; }
+}
+@container (max-width: 200px) {
+  .tsv-screenshare [data-tsix-volume-control] output { display: none; }
+}
+@container (max-width: 220px) {
+  .tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__bottom { padding-left: 4px; padding-right: 4px; }
+  .tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__bottom .tsv-button { width: 24px; min-width: 24px; min-height: 24px; flex: 0 0 24px; }
+  .tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__hero-actions__action-volume-wrapper { min-width: 24px; max-width: 32px; flex: 0 0 24px; gap: 0; }
+  .tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__hero-actions__action-volume { display: none; }
+  [data-tsix-view-action] { width: 24px; height: 24px; min-width: 24px; min-height: 24px; flex-basis: 24px; }
+  [data-tsix-view-action] > svg { width: 20px; height: 20px; flex-basis: 20px; }
+}
+
+/* Keyboard navigation must reveal the same controls as pointer hover. */
+/* Focused streams can fold the native previews away without unmounting any
+ * player. Keep the reveal handle beside the preview area in the native rail.
+ */
+.tsv-screenshare[data-tsix-stream-tray] .screenshare__global-hover-actions-wrapper:last-child { position: relative; }
+.tsv-screenshare[data-tsix-stream-tray="collapsed"] [data-tsix-tray-tile="preview"],
+.tsv-screenshare[data-tsix-stream-tray="collapsed"] .screen-small-bar,
+.tsv-screenshare[data-tsix-stream-tray="collapsed"] .screenshare__global-hover-actions-wrapper__pagination {
+  visibility: hidden;
+  pointer-events: none;
+}
+.tsv-screenshare [data-tsix-tray-toggle] {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  top: clamp(80px, calc(var(--tsix-tray-position, 50%) - 14px), calc(100% - 32px));
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--tsv-separation-border-color);
+  border-radius: 6px;
+  background: var(--tsv-shaded-bg);
+  color: var(--tsv-font-color);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.tsv-screenshare [data-tsix-tray-toggle]::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+.tsv-screenshare [data-tsix-tray-toggle][aria-expanded="false"]::before {
+  transform: translateY(2px) rotate(225deg);
+}
+.tsv-screenshare [data-tsix-tray-toggle][data-tsix-tray-axis="horizontal"]::before { transform: rotate(-45deg); }
+.tsv-screenshare [data-tsix-tray-toggle][data-tsix-tray-axis="horizontal"][aria-expanded="false"]::before { transform: rotate(135deg); }
+.tsv-screenshare [data-tsix-tray-toggle]:hover {
+  background: var(--tsv-contrast-strong-bg);
+  color: var(--tsv-tint);
+}
+.tsv-screenshare [data-tsix-tray-toggle]:focus-visible {
+  outline: 2px solid var(--tsv-tint2);
+  outline-offset: -2px;
+}
+
+.video-stream:focus-within .screen-overlay__bottom {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+.video-stream:focus-within .screen-overlay {
+  cursor: auto !important;
+}
+.video-stream:focus-within .screen-overlay__hero-actions__action-volume-slider {
+  animation: none !important;
+  opacity: 1;
+  transform: scaleX(1);
+}
+.tsv-screenshare .tsv-button:focus-visible {
+  outline: 2px solid var(--tsv-tint2);
+  /* Controls may touch the native scroll viewport or a clipped video tile. */
+  outline-offset: -2px;
+}
+
+/* Focus uses one short geometry transition and a consistent player box. */
+.tsv-screenshare[data-tsix-stream-stage] .screen-grid { transition: height 120ms cubic-bezier(.2,0,0,1); }
+.tsv-screenshare[data-tsix-stream-stage] .screen-grid-wrapper:not(.in-drag):not(.is-settling) .screen-grid > :is(.screen-video-wrapper, .screen-tile-wrapper) { transition: transform 120ms cubic-bezier(.2,0,0,1), width 120ms cubic-bezier(.2,0,0,1), height 120ms cubic-bezier(.2,0,0,1); }
+.tsv-screenshare .video-stream[tabindex="0"]:focus-visible { outline: 2px solid var(--tsv-tint2); outline-offset: -2px; }
+/* The geometry updates immediately during drag/resize and at reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .tsv-screenshare .screen-grid,
+  .tsv-screenshare .screen-video-wrapper,
+  .tsv-screenshare .screen-tile-wrapper,
+  .tsv-screenshare .screen-small-bar,
+  .main-pane-layout .tsv-resize-handle-info {
+    transition: none !important;
+  }
+}
+
+/* Chat is available by default; focus mode is an explicit reversible choice. */
+.tsv-screenshare[data-tsix-chat="hidden"] > .tsv-body > .tsv-scroll-area-v > .ts-chat-container {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--tsix-hidden-chat-height, var(--tsix-chat-min-height, 210px));
+  min-height: 0;
+  flex: none;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.tsv-screenshare[data-tsix-chat="hidden"] > .tsv-body > .tsv-scroll-area-v > .tsv-mar-t-small {
+  display: none !important;
+}
+[data-tsix-stream-toolbar] { flex: 0 0 var(--tsix-control-height); min-height: var(--tsix-control-height); display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--tsv-separation-border-color); }
+[data-tsix-chat-toggle] { font: inherit; font-size: calc(var(--tsix-unit) - 1px); color: var(--tsv-font-color); background: var(--tsv-shaded-bg); border: 1px solid var(--tsv-separation-border-color); padding: 4px 10px; border-radius: 5px; cursor: pointer; }
+[data-tsix-chat-toggle]:focus-visible { outline: 2px solid var(--tsix-focus); outline-offset: -2px; }
+.tsv-screenshare:has(:fullscreen) > [data-tsix-stream-toolbar] { display: none; }
+.tsv-screenshare[data-tsix-chat="shown"] > .tsv-body > .tsv-scroll-area-v > .ts-chat-container { flex: 1 1 0; min-height: var(--tsix-chat-min-height, 120px); }
+.tsv-screenshare[data-tsix-chat] > .tsv-body > .tsv-scroll-area-v { position: relative; min-height: 0; }
+
+@media (forced-colors: active) {
+  .ts-server-tree-scroller:focus-visible,
+  .ts-server-tree-item-leaf:focus-visible,
+  .main-pane-layout .tsv-resize-handle-info:focus-visible,
+  .tsv-screenshare .tsv-button:focus-visible {
+    outline-color: Highlight !important;
+  }
+}

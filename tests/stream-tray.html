@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TS6 Enhanced — stream tray fixture</title>
+<link rel="icon" href="data:,">
+<style>
+:root { --tsv-font-color:#dce2ed; --tsv-font-subtitle-color:#8896ad; --tsv-tint:#75cde8; --tsv-tint2:#75cde8; --tsv-shaded-bg:#1d2432; --tsv-header-bg:#181f2c; --tsv-contrast-strong-bg:#111722; --tsv-separation-border-color:#344054; }
+* { box-sizing:border-box; }
+body { margin:0; background:#111722; color:var(--tsv-font-color); font:14px 'Segoe UI',sans-serif; }
+header { height:56px; padding:16px 24px; border-bottom:1px solid #344054; display:flex; justify-content:space-between; }
+header span { color:#8896ad; }
+.tsv-screenshare { height:calc(100vh - 56px); display:flex; flex-direction:column; }
+.tsv-body { flex:1; min-height:0; }
+.tsv-scroll-area-v { height:100%; display:flex; flex-direction:column; }
+.tsv-flex { display:flex; }
+.screen-grid-wrapper { flex:1; }
+.screen-grid { position:relative; }
+:is(.screen-video-wrapper, .screen-tile-wrapper) { position:absolute; width:var(--grid-w); height:var(--grid-h); transform:translate(var(--grid-x),var(--grid-y)); padding:6px; }
+.video-stream { position:relative; width:100%; height:100%; overflow:hidden; background:#182a3a; border-radius:4px; }
+video.video { width:100%; height:100%; object-fit:contain; }
+.screen-overlay { position:absolute;inset:0;display:flex;align-items:flex-end; }
+.screen-overlay__bottom { position:relative; width:100%; height:36px; display:flex; align-items:center; justify-content:space-between; padding:0 12px; background:#192334; }
+.tsv-button { border:0; background:none; color:inherit; cursor:pointer; }
+.ts-chat-container { padding:16px; }
+.screenshare__global-hover-actions-wrapper { width:36px; display:flex; flex-direction:column; justify-content:space-between; }
+.screenshare__global-hover-actions { transform:translateX(-25%); }
+.screenshare__global-hover-actions.tsv-mar-t-small { margin-top:4px; }
+.tsv-badge-count { position:absolute;right:0;top:-4px;font-size:12px;line-height:18px;color:#fff;background:#b32d38;pointer-events:none; }
+.screenshare__global-hover-actions .tsv-icon { width:22px; height:22px; }
+/* Incoming-control geometry from the supported native renderer. This fixture
+ * simulates slider events; it never joins a stream or produces audio. */
+.incoming .screen-overlay__bottom { padding:0 5px; justify-content:flex-start; }
+.incoming .screen-overlay__bottom > .tsv-button { width:30px; flex:0 0 30px; }
+.incoming .tsv-flex-grow { flex-grow:1; }
+.incoming .tsv-icon { width:22px; height:22px; }
+.always-visible-overlay { position:absolute; bottom:2px; left:5px; pointer-events:none; }
+.screen-overlay__hero-actions__action-volume-wrapper { display:flex; flex-grow:10; max-width:102px; z-index:5; }
+.screen-overlay__hero-actions__action-volume { display:flex; width:100%; transform:translateY(-1px); }
+.screen-overlay__hero-actions__action-volume-slider { animation:hide-volume .09s forwards; min-width:0; opacity:0; }
+.screen-overlay__hero-actions__action-volume-wrapper:hover .screen-overlay__hero-actions__action-volume-slider { animation:show-volume .09s forwards; }
+@keyframes hide-volume { to { max-width:0;opacity:0;width:0; } }
+@keyframes show-volume { to { max-width:100%;opacity:1;width:100%; } }
+.ts-slider { height:44px; min-width:40px; position:relative; width:100%; }
+.ts-slider-track { position:absolute; top:50%; left:0; right:0; height:10px; transform:translateY(-50%); border-radius:3px; }
+.ts-slider-track-fill { background:#58677a; }
+.ts-slider-knob { position:absolute; top:calc(-50% + 2px); height:8px; width:0; transform:translate(-50%,-50%); z-index:10; }
+.ts-slider-knob-svg { position:absolute; width:10px; height:20px; left:-5px; top:-3px; background:#dce2ed; border-radius:3px; pointer-events:none; }
+.ts-slider-knob-bubble { position:absolute; min-width:50px; line-height:22px; padding:0 5px; left:50%; top:0; transform:translate(-50%,-100%); opacity:0; pointer-events:none; text-align:center; white-space:nowrap; background:#111722; }
+.ts-slider-knob-bubble.visible { opacity:1; }
+</style>
+<link rel="stylesheet" href="/layout.css" id="theme">
+</head>
+<body class="tsv-window">
+<header><strong>TS6 Enhanced</strong><span>Synthetic stream tray · no live TeamSpeak session</span></header>
+<main class="tsv-screenshare">
+ <div class="tsv-body"><div class="tsv-scroll-area-v">
+  <div class="tsv-flex">
+   <div class="screenshare__global-hover-actions-wrapper"></div>
+   <div class="screen-grid-wrapper"><div class="screen-grid"></div></div>
+   <div class="screenshare__global-hover-actions-wrapper">
+    <div class="screenshare__global-hover-actions ts-stream-view-settings tsv-mar-t-small"><div class="tsv-button"><svg class="tsv-icon tsv-icon-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg></div><div class="tsv-badge-count">1</div></div>
+    <div class="screenshare__global-hover-actions"><div class="tsv-button"><svg class="tsv-icon tsv-icon-expand" viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H4v15h15v-6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div></div>
+   </div>
+  </div>
+  <div class="tsv-mar-t-small"></div><div class="ts-chat-container"><input aria-label="Chat draft" value="Draft is preserved"></div>
+ </div></div>
+</main>
+<script>
+// Only the measured layout interface is simulated. The production runtime/CSS
+// are loaded unchanged; this fixture cannot certify native TS6 playback.
+const viewer=document.querySelector('main'), grid=document.querySelector('.screen-grid');
+for(const button of viewer.querySelectorAll('.screenshare__global-hover-actions .tsv-button')) {
+ const svg=button.querySelector('svg');svg.setAttribute('name',svg.classList.contains('tsv-icon-dots')?'dots':'expand');
+ const clicked=event=>{button.dataset.activations=String(Number(button.dataset.activations??0)+1);button.dataset.clickX=event.clientX;button.dataset.clickY=event.clientY;button.dataset.ownerVisible=String(event.target.getBoundingClientRect().width>0)};
+ button.__vue__={clicked,disabled:false};button.addEventListener('click',clicked);
+}
+const sessions=[{uniqueIdentifier:'a'},{uniqueIdentifier:'b'},{uniqueIdentifier:'c'}];
+const refs={}, media=[];
+const incoming=new URLSearchParams(location.search).has('incoming');
+for(const [i,session] of sessions.entries()) {
+ const tile=document.createElement('div');tile.className='screen-video-wrapper';
+ tile.innerHTML=`<div class="video-stream"><video class="video" autoplay muted playsinline></video><div class="screen-overlay"><div class="screen-overlay__bottom"><span aria-label="Stream viewers">2</span><button class="tsv-button">Stream options</button></div></div></div>`;
+ if(incoming) {
+  const stream=tile.querySelector('.video-stream');stream.classList.add('incoming');stream.__vue__={session:{isInbound:true}};
+  if(new URLSearchParams(location.search).has('volume-test')) {
+   session.isInbound=true;session.volume=.5;session.muted=false;
+   const video=stream.querySelector('video');video.muted=false;video.volume=.5;
+   const notify=()=>queueMicrotask(()=>{for(const entry of watchers){const next=entry.get();if(next!==entry.value){entry.value=next;entry.cb()}}});
+   stream.__vue__={session,videoRef:video,internalVolume:50,get mediaStream(){return video.srcObject},
+    get volume(){return session.muted?0:this.internalVolume},
+    set volume(value){this.internalVolume=value;session.volume=value/100;session.muted=value===0;video.volume=session.volume;notify()},
+    onConnectionRef(element){this.videoRef=element;if(element&&element.srcObject!==this.mediaStream){element.srcObject=this.mediaStream;this.internalVolume=session.volume*100;element.volume=session.muted?0:session.volume}},
+    $watch(get,cb){const entry={get,cb,value:get()};watchers.add(entry);return()=>watchers.delete(entry)},
+    toggleMute(){session.muted=!session.muted;video.volume=this.volume/100;notify()}};
+  }
+  const name=document.createElement('div');name.className='always-visible-overlay';name.textContent='Synthetic participant';stream.append(name);
+  const bar=stream.querySelector('.screen-overlay__bottom');
+  bar.innerHTML=`<div class="screen-overlay__hero-actions__action-volume-wrapper compensate-border tsv-flex"><div class="tsv-button"><svg name="speaker" class="tsv-icon" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM16 7q6 5 0 10" fill="none" stroke="currentColor" stroke-width="2"/></svg></div><div class="screen-overlay__hero-actions__action-volume"><div class="ts-slider screen-overlay__hero-actions__action-volume-slider ts-slider-compact ts-slider-small"><div class="ts-slider-track ts-slider-track-fill"></div><div class="ts-slider-track"><div class="ts-slider-knob"><div class="ts-slider-knob-svg"></div><div class="ts-slider-knob-bubble"></div></div></div></div></div></div><div class="tsv-flex-grow"></div><button class="tsv-button" aria-label="Fullscreen">□</button><button class="tsv-button" aria-label="Pop out this stream">□</button><button class="tsv-button tsv-is-destructive" aria-label="Leave stream">×</button>`;
+  bar.addEventListener('click',e=>e.stopPropagation());bar.addEventListener('mousedown',e=>e.stopPropagation());
+  // Match the native pop-out identity so the helper can suppress its duplicate.
+  bar.querySelector('[aria-label="Pop out this stream"]').innerHTML='<svg name="expand" class="tsv-icon" viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 5H4v15h15v-6" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+  const slider=bar.querySelector('.screen-overlay__hero-actions__action-volume-slider'),knob=bar.querySelector('.ts-slider-knob'),bubble=bar.querySelector('.ts-slider-knob-bubble');
+  let dragging=false;
+  const setVolume=value=>{slider.dataset.volume=String(value);knob.style.left=`max(min(${value}%, 100% - 5px), 5px)`;bubble.textContent=value+'%'};
+  const move=e=>{const b=slider.getBoundingClientRect();setVolume(Math.max(0,Math.min(100,Math.round((e.clientX-b.x)/b.width*100))))};
+  slider.addEventListener('mousedown',e=>{e.preventDefault();e.stopPropagation();dragging=true;bubble.classList.add('visible');move(e)});
+  window.addEventListener('mousemove',e=>{if(dragging)move(e)});
+  window.addEventListener('mouseup',e=>{if(dragging){move(e);dragging=false;bubble.classList.remove('visible')}});
+  const mute=bar.querySelector('.tsv-button');mute.dataset.muted='false';
+  mute.addEventListener('click',()=>{stream.__vue__.toggleMute?.();mute.dataset.muted=String(mute.dataset.muted!=='true');mute.querySelector('svg').setAttribute('name',mute.dataset.muted==='true'?'speaker-slash':'speaker');window.__tsixStreams?.sync()});
+  setVolume(50);
+ }
+ const canvas=document.createElement('canvas');canvas.width=960;canvas.height=540;
+ const context=canvas.getContext('2d');context.fillStyle=['#24435a','#314a46','#453b59'][i];context.fillRect(0,0,960,540);
+ context.fillStyle='#dce2ed';context.font='28px sans-serif';context.fillText(`Synthetic stream ${i+1}`,48,72);
+ const video=tile.querySelector('video');video.srcObject=canvas.captureStream(1);
+ const player=tile.querySelector('.video-stream'),pvm=player.__vue__||{};pvm.session=session;session.isInbound=true;
+ pvm.$emit=(name,s)=>{if(name==='enter-focus-mode')lab.focus(lab.focused===s?null:s);if(name==='toggle-fullscreen')player.requestFullscreen()};
+ pvm.enterFocusModeAfterDelay=function(){if(this._dblClickTimeout){clearTimeout(this._dblClickTimeout);this._dblClickTimeout=null}else this._dblClickTimeout=setTimeout(()=>{this._dblClickTimeout=null;this.$emit('enter-focus-mode',this.session)},150)};
+ pvm.toggleFullscreen=function(){if(this._dblClickTimeout){clearTimeout(this._dblClickTimeout);this._dblClickTimeout=null}this.$emit('toggle-fullscreen',this.session)};
+ player.__vue__=pvm;
+ player.addEventListener('click',event=>{event.stopPropagation();pvm.enterFocusModeAfterDelay(event)});
+ player.addEventListener('dblclick',event=>{event.stopPropagation();pvm.toggleFullscreen(event)});
+ if(new URLSearchParams(location.search).has('native-audio')) {
+  navigator.createMediaStreamRequest=()=>{throw Error('The helper must not create native streams')};
+ } else if(new URLSearchParams(location.search).has('volume-test')) {
+  const audio=new AudioContext(),oscillator=audio.createOscillator(),gain=audio.createGain(),destination=audio.createMediaStreamDestination();
+  gain.gain.value=.05;oscillator.connect(gain);gain.connect(destination);oscillator.start();
+  video.srcObject.addTrack(destination.stream.getAudioTracks()[0]);
+  (window.fixtureAudio ||= []).push(audio);
+ }
+ media.push({video,stream:video.srcObject});grid.append(tile);refs[session.uniqueIdentifier]=tile;
+}
+const watchers=new Set();
+const vm=viewer.__vue__={
+ allSessions:sessions.slice(), layoutStreams:[], layoutViewers:[], streamRefs:refs,
+ showStreams:true,screenshareViewingSupported:true,isGridOpenedInPopup:false,isPopout:false,inDragStream:null,
+ overrideSplitPercentage:-1,maxVideoAreaHeightPct:.66,maximumWidth:0,maximumHeight:0,maximumVideoHeight:0,gridPaddingY:6,resizeVideoHeightOrigin:-1,
+ $refs:{fullArea:viewer.querySelector('.tsv-scroll-area-v')},
+ $watch(get,cb){const entry={get,cb,value:get()};watchers.add(entry);return()=>watchers.delete(entry)},
+ doUpdateGrid(){
+  const w=this.maximumWidth-72,h=this.maximumVideoHeight;
+  this.layoutStreams=this.allSessions.map((session,i)=>{
+   const focused=lab.focused===session,side=lab.focused?this.allSessions.filter(s=>s!==lab.focused).indexOf(session):i;
+   const single=this.allSessions.length===1;
+   const availableHeight=single?h-12:focused?h*.70-12:lab.focused?h*.23-12:h-12;
+   const width=Math.max(1,Math.min(single||focused?w-12:w/this.allSessions.length-12,availableHeight*16/9));
+   const tile={item:{item:session,uniqueIdentifier:session.uniqueIdentifier},focused,x:single||focused?(w-width)/2:6+side*(w/this.allSessions.length),y:focused||!lab.focused||single?6:Math.floor(h*.70)+18,w:width,h:width*9/16};
+   refs[session.uniqueIdentifier].style.cssText=`--grid-x:${tile.x}px;--grid-y:${tile.y}px;--grid-w:${tile.w}px;--grid-h:${tile.h}px`;
+   return tile;
+  });
+  // Native automatic sizing uses the content bounds. The previous fixture
+  // always filled the entire height budget and missed preview centering.
+  this.gridHeight=this.overrideSplitPercentage===-1?Math.max(0,...this.layoutStreams.map(t=>t.y+t.h))+6:h;
+  grid.style.height=`${this.gridHeight}px`;
+  for(const entry of watchers){const next=entry.get();if(next!==entry.value){entry.value=next;entry.cb()}}
+ }
+};
+const lab=window.lab={focused:sessions[0],vm,media,refs,watchers,
+ focus(session){this.focused=session;vm.doUpdateGrid()},
+ resize(){vm.maximumWidth=viewer.clientWidth;vm.maximumHeight=vm.$refs.fullArea.clientHeight;vm.maximumVideoHeight=vm.maximumHeight*(vm.overrideSplitPercentage===-1?.66:vm.overrideSplitPercentage);vm.doUpdateGrid()},
+ remove(id){vm.allSessions=vm.allSessions.filter(s=>s.uniqueIdentifier!==id);refs[id].remove();if(this.focused?.uniqueIdentifier===id)this.focused=null;vm.doUpdateGrid()},
+ report(){return {identity:media.every(({video,stream})=>video.srcObject===stream),watchers:watchers.size,split:vm.overrideSplitPercentage,tray:viewer.getAttribute('data-tsix-stream-tray'),draft:document.querySelector('input')?.value}}
+};
+const item={};Object.defineProperty(item,'layoutMode',{get:()=>lab.focused?{kind:'focus',tileId:lab.focused.uniqueIdentifier}:{kind:'auto'},set:mode=>lab.focus(mode?.kind==='focus'?sessions.find(s=>s.uniqueIdentifier===mode.tileId):null)});vm.item=item;
+new ResizeObserver(()=>lab.resize()).observe(vm.$refs.fullArea);lab.resize();
+if(new URLSearchParams(location.search).has('single')){lab.remove('b');lab.remove('c')}
+if(new URLSearchParams(location.search).has('preview')){
+ for(const tile of Object.values(refs)){
+  const player=tile.querySelector('.video-stream');
+  const children=[...player.childNodes],pvm=player.__vue__;
+  pvm.session.status=0;pvm.session.isJoinable=true;pvm.joinCalls=0;
+  pvm.onJoin=()=>{if(!pvm.session.isJoinable)return;pvm.joinCalls++;pvm.session.isJoinable=false;pvm.session.status=4;player.replaceChildren(...children);const video=player.querySelector('video');video?.play().catch(()=>{});video?.srcObject?.getVideoTracks().forEach(t=>t.requestFrame?.());lab.vm.doUpdateGrid();window.__tsixStreams?.sync()};
+  player.innerHTML='<div class="stream-preview is-joinable" style="background:#0757c9"><div class="stream-preview__user-card" style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center"><span>Available stream</span></div></div>';
+  player.querySelector('.stream-preview').addEventListener('click',e=>{e.stopPropagation();pvm.onJoin()});
+ }
+}
+// Exercise beta5's public tile model without exposing legacy fields to the
+// helper. The fixture's lab retains its own generator for the same scenarios.
+if(new URLSearchParams(location.search).get('model')==='beta5') {
+ // Native beta5 has both a portal host and a display:contents context. The
+ // original fixture omitted these and missed the single-preview overflow.
+ const row=grid.parentElement.parentElement,portal=document.createElement('div'),context=document.createElement('div');
+ context.className='tsv-screenshare-portal-ctx tsv-screenshare';context.style.display='contents';
+ row.replaceWith(portal);portal.append(context);context.append(row);
+ for(const s of sessions)s.isInbound=true;
+ for(const node of Object.values(refs))node.className='screen-tile-wrapper screen-tile-wrapper--video';
+ const adapter={
+  get flatTiles(){return vm.layoutStreams.map(t=>({tile:{id:t.item.uniqueIdentifier,payload:{kind:'video',session:t.item.item}},x:t.x,y:t.y,w:t.w,h:t.h})).concat(lab.extraTiles||[])},
+  get sortableStreamsContainer(){return {sortedStreams:vm.allSessions}},
+  isStreamVisible(s){return !s.hidden},
+  isFocused(t){return lab.focused===t.payload.session},
+  refForTile(t){return refs[t.id]},
+  get inDragTile(){return vm.inDragStream},
+  doUpdateGrid(){vm.doUpdateGrid()},
+  $watch(get,cb){return vm.$watch(get,cb)}
+ };
+ for(const k of ['showStreams','screenshareViewingSupported','isGridOpenedInPopup','isPopout','overrideSplitPercentage','maxVideoAreaHeightPct','maximumWidth','maximumHeight','maximumVideoHeight','gridHeight','gridPaddingY','resizeVideoHeightOrigin','item','$refs'])Object.defineProperty(adapter,k,{get:()=>vm[k],set:value=>{vm[k]=value}});
+ viewer.__vue__=adapter;
+}
+</script>
+<script src="/streams-runtime.js"></script>
+</body></html>
