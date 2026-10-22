@@ -3,6 +3,7 @@ const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(p
 const source=await readFile(new URL('../tools/manager-runtime.js',import.meta.url),'utf8');
 import {clientPath as client} from './client-path.mjs';
 import {applyLiveStyles} from '../tools/live-update.mjs';
+import {readClientBuild} from '../tools/cdp.mjs';
 const nativeIcon=await readFile(`${client}/html/client_ui/images/icons/settings.svg`,'utf8');
 const browser=await chromium.launch({headless:true,...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
 const errors=[],checks=[];
@@ -32,8 +33,16 @@ try{
  await set({configured:true,legacy:false,available:'0.11.0',message:'Version 0.11.0 is available.'});
  assert.ok(await p.locator('[data-toast]').isVisible());assert.deepEqual(await entry.boundingBox(),normal);assert.match(await entry.getAttribute('aria-label'),/update available/);await p.getByRole('button',{name:'Later',exact:true}).click();
  await set({configured:true,available:'0.11.0',message:'Version 0.11.0 is available.'});assert.equal(await p.locator('[data-toast]').isVisible(),false);
- await entry.click();await p.getByRole('button',{name:'Update…',exact:true}).click();assert.match(await dialog.innerText(),/Download version 0.11.0/);assert.match(await dialog.innerText(),/TeamSpeak stays open/);assert.doesNotMatch(await dialog.innerText(),/restart/);await capture('manager-update');await p.getByRole('button',{name:'Download update',exact:true}).click();assert.equal(await p.evaluate(()=>requests.at(-1).action),'update');
+ await entry.click();await p.getByRole('button',{name:'Update…',exact:true}).click();assert.match(await dialog.innerText(),/Download the latest release/);assert.match(await dialog.innerText(),/TeamSpeak stays open/);assert.doesNotMatch(await dialog.innerText(),/restart/);await capture('manager-update');await p.getByRole('button',{name:'Download update',exact:true}).click();assert.equal(await p.evaluate(()=>requests.at(-1).action),'update');
  checks.push('Update notice appears once per release; confirmation describes download and deferred activation without restart');
+ await p.getByRole('button',{name:'Close',exact:true}).click();
+ await p.evaluate(()=>{document.querySelector('.tsv-central-toolbar').replaceChildren();document.getElementById('tsix-manager').remove()});
+ await entry.waitFor();await entry.click();assert.ok(await dialog.isVisible());
+ assert.ok(await p.getByRole('button',{name:'Update…',exact:true}).isVisible());await p.getByRole('button',{name:'Close',exact:true}).click();
+ await p.evaluate(()=>{const replacement=document.createElement('div');replacement.className='tsv-window';replacement.innerHTML='<div class="tsv-central-toolbar"></div>';document.querySelector('.tsv-window').replaceWith(replacement)});
+ await entry.waitFor();await entry.click();assert.ok(await dialog.isVisible());
+ assert.equal(await p.locator('[data-tsix-manager-open]').count(),1);assert.equal(await p.locator('#tsix-manager').count(),1);
+ checks.push('Update button and dialog recover after toolbar, host and window replacement while retaining update state');
  const beforeChange=await p.evaluate(()=>requests.length);await p.getByRole('button',{name:'Update…',exact:true}).click();
  await set({configured:true,available:'0.12.0',message:'Version 0.12.0 is available.'});assert.equal(await p.getByRole('heading').innerText(),'TS6 Enhanced');assert.equal(await p.evaluate(()=>requests.length),beforeChange);
  await set({configured:true,legacy:false,message:'Couldn’t check for updates. Try again.',detail:'Download failed: <img src=x onerror=alert(1)>'});assert.equal(await p.locator('details').getAttribute('open'),null);assert.equal(await p.locator('#tsix-manager img').count(),0);await p.getByText('Details',{exact:true}).click();assert.match(await p.locator('details').innerText(),/Download failed/);
@@ -60,5 +69,12 @@ try{
  assert.ok(await p.evaluate(()=>document.querySelector('video')===originalVideo));
  await p.evaluate(()=>__tsixLiveStyles.dispose());assert.equal(await p.locator('#tsix-live-release-style').count(),0);
  checks.push('Live CSS preserves media elements, rolls back a wrong version and respects manual theme changes');
+ await p.evaluate(()=>{window.tsclient_internal={getClientLibVersion:callback=>setTimeout(()=>callback(null,1791901251),100)}});
+ const gc=await p.context().newCDPSession(p);
+ const pendingBuild=readClientBuild(renderer);await gc.send('HeapProfiler.collectGarbage');assert.equal(await pendingBuild,1791901251);
+ let attempts=0;assert.equal(await readClientBuild({evaluate(expression){if(++attempts===1)throw Error('Promise was collected');return p.evaluate(expression)}}),1791901251);assert.equal(attempts,2);
+ await p.evaluate(()=>{tsclient_internal.getClientLibVersion=()=>{}});
+ await assert.rejects(readClientBuild(renderer),/did not answer its version check/);
+ await gc.detach();checks.push('Native version callback survives garbage collection, retries a collected promise and times out cleanly when the bridge does not answer');
  console.log(JSON.stringify({result:'PASS',checks,errors,scope:'Native icon and trusted browser input with a recording-only bridge; no real restart or removal'},null,2));
 }finally{await browser.close()}

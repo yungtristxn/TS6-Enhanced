@@ -39,7 +39,7 @@ test('malformed baselines cannot write unrelated settings',()=>{
 function mockClient(themeExists=true){
  const app={appearanceSettings:{user_style:'local.tsix.layout//TS6 Enhanced',tree_compact:true,chat_input_toolbar_visibility:'dynamic',chat_compact:true},refreshAvailableUserStyles(){this._userStylesUpdated=Date.now()},getThemeForIdentifier:()=>themeExists?{}:null,applyUserStyle(theme){this.appearanceSettings.user_style=theme},disableUserStyle(){this.appearanceSettings.user_style=null},applyAppearanceSettings(fields){Object.assign(this.appearanceSettings,fields)}};
  let detached=false;
- return {app,get detached(){return detached},async evaluate(expression){if(expression.includes('dispose()'))detached=true;if(expression==='document.querySelector("main").__vue__.appearanceSettings')return app.appearanceSettings},async send(method,args){
+ return {app,get detached(){return detached},async evaluate(expression){if(expression.includes('getClientLibVersion'))return 1791901251;if(expression.includes('dispose()'))detached=true;if(expression==='document.querySelector("main").__vue__.appearanceSettings')return app.appearanceSettings},async send(method,args){
   if(method==='Runtime.evaluate')return {result:{type:'function',objectId:'getter'}};
   if(method==='Runtime.getProperties')return args.objectId==='getter'?{internalProperties:[{name:'[[Scopes]]',value:{objectId:'scopes'}}]}:args.objectId==='scopes'?{result:[{name:'0',value:{description:'Closure',objectId:'closure'}}]}:{result:[{name:'Q',value:{objectId:'module'}}]};
   if(method==='Runtime.callFunctionOn'){

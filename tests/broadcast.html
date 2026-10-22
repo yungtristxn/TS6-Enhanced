@@ -12,13 +12,14 @@
 .tsv-central-toolbar{display:flex}.tsv-tool-buttons{display:flex}.tsv-tool-button{min-width:38px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .fixtureFooter{position:absolute;bottom:0;left:0;right:0;height:64px;padding:24px 10px;background:#303b4c}
 .ts-tree{position:absolute;top:180px;bottom:55px;left:0;right:0;padding:12px}.ts-server-status-bar{position:absolute;bottom:0;height:55px;width:100%;padding:12px;display:flex;gap:8px;background:#303b4c}
+.main-pane-layout>.tsv-body>.tsv-item-view>.tsv-footer{position:absolute;bottom:0;width:100%}
 .fixtureStage{position:relative;flex:1;min-width:0;background:#101929;padding:24px}.fixtureStage:fullscreen{width:100%;height:100%;background:#101929}.fixtureStage video{width:100%;height:calc(100% - 100px)}
 .fixtureFriends{position:absolute;left:0;top:180px;bottom:119px;width:96px;z-index:4;background:#202a3c}
 .ts-chat-input-container{position:absolute;bottom:8px;left:8px;right:8px;height:40px;display:flex;gap:8px;padding:4px;background:#303b4c;border-radius:6px}.ts-chat-input-container textarea{flex:1;min-width:0;resize:none}.ts-chat-input-container[hidden]{display:none}.fixtureStage:fullscreen .ts-chat-input-container{display:none}
 </style></head><body>
 <div class="tsv-window" data-tsix-navigator-view="channels"><aside class="sidebar-pane-layout"><div class="fixtureFooter">Your profile</div></aside><div class="tsv-activity">
 <div class="main-pane-layout"><div class="tsv-header"><div class="tsv-window-bar"><div class="tsv-central-toolbar"><div class="tsv-central-toolbar-buttons tsv-tool-buttons"><div class="tsv-tool-button">Mic</div><div class="tsv-tool-button">Vol</div><div class="tsv-tool-button" id="nativeShare" title="Native sharing control">Pause</div></div></div></div></div>
-<div class="ts-tree">Channels stay in place</div><div class="ts-server-status-bar"><button>Create</button><button class="tsv-tool-button" id="startStream"><span class="tsv-icon-screenshare">Start Stream</span></button></div></div>
+<div class="tsv-body"><div class="tsv-item-view"><div class="ts-tree">Channels stay in place</div><div class="tsv-footer"><div class="ts-server-status-bar"><button>Create</button><button class="tsv-tool-button" id="startStream"><span class="tsv-icon-screenshare">Start Stream</span></button></div></div></div></div></div>
 <div class="fixtureStage"><button id="fullscreen">Fullscreen</button><p>Own stream preview hidden</p><video></video><div class="ts-chat-input-container"><textarea aria-label="Chat draft">Keep my draft</textarea><button id="send">Send</button></div></div>
 </div><aside class="fixtureFriends" hidden>Native Friends panel</aside></div>
 <script>

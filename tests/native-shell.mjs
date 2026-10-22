@@ -24,7 +24,7 @@ try{
  await p.getByPlaceholder('Search / Connect').focus();await p.keyboard.press('Tab');
  assert.equal(await p.evaluate(()=>document.activeElement.textContent),'Connected server');
  checks.push('Tab follows native DOM order without a custom keyboard trap');
- for(const [scale,height]of [['small',28],['medium',30],['large',34]]){await p.evaluate(scale=>{lab.root.className='tsv-window tsv-window-scale-'+scale},scale);await p.waitForFunction(height=>document.querySelector('.ts-server-tree-item-leaf').getBoundingClientRect().height===height,height)}
+ for(const [scale,height]of [['small',28],['medium',32],['large',36]]){await p.evaluate(scale=>{lab.root.className='tsv-window tsv-window-scale-'+scale},scale);await p.waitForFunction(height=>document.querySelector('.ts-server-tree-item-leaf').getBoundingClientRect().height===height,height)}
  checks.push('Small, Medium and Large share measured row sizing');
  await p.locator('#mic').press('Enter');assert.equal(await p.evaluate(()=>lab.actions),1);
  await p.evaluate(()=>lab.preview());assert.equal(await p.locator('[data-tsix-navigator]').count(),0);await p.evaluate(()=>lab.server());

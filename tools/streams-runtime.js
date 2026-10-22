@@ -336,6 +336,7 @@
     }
     for(const [preview,record]of joins)if(!seen.has(preview)){record.button.remove();joins.delete(preview)}
   }
+  const streamControl=target=>target?.closest?.('button,input,a,select,textarea,[role="button"],[role="slider"],.tsv-button,.ts-slider,.screen-overlay__bottom');
   function syncFocusActions(record,enabled,state) {
     const seen=new Set();
     if(enabled)for(const tile of state.tiles) {
@@ -350,19 +351,24 @@
         const up=e=>{if(origin)moved=Math.hypot(e.clientX-origin[0],e.clientY-origin[1])>5;origin=null};
         const focus=e=>{
           if(!themeActive()||document.fullscreenElement)return originalFocus.call(vm,e);
-          if(e?.detail>1||moved||record.vm.inDragTile||record.vm.inDragStream)return;
+          if(node.closest('[inert]')||streamControl(e?.target)||e?.detail>1||moved||record.vm.inDragTile||record.vm.inDragStream)return;
           if(vm._dblClickTimeout){clearTimeout(vm._dblClickTimeout);vm._dblClickTimeout=null}
           previousMode=record.vm.item?.layoutMode;hasPreviousMode=true;
+          const keepFocused=e?.type==='click'&&!!layoutState(record.vm)?.tiles.some(t=>t.focused&&t.node?.contains(node));
           // An immediate focus move can put a different tile under the second
           // click. Remember the originating player, not the later hit target.
           record.focusClick=e?.isTrusted&&e.type==='click'&&e.detail===1?
-            {time:performance.now(),x:e.clientX,y:e.clientY,vm,mode:previousMode,fullscreen:originalFullscreen}:null;
+            {time:performance.now(),x:e.clientX,y:e.clientY,node,session:vm.session,vm,mode:previousMode,fullscreen:originalFullscreen,stationary:keepFocused}:null;
+          // A focused surface stays focused. Only an explicit keyboard action
+          // returns to the grid; native auto layout can promote our own stream.
+          // Keep the first-click record so a double-click still enters fullscreen.
+          if(keepFocused)return;
           vm.$emit('enter-focus-mode',vm.session);
           // Commit destination geometry in the click turn, before Vue paints
           // the native layout, rather than correcting it a frame afterward.
           update(record,true);
         };
-        const fullscreen=e=>{if(e?.type==='dblclick'&&hasPreviousMode&&record.vm.item)record.vm.item.layoutMode=previousMode;hasPreviousMode=false;previousMode=undefined;return originalFullscreen.call(vm,e)};
+        const fullscreen=e=>{if(themeActive()&&(node.closest('[inert]')||streamControl(e?.target)))return;if(e?.type==='dblclick'&&hasPreviousMode&&record.vm.item)record.vm.item.layoutMode=previousMode;hasPreviousMode=false;previousMode=undefined;return originalFullscreen.call(vm,e)};
         const keydown=e=>{if(e.target!==node||!['Enter',' '].includes(e.key))return;e.preventDefault();e.stopPropagation();if(e.repeat)return;if(e.key==='Enter'){moved=false;focus(e)}else armed=true};
         const keyup=e=>{if(e.target===node&&e.key===' '){e.preventDefault();e.stopPropagation();if(armed){moved=false;focus(e)}armed=false}};
         const blur=()=>{armed=false};
@@ -385,8 +391,10 @@
     const nearby=(saved,e)=>saved&&performance.now()-saved.time<400&&Math.hypot(e.clientX-saved.x,e.clientY-saved.y)<=5;
     record.captureClick=e=>{
       const first=record.focusClick;record.focusClick=null;
-      if(!e.isTrusted||e.detail===0||!nearby(first,e)||!record.element.contains(e.target)||
-          !themeActive()||document.fullscreenElement||first.vm._isDestroyed||record.vm.inDragTile||record.vm.inDragStream)return;
+      if(!e.isTrusted||e.detail===0||(first?.stationary&&e.detail<2)||!nearby(first,e)||!record.element.contains(e.target)||
+          !themeActive()||document.fullscreenElement||first.vm._isDestroyed||!first.node.isConnected||first.vm.session!==first.session||
+          first.node.closest('[inert]')||record.vm.inDragTile||record.vm.inDragStream||
+          (!e.target.closest('.video-stream')&&(first.stationary||!e.target.closest('.screen-grid-wrapper')))||streamControl(e.target))return;
       e.preventDefault();e.stopImmediatePropagation();
       record.fullscreenClick={time:performance.now(),x:e.clientX,y:e.clientY};
       if(record.vm.item)record.vm.item.layoutMode=first.mode;
@@ -926,7 +934,7 @@
   document.addEventListener('loadeddata',schedule,true);
   document.addEventListener('fullscreenchange',onFullscreenChange);
   window.__tsixStreams = {
-    version:'1.0.4', sync,
+    version:'1.0.5', sync,
     status: () => ({trayCollapsed,chatVisible,viewers:[...records.values()].map(r=>({stage:r.element.getAttribute(marker),savedSplit:r.savedSplit,tray:r.element.getAttribute(trayMarker)})),keyboardControls:buttons.size}),
     dispose() {
       if (document.fullscreenElement) throw Error('Exit fullscreen before removing or replacing the stream helper');

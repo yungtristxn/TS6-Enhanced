@@ -30,7 +30,7 @@ The separate stylesheet can apply live only when the packaged runtime fingerprin
 Run as the signed-in Windows user:
 
 ```powershell
-$installer = Start-Process '.\TS6-Enhanced-1.0.4-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+$installer = Start-Process '.\TS6-Enhanced-1.0.5-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
 $installer.WaitForExit()
 if ($installer.ExitCode -ne 0) { throw "Setup failed with exit code $($installer.ExitCode)" }
 ```

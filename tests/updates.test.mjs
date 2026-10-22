@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';import {mkdtemp,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,compatible,canApplyStyles,downloadStyles} from '../tools/updates.mjs';
+import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,stageLatestUpdate,compatible,canApplyStyles,downloadStyles} from '../tools/updates.mjs';
 const repo='example/layout',config={repository:repo,channel:'stable'};
 const body=Buffer.alloc(128);body.write('MZ');body.writeUInt32LE(64,60);body.writeUInt32LE(0x4550,64);body.writeUInt16LE(0x14c,68);
 const digest=b=>'sha256:'+createHash('sha256').update(b).digest('hex');
@@ -43,6 +43,36 @@ test('verified staging reuses exact bytes and replaces a corrupt cache only with
  await assert.rejects(readFile(path),{code:'ENOENT'});
  const rejected=(await readdir(root)).find(n=>n.endsWith('.rejected'));assert.equal(await readFile(join(root,rejected),'utf8'),'changed');
  assert.equal(await stageUpdate(update,root,{fetcher}),path);assert.deepEqual(await readFile(path),body);
+});
+
+test('download rechecks the latest release and never falls back to a stale offer',async()=>{
+ const {mkdir,writeFile}=await import('node:fs/promises');
+ const root=await mkdtemp(join(tmpdir(),'tsix-latest-')),client=join(root,'client'),destination=join(root,'updates');
+ await mkdir(join(client,'html/client_ui'),{recursive:true});
+ const hashes={};for(const name of ['main.js','main.css']){const bytes=Buffer.from(name);await writeFile(join(client,'html/client_ui',name),bytes);hashes['html/client_ui/'+name]=digest(bytes).slice(7)}
+ const responses=new Map(),downloads=[];
+ const candidate=(v,resourceHashes=hashes)=>{
+  const metadata=Buffer.from(JSON.stringify({version:v,updates:{deferredInstall:1},supportedClient:{resourceHashes}}));
+  const bytes=Buffer.from(body);bytes.write(v,80);
+  const assets=[['release.json',metadata],[`TS6-Enhanced-${v}-Setup.exe`,bytes]].map(([name,data])=>{const a={...asset(name,data),browser_download_url:`https://github.com/${repo}/releases/download/v${v}/${name}`};responses.set(a.browser_download_url,data);return a});
+  return {...release,tag_name:'v'+v,assets};
+ };
+ const old=candidate('1.0.4'),latest=candidate('1.0.5');let published=[old],fail=false,lastHeaders;
+ const fetcher=async(url,options)=>{
+  if(url.includes('api.github.com')){lastHeaders=options.headers;if(fail)return new Response('',{status:503});return new Response(JSON.stringify(published))}
+  if(url.endsWith('.exe'))downloads.push(url);
+  assert.ok(responses.has(url));return new Response(responses.get(url));
+ };
+ const offer=await checkUpdate('1.0.3',config,{fetcher});assert.equal(offer.version,'1.0.4');
+ published=[old,latest];let selected;
+ const staged=await stageLatestUpdate('1.0.3',config,client,destination,{fetcher,onSelected:update=>selected=update.version});
+ assert.equal(selected,'1.0.5');assert.equal(staged.update.version,'1.0.5');assert.equal(lastHeaders['Cache-Control'],'no-cache');
+ assert.equal(downloads.length,1);assert.match(downloads[0],/1\.0\.5-Setup\.exe$/);assert.deepEqual(await readFile(staged.path),responses.get(downloads[0]));
+ fail=true;await assert.rejects(stageLatestUpdate('1.0.3',config,client,destination,{fetcher}),/503/);
+ fail=false;published=[];assert.equal(await stageLatestUpdate('1.0.3',config,client,destination,{fetcher}),null);
+ published=[old,candidate('1.0.6',{'html/client_ui/main.js':'f'.repeat(64),'html/client_ui/main.css':hashes['html/client_ui/main.css']})];
+ await assert.rejects(stageLatestUpdate('1.0.3',config,client,destination,{fetcher}),/different TeamSpeak version/);
+ assert.equal(downloads.length,1,'A failed, withdrawn or incompatible release must not download an older installer');
 });
 test('installer format and installed TeamSpeak resources are checked before restart',async()=>{
  assert.throws(()=>verifyInstaller(Buffer.from('not a Windows installer')),/Windows/);assert.equal(verifyInstaller(body),body);

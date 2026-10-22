@@ -1,6 +1,6 @@
 // Attach the optional layout features to an already verified inspection session.
 // No background watcher, restart, connection, media action or profile read.
-import {connect} from './cdp.mjs';
+import {connect,readClientBuild} from './cdp.mjs';
 import {readFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -35,9 +35,8 @@ export async function attachSession(c,{setup=false,preserve=false,refreshTree=()
     await new Promise(r=>setTimeout(r,250));
   }
   if(!ready)throw Error('Select TS6 Enhanced in Appearance, then launch the TeamSpeak Start Menu shortcut again. No restart is needed.');
-  await c.evaluate(`(async()=>{
-    const build=await new Promise(r=>tsclient_internal.getClientLibVersion((e,b)=>r(e?-1:b)));
-    if(build!==1791901251)throw Error('Unsupported TS6 build; no helpers attached');
+  if(await readClientBuild(c)!==release.supportedClient.build)throw Error('Unsupported TS6 build; no helpers attached');
+  await c.evaluate(`(()=>{
     if(document.fullscreenElement)throw Error('Exit fullscreen before attaching layout helpers');
     const vm=document.querySelector('.tsv-window').__vue__;
     if(typeof vm.collapseSidebar!=='function')throw Error('Unexpected window component');

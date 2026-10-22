@@ -1,7 +1,7 @@
 /* TS6 beta5 / 1791901251. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 1.0.4;
+  --tsix-layout-version: 1.0.5;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
@@ -179,7 +179,8 @@
  * owned by the viewer, so filling this stage cannot cover the composer. */
 [data-tsix-stream-region] { flex: 0 0 auto; min-width: 0; min-height: 0; }
 [data-tsix-stream-row] { position: relative; min-width: 0; }
-.tsv-screenshare:is([data-tsix-stream-layout="single"], [data-tsix-stream-tray="collapsed"]) .screen-grid > :where(.screen-video-wrapper, .screen-tile-wrapper:has(> .video-stream)) {
+.tsv-screenshare[data-tsix-stream-layout="single"] .screen-grid > :where(.screen-video-wrapper, .screen-tile-wrapper:has(> .video-stream)),
+.tsv-screenshare[data-tsix-stream-tray="collapsed"] .screen-grid > :where(.screen-video-wrapper, .screen-tile-wrapper:has(> .video-stream))[data-tsix-tray-tile="focused"] {
   width: 100%; height: 100%; transform: none; padding: var(--tsix-stage-inset);
 }
 .tsv-screenshare[data-tsix-stream-stage] :is(.screen-video-wrapper, .screen-tile-wrapper:not(.screen-tile-wrapper--pip)) > .video-stream:not(.is-fullscreen) {
@@ -339,7 +340,12 @@
  * player. Keep the reveal handle beside the preview area in the native rail.
  */
 .tsv-screenshare[data-tsix-stream-tray] .screenshare__global-hover-actions-wrapper:last-child { position: relative; }
+/* Also reset the old full-stage rule when this CSS is applied live over it. */
+.tsv-screenshare[data-tsix-stream-tray="collapsed"] .screen-grid > [data-tsix-tray-tile="preview"] {
+  width: var(--grid-w); height: var(--grid-h); transform: translate(var(--grid-x), var(--grid-y));
+}
 .tsv-screenshare[data-tsix-stream-tray="collapsed"] [data-tsix-tray-tile="preview"],
+.tsv-screenshare[data-tsix-stream-tray="collapsed"] .screen-host-indicators:not(:has(svg[name="item-pin"])),
 .tsv-screenshare[data-tsix-stream-tray="collapsed"] .screen-small-bar,
 .tsv-screenshare[data-tsix-stream-tray="collapsed"] .screenshare__global-hover-actions-wrapper__pagination {
   visibility: hidden;
@@ -609,6 +615,7 @@
 .sidebar-pane-layout > .tsv-header { background: var(--tsix-chrome-bg); }
 /* A shared 48px header band beneath the existing 44px window title bar. */
 .tsv-activity-detail.tsv-has-content-header > .tsv-header {
+  --tsv-header-content-header-height: 48px;
   flex: 0 0 92px; height: 92px; min-height: 92px;
   display: flex; flex-direction: column; justify-content: flex-start;
 }
@@ -648,7 +655,7 @@
 :is(.tsv-central-toolbar,.ts-server-status-bar,.tsv-content-header-bar) .tsv-tool-button {
   min-height: 32px; border-radius: var(--tsix-chrome-radius); box-sizing: border-box;
 }
-.tsv-content-header-bar .tsv-segmented-control { padding: 2px; gap: 2px; border-radius: var(--tsix-chrome-radius); background: var(--tsix-chrome-bg); }
+.tsv-content-header-bar .tsv-segmented-control { flex: 0 0 auto; height: 36px; min-height: 36px; box-sizing: border-box; align-items: center; padding: 2px; gap: 2px; border-radius: var(--tsix-chrome-radius); background: var(--tsix-chrome-bg); }
 .tsv-content-header-bar .tsv-segmented-button { min-width: 32px; min-height: 32px; border-radius: 3px; }
 .tsv-content-header-bar .tsv-segmented-button.active { background: var(--tsix-control-hover); }
 [data-tsix-manager-open] { border-radius: var(--tsix-chrome-radius); color: var(--tsix-chrome-muted); }

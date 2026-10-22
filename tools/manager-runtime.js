@@ -2,7 +2,7 @@
 // Downloads and native actions remain in the authenticated local manager.
 (() => {
   window.__tsixManager?.dispose();
-  const root=document.querySelector('.tsv-window');if(!root)throw Error('No TeamSpeak main window');
+  let root=document.querySelector('.tsv-window');if(!root)throw Error('No TeamSpeak main window');
   const host=document.createElement('div');host.id='tsix-manager';
   const style=document.createElement('style');style.textContent=`
     #tsix-manager{font:inherit;font-size:13px;font-weight:400;color:var(--tsv-font-color,#e6ebf4);--tsix-muted:var(--tsv-font-subtitle-color,#aeb9ca)}
@@ -68,7 +68,7 @@
     title.textContent=action==='update'?'Update TS6 Enhanced?':'Uninstall TS6 Enhanced?';
     warning.textContent=action==='update'?'TeamSpeak stays open. Your calls and streams continue.':'TeamSpeak will restart and end any calls or streams.';
     dialog.setAttribute('aria-describedby',`${warning.id} ${consequence.id}`);
-    consequence.textContent=action==='update'?`Download version ${state.available}. Compatible visual changes apply now; installation finishes on your next launch.`:state.legacy?'Removes the theme. Other settings and personal data stay.':'Restores your previous appearance. Your accounts and chats stay.';
+    consequence.textContent=action==='update'?'Download the latest release. Installation finishes next time you open TeamSpeak.':state.legacy?'Removes the theme. Other settings and personal data stay.':'Restores your previous appearance. Your accounts and chats stay.';
     accept.textContent=action==='update'?'Download update':'Uninstall';accept.toggleAttribute('data-primary',action==='update');accept.toggleAttribute('data-destructive',action==='uninstall');cancel.focus();
   };
   update.onclick=e=>{if(e.isTrusted&&!state.busy&&state.available)ask('update')};remove.onclick=e=>{if(e.isTrusted&&!state.busy)ask('uninstall')};cancel.onclick=back;
@@ -76,13 +76,15 @@
   dialog.addEventListener('cancel',e=>{if(pending){e.preventDefault();back()}});
   dialog.addEventListener('close',()=>{reset();button.setAttribute('aria-expanded','false');button.focus()});
   const mount=()=>{
+    root=document.querySelector('.tsv-window');if(!root)return;
+    if(host.parentElement!==root)root.append(host);
     const toolbar=root.querySelector('.tsv-central-toolbar');if(toolbar&&button.parentElement!==toolbar)toolbar.append(button);
     if(!button.querySelector('svg')){
       const native=root.querySelector('svg[name="settings"],svg.tsv-icon-settings');
       if(native){const icon=native.cloneNode(true);icon.setAttribute('aria-hidden','true');icon.setAttribute('focusable','false');button.replaceChildren(icon)}
     }
   };
-  const observer=new MutationObserver(mount);observer.observe(root,{childList:true,subtree:true});mount();
+  const observer=new MutationObserver(mount);observer.observe(document.body,{childList:true,subtree:true});mount();
   window.__tsixManager={setIcon(markup){
     if(button.querySelector('svg'))return;
     const svg=new DOMParser().parseFromString(markup,'image/svg+xml').documentElement;

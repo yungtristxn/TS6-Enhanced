@@ -2,6 +2,23 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
+// CEF may expose its bridge before the native callback is ready. A timer keeps
+// the resolver alive (avoiding "Promise was collected") and bounds each try.
+export async function readClientBuild(c) {
+  for(let attempt=0;attempt<3;attempt++) {
+    try {
+      const build=await c.evaluate(`new Promise(resolve=>{
+        const timer=setTimeout(()=>resolve(null),2000);
+        try{tsclient_internal.getClientLibVersion((error,build)=>{clearTimeout(timer);resolve(error?null:build)})}
+        catch{clearTimeout(timer);resolve(null)}
+      })`);
+      if(Number.isInteger(build))return build;
+    }catch(error){if(!/Promise was collected|Cannot find context|Execution context was destroyed/.test(error.message))throw error}
+    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,250));
+  }
+  throw Error('TeamSpeak did not answer its version check. Launch its Start Menu shortcut again to retry without restarting.');
+}
+
 export function verifyListener(port) {
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw Error('Invalid port');
   const script = `$ErrorActionPreference='Stop'; $listeners=@(Get-NetTCPConnection -LocalPort ${port} -State Listen); if (!$listeners.Count) { throw 'No listener' }; $expected=Join-Path $env:LOCALAPPDATA 'Programs\\TeamSpeak\\TeamSpeak.exe'; foreach($listener in $listeners) { if($listener.LocalAddress -notin @('127.0.0.1','::1')) { throw 'Non-loopback listener refused' }; $owner=Get-CimInstance Win32_Process -Filter ('ProcessId = '+$listener.OwningProcess); if($owner.ExecutablePath -ne $expected) { throw 'Listener is not the installed TeamSpeak client' } }; 'verified'`;

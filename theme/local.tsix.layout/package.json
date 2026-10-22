@@ -1,7 +1,7 @@
 {
   "name": "TS6 Enhanced",
   "description": "More room for streams, collapsible previews, chat that keeps updating while hidden, and volume up to 300%.",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "identifier": "local.tsix.layout",
   "engines": {
     "teamspeak": 1

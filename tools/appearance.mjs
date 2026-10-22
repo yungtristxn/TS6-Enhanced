@@ -2,6 +2,7 @@
 // The Vue getter closes over the app module. CDP can read that closure without
 // pausing execution, monkey-patching the client, or opening a settings screen.
 import {captureBaseline,ownedPreferences,validateBaseline} from './install-state.mjs';
+import {readClientBuild} from './cdp.mjs';
 export async function withAppearance(c,operation) {
   const group='tsix-appearance-setup';
   const unwrap=r=>{if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result;};
@@ -15,9 +16,8 @@ export async function withAppearance(c,operation) {
       await new Promise(r=>setTimeout(r,250));
     }
     if(getter?.type!=='function')throw Error('TeamSpeak did not finish loading. Launch its Start Menu entry again.');
-    await c.evaluate(`(async()=>{
-      const build=await new Promise(r=>tsclient_internal.getClientLibVersion((e,b)=>r(e?-1:b)));
-      if(build!==1791901251)throw Error('Unsupported TS6 build; no appearance settings changed');
+    if(await readClientBuild(c)!==1791901251)throw Error('Unsupported TS6 build; no appearance settings changed');
+    await c.evaluate(`(()=>{
       if(document.fullscreenElement)throw Error('Exit fullscreen and launch TeamSpeak from Start Menu again to finish setup');
     })()`);
     const properties=await c.send('Runtime.getProperties',{objectId:getter.objectId,ownProperties:true});

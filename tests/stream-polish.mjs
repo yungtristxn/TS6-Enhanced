@@ -12,7 +12,7 @@ try{
  // Inspect model change in the same event turn: this fails with the native
  // 150ms timer, independently of browser automation transport latency.
  for(let i=0;i<40;i++){
-  const r=await p.evaluate(()=>{const vm=lab.refs.a.querySelector('.video-stream').__vue__,before=lab.focused,start=performance.now();vm.enterFocusModeAfterDelay(new MouseEvent('click',{detail:1}));return{changed:lab.focused!==before,elapsed:performance.now()-start,timer:vm._dblClickTimeout||null}});
+  const r=await p.evaluate(()=>{const vm=lab.refs.a.querySelector('.video-stream').__vue__,before=lab.focused,start=performance.now();vm.enterFocusModeAfterDelay(new KeyboardEvent('keydown',{key:'Enter'}));return{changed:lab.focused!==before,elapsed:performance.now()-start,timer:vm._dblClickTimeout||null}});
   assert.ok(r.changed);assert.equal(r.timer,null);assert.ok(r.elapsed<50);latencies.push(r.elapsed);
  }
  checks.push('40 focus/unfocus actions commit synchronously without the native click timer');
@@ -23,6 +23,41 @@ try{
  await p.evaluate(()=>{const n=lab.refs.a.querySelector('.video-stream');n.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,clientX:10,clientY:10}));lab.vm.inDragStream=lab.vm.allSessions[0];window.__tsixStreams.sync();n.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,clientX:80,clientY:90}));lab.vm.inDragStream=null;window.__tsixStreams.sync();n.__vue__.enterFocusModeAfterDelay(new MouseEvent('click',{detail:1}))});
  assert.equal(await p.evaluate(()=>lab.focused.uniqueIdentifier),'a');
  checks.push('Dragging a stream never turns into a delayed focus click');
+ await toggle.click();await settleLayout(p);
+ await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=false;const old=document.createElement('style');old.id='previous-theme';old.textContent='.tsv-screenshare[data-tsix-stream-tray="collapsed"] .screen-grid > :is(.screen-video-wrapper,.screen-tile-wrapper){width:100%;height:100%;transform:none}';document.head.insertBefore(old,document.getElementById('theme'))});
+ const focusedBefore=await p.evaluate(()=>lab.focused.uniqueIdentifier);
+ await player.click({position:{x:160,y:120}});
+ assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier),focusedBefore,'A click on the collapsed focused surface must not reveal or focus the hidden own stream');
+ const surface=await p.evaluate(()=>{
+  const hero=lab.refs.a.getBoundingClientRect(),hidden=lab.refs.b.getBoundingClientRect();
+  const hits=[.1,.5,.9].flatMap(x=>[.1,.5,.8].map(y=>document.elementFromPoint(hero.x+hero.width*x,hero.y+hero.height*y)?.closest('[data-tsix-tray-tile]')===lab.refs.a));
+  return {hiddenSmaller:hidden.width<hero.width||hidden.height<hero.height,hits,identity:lab.report().identity};
+ });
+ assert.ok(surface.hiddenSmaller,'Hidden previews must retain their native preview geometry');assert.ok(surface.hits.every(Boolean));assert.ok(surface.identity);
+ await p.evaluate(()=>lab.refs.b.querySelector('.video-stream').__vue__.enterFocusModeAfterDelay(new MouseEvent('click',{detail:1})));
+ assert.equal(await p.evaluate(()=>lab.focused.uniqueIdentifier),focusedBefore,'A stale event on an inert preview must be ignored');
+ await player.dblclick({position:{x:160,y:120},delay:70});await p.waitForFunction(()=>!!document.fullscreenElement,{},{timeout:2000});
+ assert.ok(await p.evaluate(()=>document.fullscreenElement===lab.refs.a.querySelector('.video-stream')));
+ await p.evaluate(()=>document.exitFullscreen());await settleLayout(p);
+ assert.equal(await p.evaluate(()=>lab.focused.uniqueIdentifier),focusedBefore);
+ await toggle.click();await settleLayout(p);await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=true;document.getElementById('previous-theme').remove()});
+ checks.push('Collapsed incoming focus survives single click, ignores hidden own-stream events and keeps double-click fullscreen on the watched stream');
+ await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=false;lab.vm.allSessions[1].captureStatus=4;lab.focus(lab.vm.allSessions[1])});await settleLayout(p);
+ const own=p.locator('.video-stream').nth(1);
+ await own.click({position:{x:160,y:120}});
+ assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier),'b','Clicking the focused own stream must not switch to automatic layout');
+ // A control can appear under the pointer between clicks (for example on hover).
+ await p.evaluate(()=>{const n=document.createElement('button');n.id='appearing-control';n.textContent='Pause';n.style.cssText='position:absolute;left:148px;top:108px;width:24px;height:24px;z-index:100';n.onclick=e=>{e.stopPropagation();window.controlClicks=(window.controlClicks||0)+1};lab.refs.b.querySelector('.video-stream').append(n)});
+ const controlBox=await p.locator('#appearing-control').boundingBox();await p.mouse.move(controlBox.x+12,controlBox.y+12);await p.mouse.down({clickCount:2});await p.mouse.up({clickCount:2});
+ assert.equal(await p.evaluate(()=>window.controlClicks),1,'The focus gesture must not consume a stream control click');
+ assert.equal(await p.evaluate(()=>!!document.fullscreenElement),false);
+ await p.evaluate(()=>document.getElementById('appearing-control').remove());
+ await own.dblclick({position:{x:60,y:60},delay:70});await p.waitForFunction(()=>!!document.fullscreenElement);
+ assert.ok(await p.evaluate(()=>document.fullscreenElement===lab.refs.b.querySelector('.video-stream')));
+ await p.evaluate(()=>document.exitFullscreen());await settleLayout(p);
+ assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier),'b');
+ await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=true;lab.focus(lab.vm.allSessions[0])});await settleLayout(p);
+ checks.push('Own-stream focus stays stable with previews expanded; controls remain clickable and fullscreen returns to the same stream');
  for(const [id,fromFocus,delay]of [['a',false,0],['a',false,90],['b',true,90],['c',false,40]]){
   await p.evaluate(fromFocus=>lab.focus(fromFocus?lab.vm.allSessions[0]:null),fromFocus);await settleLayout(p);
   const target=p.locator('.video-stream').nth(['a','b','c'].indexOf(id));
