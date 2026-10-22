@@ -18,7 +18,7 @@ foreach($file in @('html/client_ui/main.js','html/client_ui/main.css')){
 }
 $current=(Get-Content (Join-Path $project 'release.json') -Raw | ConvertFrom-Json).version
 $pending=Join-Path $root 'pending-update.json'
-@{schema=2;mode='next-launch';fromVersion=$current;version='9.0.0';path=$installer;sha256=(Get-FileHash $installer).Hash;resourceHashes=$hashes} | ConvertTo-Json -Depth 5 | Set-Content $pending -Encoding UTF8
+@{schema=2;mode='next-launch';fromVersion=$current;version='9.0.0';path=$installer;sha256=(Get-FileHash $installer).Hash;resourceHashes=$hashes;liveUpdate=@{schema=1;runtimeHash=('c'*64)};liveStyles=@{version='9.0.0';css=':root{--tsix-layout-version:9.0.0}'}} | ConvertTo-Json -Depth 5 | Set-Content $pending -Encoding UTF8
 $receiptBytes=[IO.File]::ReadAllBytes($pending)
 $fixtureState=[pscustomobject]@{running=$true;launched=0}
 function Get-Process {param($Name,$ErrorAction) if($fixtureState.running){[pscustomobject]@{Path=$client}}}

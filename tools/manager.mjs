@@ -8,7 +8,7 @@ import {attachSession} from './session.mjs';
 import {maintainSession,isSessionTransition} from './managed-session.mjs';
 import {atomicJSON,readJSON,captureBaseline,stateRoot,plainPath} from './install-state.mjs';
 import {claimManager} from './manager-lock.mjs';
-import {checkUpdate,compatible,stageLatestUpdate,displayVersion,compareVersions,canApplyStyles,downloadStyles} from './updates.mjs';
+import {createUpdateSession,displayVersion} from './updates.mjs';
 import {applyLiveStyles} from './live-update.mjs';
 const root=stateRoot(),project=fileURLToPath(new URL('../',import.meta.url));
 const readyIndex=process.argv.indexOf('--ready-file'),readyFile=readyIndex<0?null:process.argv[readyIndex+1];
@@ -25,10 +25,9 @@ try{
   const runtime=await readJSON(join(root,'install-runtime.json'));
   if(!['node','pwsh'].every(k=>typeof runtime[k]==='string'&&isAbsolute(runtime[k])))throw Error('Invalid maintenance runtime receipt. Run setup again to repair it.');
   let state={version:displayVersion(release.version),configured:!!release.updates?.repository,legacy:false,busy:false,available:null,detail:null,message:release.updates?.repository?'Checking for updates…':'Updates aren’t configured.'};
-  const queued=await readJSON(join(root,'pending-update.json')).catch(()=>null);
-  if(queued?.schema===2&&queued.mode==='next-launch'&&queued.fromVersion===release.version&&compareVersions(queued.version,release.version)>0){
-    state.pending=displayVersion(queued.version);state.message=`Version ${state.pending} is ready. It will install next time you open TeamSpeak.`;
-  }
+  const updates=await createUpdateSession(release,join(process.env.LOCALAPPDATA,'Programs/TeamSpeak'),root,{
+    applyStyles:(css,version)=>active?applyLiveStyles(active.client,css,version):false
+  });
   const publish=async(patch={})=>{
     state={...state,...patch,busy};
     if(!active)return false;
@@ -40,13 +39,11 @@ try{
   // its existing artwork locally so our entry never depends on that DOM node.
   const settingsIcon=await readFile(join(process.env.LOCALAPPDATA,'Programs/TeamSpeak/html/client_ui/images/icons/settings.svg'),'utf8');
   const check=async()=>{
-    if(busy||state.pending||!release.updates?.repository)return;
+    if(busy||!release.updates?.repository)return;
     busy=true;await publish({message:'Checking for updates…',detail:null});
     try{
-      const update=await checkUpdate(release.version,release.updates);
-      if(update&&!await compatible(update,join(process.env.LOCALAPPDATA,'Programs/TeamSpeak'))){await publish({available:null,message:'This update needs a different TeamSpeak version.'})}
-      else await publish({available:update?displayVersion(update.version):null,message:update?`Version ${displayVersion(update.version)} is available.`:'You’re up to date.'});
-    }catch(e){await publish({available:null,message:'Couldn’t check for updates. Try again.',detail:e.message})}
+      await publish(await updates.check());
+    }catch(e){await publish({...updates.snapshot(),message:'Couldn’t check for updates. Try again.',detail:e.message})}
     finally{busy=false;await publish()}
   };
   const launch=(exe,args,action)=>{
@@ -67,23 +64,12 @@ try{
     let request;try{request=JSON.parse(event.payload)}catch{return}
     if(request.nonce!==nonce||!['check','update','uninstall'].includes(request.action))return;
     if(request.action==='check'){await check();return}
-    if(request.action==='update'&&state.pending)return;
     busy=true;await publish({...(request.action==='update'?{available:null}:{}),message:request.action==='update'?'Checking for the latest release…':'Removing TS6 Enhanced…',detail:null});
     try{
       if(request.action==='update'){
-        const selected=await stageLatestUpdate(release.version,release.updates,join(process.env.LOCALAPPDATA,'Programs/TeamSpeak'),join(root,'updates'),{
-          onSelected:update=>publish({message:`Downloading version ${displayVersion(update.version)}…`})
-        });
-        if(!selected){busy=false;await publish({message:'No newer release is available.'});return}
-        const {update,path}=selected;
-        await atomicJSON(join(root,'pending-update.json'),{schema:2,mode:'next-launch',fromVersion:release.version,path,version:update.version,sha256:update.installer.sha256,resourceHashes:update.manifest.supportedClient.resourceHashes});
-        let applied=false,detail=null;
-        if(active&&canApplyStyles(release,update)){
-          try{const css=await downloadStyles(update);if(active)applied=await applyLiveStyles(active.client,css,update.manifest.themeVersion)}
-          catch(error){detail='The update is saved, but its appearance will apply on the next launch. '+error.message}
-        }
+        const result=await updates.download(update=>publish({message:`Downloading version ${displayVersion(update.version)}…`}));
         busy=false;
-        await publish({available:null,pending:displayVersion(update.version),detail,message:(applied?'Appearance updated. ':'')+`Version ${displayVersion(update.version)} will finish installing next time you open TeamSpeak.`});
+        await publish(result);
       }else{
         const uninstall=join(root,'app','unins000.exe');await plainPath(uninstall);
         if(await stat(uninstall).catch(()=>null))launch(uninstall,['/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'],'Uninstall');
@@ -104,6 +90,8 @@ try{
         atomicJSON(join(root,'manager-error.json'),{at:new Date().toISOString(),status:'failed',message:error.message}).catch(()=>{});
       })});
       active={client:c,contextId,nonce:randomBytes(24).toString('hex')};
+      const restored=await updates.restore({reset:true});
+      state={...state,version:restored.version,pending:restored.pending,ready:restored.ready,...(!busy&&!state.available&&state.configured?{message:restored.message,detail:restored.detail}:{})};
       if(!await publish())throw Error('Main renderer is not ready');
     },
     onState(value){

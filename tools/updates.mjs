@@ -1,7 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {readFile,writeFile,rename,mkdir,unlink} from 'node:fs/promises';
 import {join} from 'node:path';
-import {plainPath} from './install-state.mjs';
+import {plainPath,atomicJSON,readJSON} from './install-state.mjs';
 export function version(value){
   const m=/^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(value);
   if(!m)throw Error('Invalid release version');
@@ -114,4 +114,69 @@ export async function stageUpdate(update,root,options={}){
   const partial=`${path}.${randomUUID()}.partial`;
   try{await writeFile(partial,bytes,{flag:'wx'});await rename(partial,path)}finally{await unlink(partial).catch(e=>{if(e.code!=='ENOENT')throw e})}
   return path;
+}
+
+// A queued installer is bookkeeping, not a reason to stop checking for newer
+// releases. Track what is active separately from the newest verified download.
+export async function createUpdateSession(release,client,root,{applyStyles,fetcher=fetch}){
+  const receipt=join(root,'pending-update.json');
+  let queued=await readJSON(receipt).catch(()=>null),activeVersion=release.version;
+  try{
+    if(queued?.schema!==2||queued.mode!=='next-launch'||queued.fromVersion!==release.version||compareVersions(queued.version,release.version)<=0)queued=null;
+  }catch{queued=null}
+  const newest=()=>queued?.version||release.version;
+  const snapshot=()=>{
+    const waiting=compareVersions(newest(),activeVersion)>0;
+    const live=waiting&&canApplyStyles(release,{manifest:queued,stylesheet:true});
+    const pending=waiting&&!live?displayVersion(newest()):null,ready=live?displayVersion(newest()):null;
+    const message=pending?`Version ${pending} will apply next time you open TeamSpeak.`:ready?'Appearance update ready to apply.':activeVersion!==release.version?`Updated to version ${displayVersion(activeVersion)}.`:'You’re up to date.';
+    return {version:displayVersion(activeVersion),pending,ready,available:null,detail:null,message};
+  };
+  const restore=async({reset=false}={})=>{
+    if(reset)activeVersion=release.version;
+    const saved=queued?.liveStyles;
+    if(!saved)return snapshot();
+    try{
+      if(compareVersions(saved.version,release.version)<=0||compareVersions(saved.version,queued.version)>0||
+        !canApplyStyles(release,{manifest:{liveUpdate:saved},stylesheet:true})||typeof saved.css!=='string')throw Error('Saved appearance is incompatible');
+      version(saved.themeVersion);
+      const bytes=Buffer.from(saved.css,'utf8');
+      if(bytes.length>2*1024*1024||/@import|url\s*\(/i.test(saved.css))throw Error('Invalid saved appearance');
+      verifyBytes(bytes,{size:bytes.length,sha256:saved.sha256});
+      if(await applyStyles(saved.css,saved.themeVersion))activeVersion=saved.version;
+      return snapshot();
+    }catch(error){return {...snapshot(),detail:error.message}}
+  };
+  return {
+    snapshot,restore,
+    async check(){
+      if(snapshot().ready)await restore();
+      const update=await checkUpdate(newest(),release.updates,{fetcher,fresh:true});
+      if(update&&!await compatible(update,client))return {...snapshot(),message:'This update needs a different TeamSpeak version.'};
+      return update?{...snapshot(),available:displayVersion(update.version),message:`Version ${displayVersion(update.version)} is available.`}:snapshot();
+    },
+    async download(onSelected){
+      // A temporarily blocked live update can be retried without downloading
+      // the cached installer again. Still recheck upstream before applying it.
+      const selected=await stageLatestUpdate(snapshot().ready?activeVersion:newest(),release.updates,client,join(root,'updates'),{fetcher,onSelected:update=>{
+        if(compareVersions(update.version,newest())<0)throw Error('The downloaded release is no longer published. Check again later.');
+        return onSelected?.(update);
+      }});
+      if(!selected)return snapshot().ready?{...snapshot(),message:'The downloaded release is no longer published. Check again later.'}:snapshot();
+      const {update,path}=selected;
+      let liveStyles=queued?.liveStyles,detail=null;
+      if(canApplyStyles(release,update)){
+        try{
+          const css=await downloadStyles(update,{fetcher});
+          liveStyles={...update.manifest.liveUpdate,version:update.version,themeVersion:update.manifest.themeVersion,css,sha256:createHash('sha256').update(css).digest('hex')};
+        }catch(error){detail=error.message}
+      }
+      const next={schema:2,mode:'next-launch',fromVersion:release.version,path,version:update.version,sha256:update.installer.sha256,resourceHashes:update.manifest.supportedClient.resourceHashes,liveUpdate:update.manifest.liveUpdate,...(liveStyles?{liveStyles}:{})};
+      // Keep the previous queue intact until the replacement is fully verified
+      // and its receipt is durable. The launcher still installs fromVersion.
+      await atomicJSON(receipt,next);queued=next;
+      const state=await restore();
+      return {...state,detail:detail||state.detail};
+    }
+  };
 }

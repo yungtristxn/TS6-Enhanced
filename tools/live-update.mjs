@@ -2,10 +2,11 @@
 export async function applyLiveStyles(client,css,themeVersion){
   if(!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(themeVersion||''))throw Error('Invalid theme version');
   return client.evaluate(`(() => {
-    if(document.fullscreenElement)return false;
     const current=document.getElementById('userStyle');
     if(!current?.href.includes('/local.tsix.layout/')||current.disabled)return false;
     const id='tsix-live-release-style',previous=document.getElementById(id),old=previous?.textContent;
+    if(previous?.media==='all'&&old===${JSON.stringify(css)}&&getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()===${JSON.stringify(themeVersion)})return true;
+    if(document.fullscreenElement)return false;
     const style=previous||document.createElement('style'),oldMedia=style.media;style.id=id;
     try {
       style.textContent=${JSON.stringify(css)};

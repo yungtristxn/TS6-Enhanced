@@ -20,7 +20,7 @@
     #tsix-manager p{margin:0;line-height:20px;font-weight:400;overflow-wrap:anywhere}
     #tsix-manager [data-overview]{margin-top:20px}
     #tsix-manager [data-status]{color:var(--tsix-muted)}
-    #tsix-manager [data-update-action]{margin-top:12px}
+    #tsix-manager [data-update-action]{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
     #tsix-manager button{font:inherit;line-height:18px;min-height:32px;cursor:pointer;border:1px solid var(--tsv-separation-border-color,#58677d);border-radius:5px;padding:6px 12px;color:inherit;background:var(--tsv-header-bg,#172034)}
     #tsix-manager button:hover:not(:disabled){filter:brightness(1.15)}
     #tsix-manager button:focus-visible,[data-tsix-manager-open]:focus-visible{outline:2px solid var(--tsv-tint,#78c5ff);outline-offset:2px}
@@ -68,10 +68,10 @@
     title.textContent=action==='update'?'Update TS6 Enhanced?':'Uninstall TS6 Enhanced?';
     warning.textContent=action==='update'?'TeamSpeak stays open. Your calls and streams continue.':'TeamSpeak will restart and end any calls or streams.';
     dialog.setAttribute('aria-describedby',`${warning.id} ${consequence.id}`);
-    consequence.textContent=action==='update'?'Download the latest release. Installation finishes next time you open TeamSpeak.':state.legacy?'Removes the theme. Other settings and personal data stay.':'Restores your previous appearance. Your accounts and chats stay.';
+    consequence.textContent=action==='update'?'Download and apply the latest release.':state.legacy?'Removes the theme. Other settings and personal data stay.':'Restores your previous appearance. Your accounts and chats stay.';
     accept.textContent=action==='update'?'Download update':'Uninstall';accept.toggleAttribute('data-primary',action==='update');accept.toggleAttribute('data-destructive',action==='uninstall');cancel.focus();
   };
-  update.onclick=e=>{if(e.isTrusted&&!state.busy&&state.available)ask('update')};remove.onclick=e=>{if(e.isTrusted&&!state.busy)ask('uninstall')};cancel.onclick=back;
+  update.onclick=e=>{if(e.isTrusted&&!state.busy){if(state.available)ask('update');else if(state.ready)send('update')}};remove.onclick=e=>{if(e.isTrusted&&!state.busy)ask('uninstall')};cancel.onclick=back;
   accept.onclick=e=>{if(e.isTrusted&&pending&&!state.busy){send(pending);reset();close.focus()}};
   dialog.addEventListener('cancel',e=>{if(pending){e.preventDefault();back()}});
   dialog.addEventListener('close',()=>{reset();button.setAttribute('aria-expanded','false');button.focus()});
@@ -96,8 +96,8 @@
   },setState(next,token){
     if(pending==='update'&&next.available!==state.available){reset();close.focus()}
     state=next;nonce=token;version.textContent=`v${state.version}`;status.textContent=state.message;
-    check.hidden=!state.configured||!!state.available||!!state.pending;check.disabled=!!state.busy;remove.disabled=!!state.busy;
-    update.disabled=!!state.busy||!state.available;update.hidden=!state.available||!!state.pending;updateActions.hidden=check.hidden&&update.hidden;accept.disabled=!!state.busy;
+    check.hidden=!state.configured||!!state.available;check.disabled=!!state.busy;remove.disabled=!!state.busy;
+    update.textContent=state.available?'Update…':'Apply update';update.disabled=!!state.busy||!(state.available||state.ready);update.hidden=!(state.available||state.ready);updateActions.hidden=check.hidden&&update.hidden;accept.disabled=!!state.busy;
     details.hidden=!state.detail;errorText.textContent=state.detail||'';if(!state.detail)details.open=false;
     button.toggleAttribute('data-update',!!state.available);button.title=state.available?'TS6 Enhanced — update available':'TS6 Enhanced';button.setAttribute('aria-label',button.title);
     if(!state.available)toast.hidden=true;

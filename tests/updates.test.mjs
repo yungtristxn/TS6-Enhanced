@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';import {mkdtemp,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,stageLatestUpdate,compatible,canApplyStyles,downloadStyles} from '../tools/updates.mjs';
+import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,stageLatestUpdate,compatible,canApplyStyles,downloadStyles,createUpdateSession} from '../tools/updates.mjs';
 const repo='example/layout',config={repository:repo,channel:'stable'};
 const body=Buffer.alloc(128);body.write('MZ');body.writeUInt32LE(64,60);body.writeUInt32LE(0x4550,64);body.writeUInt16LE(0x14c,68);
 const digest=b=>'sha256:'+createHash('sha256').update(b).digest('hex');
@@ -99,4 +99,41 @@ test('live styles require the same runtime and verified self-contained CSS',asyn
  const external=Buffer.from('@import "https://example.com/style.css";');
  const remote={...update,stylesheet:{size:external.length,sha256:digest(external).slice(7),browser_download_url:cssAsset.browser_download_url}};
  await assert.rejects(downloadStyles(remote,{fetcher:async()=>new Response(external)}),/external content/);
+});
+
+test('live updates finish without a pending notice and newer downloads replace the queue safely',async t=>{
+ const {mkdir,writeFile,rm}=await import('node:fs/promises');
+ const root=await mkdtemp(join(tmpdir(),'tsix-update-session-')),client=join(root,'client');
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(join(client,'html/client_ui'),{recursive:true});
+ const hashes={};for(const name of ['main.js','main.css']){await writeFile(join(client,'html/client_ui',name),name);hashes['html/client_ui/'+name]=digest(Buffer.from(name)).slice(7)}
+ const installed={version:'1.0.8',updates:config,liveUpdate:{schema:1,runtimeHash:'c'.repeat(64)}};
+ const responses=new Map();let published=[],failDownload=false,allowStyles=true,applied;
+ const publish=(v,runtimeHash=installed.liveUpdate.runtimeHash)=>{
+  const css=Buffer.from(`:root{--tsix-layout-version:${v}}`),metadata=Buffer.from(JSON.stringify({version:v,themeVersion:v,updates:{deferredInstall:1},supportedClient:{resourceHashes:hashes},liveUpdate:{schema:1,runtimeHash}}));
+  const assets=[['release.json',metadata],[`TS6-Enhanced-${v}-Setup.exe`,body],[`TS6-Enhanced-${v}-layout.css`,css]].map(([name,data])=>{
+   const a={...asset(name,data),browser_download_url:`https://github.com/${repo}/releases/download/v${v}/${name}`};responses.set(a.browser_download_url,data);return a;
+  });
+  published.push({...release,tag_name:'v'+v,assets});
+ };
+ const options={fetcher:async url=>new Response(url.includes('api.github.com')?JSON.stringify(published):failDownload&&url.endsWith('.exe')?'bad download':responses.get(url)),applyStyles:async(css,v)=>{if(!allowStyles)return false;applied=v;return true}};
+ const start=()=>createUpdateSession(installed,client,root,options),receipt=join(root,'pending-update.json');
+ let session=await start();publish('1.0.9');
+ let state=await session.download();assert.equal(state.version,'1.0.9');assert.equal(state.pending,null);assert.equal(applied,'1.0.9');assert.doesNotMatch(state.message,/restart|launch|install/i);
+ assert.equal((await session.check()).available,null,'Do not offer the already applied release again');
+ session=await start();state=await session.restore({reset:true});assert.equal(state.version,'1.0.9');assert.equal(state.pending,null,'Reattachment restores the verified live appearance');
+ publish('1.0.10');assert.equal((await session.check()).available,'1.0.10');
+ state=await session.download();assert.equal(state.version,'1.0.10');assert.equal(state.pending,null);
+ let saved=JSON.parse(await readFile(receipt,'utf8'));assert.equal(saved.version,'1.0.10');assert.equal(saved.fromVersion,'1.0.8','The installer must still target the actual installed base');
+ publish('1.0.11','d'.repeat(64));state=await session.download();assert.equal(state.version,'1.0.10');assert.equal(state.pending,'1.0.11');assert.match(state.message,/next time/);
+ publish('1.0.12','d'.repeat(64));assert.equal((await session.check()).available,'1.0.12','A queued runtime update must not block checks');
+ const previous=await readFile(receipt);failDownload=true;await assert.rejects(session.download(),/SHA-256/);assert.deepEqual(await readFile(receipt),previous);assert.equal(session.snapshot().pending,'1.0.11');
+ failDownload=false;state=await session.download();assert.equal(state.pending,'1.0.12');assert.equal(JSON.parse(await readFile(receipt,'utf8')).version,'1.0.12');
+ session=await start();state=await session.restore({reset:true});assert.equal(state.version,'1.0.10');assert.equal(state.pending,'1.0.12','Restore active CSS while a newer runtime waits');
+ publish('1.0.13');allowStyles=false;state=await session.download();assert.equal(state.ready,'1.0.13');assert.equal(state.pending,null,'Temporarily blocked CSS does not require a restart');assert.doesNotMatch(state.message,/restart|next time/i);
+ const withdrawn=published.pop(),savedReady=await readFile(receipt);await assert.rejects(session.download(),/no longer published/);assert.deepEqual(await readFile(receipt),savedReady,'Retry must not replace a withdrawn release with an older download');published.push(withdrawn);
+ const publishedBefore=published;published=[];assert.match((await session.download()).message,/no longer published/);assert.deepEqual(await readFile(receipt),savedReady);published=publishedBefore;
+ allowStyles=true;state=await session.download();assert.equal(state.version,'1.0.13');assert.equal(state.ready,null);assert.equal(state.pending,null);
+ saved=JSON.parse(await readFile(receipt,'utf8'));saved.liveStyles.css+='tampered';await writeFile(receipt,JSON.stringify(saved));
+ session=await start();state=await session.restore({reset:true});assert.equal(state.version,'1.0.8');assert.equal(state.ready,'1.0.13');assert.equal(state.pending,null);assert.match(state.detail,/SHA-256/);
 });

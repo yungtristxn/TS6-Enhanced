@@ -35,8 +35,12 @@ try{
  await set({configured:true,legacy:false,available:'0.11.0',message:'Version 0.11.0 is available.'});
  assert.ok(await p.locator('[data-toast]').isVisible());assert.deepEqual(await entry.boundingBox(),normal);assert.match(await entry.getAttribute('aria-label'),/update available/);await p.getByRole('button',{name:'Later',exact:true}).click();
  await set({configured:true,available:'0.11.0',message:'Version 0.11.0 is available.'});assert.equal(await p.locator('[data-toast]').isVisible(),false);
- await entry.click();await p.getByRole('button',{name:'Update…',exact:true}).click();assert.match(await dialog.innerText(),/Download the latest release/);assert.match(await dialog.innerText(),/TeamSpeak stays open/);assert.doesNotMatch(await dialog.innerText(),/restart/);await capture('manager-update');await p.getByRole('button',{name:'Download update',exact:true}).click();assert.equal(await p.evaluate(()=>requests.at(-1).action),'update');
- checks.push('Update notice appears once per release; confirmation describes download and deferred activation without restart');
+ await entry.click();await p.getByRole('button',{name:'Update…',exact:true}).click();assert.match(await dialog.innerText(),/Download and apply the latest release/);assert.match(await dialog.innerText(),/TeamSpeak stays open/);assert.doesNotMatch(await dialog.innerText(),/restart|next time|finish/i);await capture('manager-update');await p.getByRole('button',{name:'Download update',exact:true}).click();assert.equal(await p.evaluate(()=>requests.at(-1).action),'update');
+ await set({configured:true,version:'1.0.9',pending:null,message:'Updated to version 1.0.9.'});assert.doesNotMatch(await dialog.innerText(),/restart|next time|finish/i);assert.ok(await p.getByRole('button',{name:'Check for updates',exact:true}).isEnabled());await capture('manager-applied');
+ await set({configured:true,ready:'1.0.10',message:'Appearance update ready to apply.'});assert.doesNotMatch(await dialog.innerText(),/restart|next time/i);await p.getByRole('button',{name:'Apply update',exact:true}).click();assert.equal(await p.evaluate(()=>requests.at(-1).action),'update');await capture('manager-ready');
+ await set({configured:true,version:'1.0.9',pending:'1.0.10',message:'Version 1.0.10 will apply next time you open TeamSpeak.'});await p.getByRole('button',{name:'Check for updates',exact:true}).click();assert.equal(await p.evaluate(()=>requests.at(-1).action),'check');await capture('manager-pending');
+ await set({configured:true,version:'1.0.9',pending:'1.0.10',available:'1.0.11',message:'Version 1.0.11 is available.'});await p.getByRole('button',{name:'Update…',exact:true}).click();await p.getByRole('button',{name:'Download update',exact:true}).click();assert.equal(await p.evaluate(()=>requests.at(-1).action),'update');
+ checks.push('Live completion has no next-launch notice; queued changes keep Check and newer Update actions usable');
  await p.getByRole('button',{name:'Close',exact:true}).click();
  await p.evaluate(()=>{document.querySelector('.tsv-central-toolbar').replaceChildren();document.getElementById('tsix-manager').remove()});
  await entry.waitFor();await entry.click();assert.ok(await dialog.isVisible());
@@ -61,6 +65,10 @@ try{
  const renderer={evaluate:expression=>p.evaluate(expression)};
  assert.equal(await applyLiveStyles(renderer,':root{--tsix-layout-version:2.0.0;color:red}','2.0.0'),true);
  assert.ok(await p.evaluate(()=>document.querySelector('video')===originalVideo));
+ await p.evaluate(()=>Object.defineProperty(document,'fullscreenElement',{configurable:true,value:document.querySelector('video')}));
+ assert.equal(await applyLiveStyles(renderer,':root{--tsix-layout-version:2.0.0;color:red}','2.0.0'),true,'An already-active style stays completed during fullscreen');
+ assert.equal(await applyLiveStyles(renderer,':root{--tsix-layout-version:2.0.1}','2.0.1'),false);
+ await p.evaluate(()=>delete document.fullscreenElement);
  await assert.rejects(applyLiveStyles(renderer,':root{color:blue}','2.0.1'),/version did not match/);
  assert.equal(await p.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()),'2.0.0');
  await p.evaluate(()=>document.getElementById('userStyle').href='tsui://extension/another.theme/style.css');
