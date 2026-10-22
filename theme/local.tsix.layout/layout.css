@@ -1,7 +1,7 @@
 /* TS6 beta5 / 1791901251. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 1.0.8;
+  --tsix-layout-version: 1.0.9;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
@@ -524,19 +524,23 @@
   border-radius: 0; background: transparent;
 }
 .sidebar-pane-layout .tsv-tabs:has(.ts-sidebar-tab-sub-panel-accessory) { grid-template-rows: 28px 28px; }
-.sidebar-pane-layout .tsv-tabs::before { background: transparent; border-radius: 0; }
+/* The native slim-tab backdrop has higher specificity than .tsv-tabs alone. */
+.sidebar-pane-layout .tsv-tabs.tsv-tabs-slim::before { content: none; display: none; }
 .sidebar-pane-layout .tsv-tabs > .tsv-tab-item { grid-column: 1; grid-row: 1; min-width: 0; padding: 0; margin: 0; gap: 8px; justify-content: flex-start; }
 .sidebar-pane-layout .tsv-tabs > .tsv-tab-item > .tsv-action { flex: 0 0 22px; }
 .sidebar-pane-layout .tsv-tabs > .tsv-tab-item > .tsv-text-truncate { justify-content: flex-start; }
 .sidebar-pane-layout .tsv-tabs > .tsv-extended-expander-click-area { display: contents; }
 .sidebar-pane-layout .tsv-tabs > .tsv-extended-expander-click-area > .tsv-flex-grow { display: none; }
-.sidebar-pane-layout .tsv-tabs .ts-expander { grid-column: 2; grid-row: 1; width: 28px; height: 28px; padding: 0; margin: 0; }
+.sidebar-pane-layout .tsv-tabs .ts-expander { grid-column: 2; grid-row: 1; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; margin: 0; border-radius: 4px; }
+.sidebar-pane-layout .tsv-tabs .ts-expander > .ts-expander-chevron { position: static; width: 22px; height: 22px; margin: 0; }
+.sidebar-pane-layout .tsv-tabs .ts-expander:hover { background: #243448; }
 .sidebar-pane-layout .tsv-tabs .tsv-sidebar-header-accessories {
   grid-column: 1 / -1; grid-row: 2; justify-self: start; justify-content: flex-start;
   gap: 8px; min-height: 28px; padding: 0; margin: 0 0 0 -3px;
 }
 .sidebar-pane-layout .tsv-tabs:not(:has(.ts-sidebar-tab-sub-panel-accessory)) .tsv-sidebar-header-accessories { display: none; }
-.sidebar-pane-layout .ts-sidebar-tab-sub-panel-accessory { min-width: 28px; min-height: 28px; display: flex; align-items: center; justify-content: center; }
+.sidebar-pane-layout .ts-sidebar-tab-sub-panel-accessory { width: 28px; height: 28px; min-width: 28px; min-height: 28px; box-sizing: border-box; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
+.sidebar-pane-layout .tsv-tabs .ts-sidebar-tab-sub-panel-accessory:is(:hover,:focus-visible) { transform: none; background: #243448; }
 .sidebar-pane-layout .tsv-bar-item-title { margin: 0; color: #d6e0ed; font: 600 14px/20px var(--tsv-font-family); }
 .sidebar-pane-layout > .tsv-body .tsv-item { font-size: var(--tsix-classic-type); border-radius: 3px; padding: 0 16px; min-height: var(--tsix-classic-nav-row); box-sizing: border-box; }
 .sidebar-pane-layout .tsv-item-highlight { border-radius: 3px; }
@@ -552,7 +556,8 @@
 .sidebar-pane-layout > .tsv-body .tsv-sidebar-header-content > .tsv-item-text { margin: 0; }
 .sidebar-pane-layout .tsv-item-action .tsv-item-text { font-size: 14px; color: #8bc4ff; }
 .sidebar-pane-layout .resources-section .ts-collapsible-expander { display: flex; width: auto; min-height: 28px; margin: 4px 16px; padding: 0; box-sizing: border-box; color: #a9b7c9; font: 400 13px/20px var(--tsv-font-family); }
-.sidebar-pane-layout .resources-section .ts-collapsible-expander .label { margin: 0 0 0 30px; padding: 0; }
+.sidebar-pane-layout .resources-section .ts-collapsible-expander .label { flex: 1; min-width: 0; margin: 0 0 0 30px; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-pane-layout .resources-section .ts-collapsible-expander .ts-expander-chevron { position: static; flex: 0 0 28px; width: 28px; height: 28px; margin: 0; padding: 3px; box-sizing: border-box; }
 .sidebar-pane-layout .tsv-icon-primary { --tsv-icon-size: 22px; }
 .sidebar-pane-layout .ts-join-community { margin-top: 4px; padding: 0 16px; }
 .sidebar-pane-layout .ts-join-community .tsv-button {
@@ -671,7 +676,21 @@
   border-top: 0; background: var(--tsix-chrome-bg);
 }
 .sidebar-pane-layout > .tsv-footer .tsv-item-text { font: 400 14px/20px var(--tsv-font-family); }
-.sidebar-pane-layout > .tsv-footer .tsv-action-subtle { min-width: 32px; min-height: 32px; border-radius: var(--tsix-chrome-radius); }
+/* Keep the profile name readable beside the native edit/presence/settings actions. */
+.sidebar-pane-layout > .tsv-footer > .tsv-bar { padding: 0 8px; gap: 4px; align-items: center; }
+.sidebar-pane-layout > .tsv-footer > .tsv-bar > .tsv-flex-grow { flex: 1 1 0; min-width: 0; }
+.sidebar-pane-layout > .tsv-footer :is(.tsv-item,.tsv-item-container) { min-width: 0; padding: 0; }
+.sidebar-pane-layout > .tsv-footer .tsv-item-content-primary { gap: 8px; }
+.sidebar-pane-layout > .tsv-footer .tsv-item-content-primary > .tsv-item-text { min-width: 0; margin: 0; }
+.sidebar-pane-layout > .tsv-footer .tsv-item-accessory { flex-shrink: 0; gap: 0; margin: 0; }
+.sidebar-pane-layout > .tsv-footer .tsv-item-accessory .tsv-button,
+.sidebar-pane-layout > .tsv-footer > .tsv-bar > .tsv-action-subtle {
+  flex: 0 0 28px; width: 28px; height: 28px; min-width: 28px; min-height: 28px;
+  padding: 0; box-sizing: border-box; border-radius: var(--tsix-chrome-radius);
+}
+.sidebar-pane-layout > .tsv-footer .tsv-action-subtle:is(:hover,:focus-visible) { transform: none; background: #243448; }
+.sidebar-pane-layout > .tsv-footer .tsv-reveal-on-hover { visibility: visible; pointer-events: none; }
+.sidebar-pane-layout > .tsv-footer .tsv-item:is(:hover,:focus-within) .tsv-reveal-on-hover { opacity: 1; pointer-events: auto; }
 /* Shared compact controls, including the existing live status badge. */
 [data-tsix-broadcast-bar]:not([data-fullscreen]) {
   left: 12px; max-width: calc(100% - 24px); border-radius: var(--tsix-chrome-radius);
