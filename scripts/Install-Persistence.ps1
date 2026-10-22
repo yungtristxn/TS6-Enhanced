@@ -31,7 +31,18 @@ function Copy-Atomic([string]$Source,[string]$Destination) {
     try {
         $stream=[IO.File]::Open($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
         try{$bytes=[IO.File]::ReadAllBytes($Source);$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
-        if([IO.File]::Exists($Destination)){[IO.File]::Replace($temp,$Destination,[NullString]::Value)}else{[IO.File]::Move($temp,$Destination)}
+        for($attempt=0;;$attempt++){
+            try{
+                if([IO.File]::Exists($Destination)){[IO.File]::Replace($temp,$Destination,[NullString]::Value)}else{[IO.File]::Move($temp,$Destination)}
+                break
+            }catch{
+                $failure=$_.Exception.GetBaseException();$code=$failure.HResult -band 0xffff
+                # Explorer/indexing may briefly hold a shortcut or new EXE.
+                # Keep the atomic replacement; never delete a locked target.
+                if($attempt -ge 5 -or $code -notin @(32,33,1175) -or ![IO.File]::Exists($temp)){throw "Atomic replacement failed for $Destination. $($failure.Message)"}
+                Start-Sleep -Milliseconds 200
+            }
+        }
     }finally{if([IO.File]::Exists($temp)){[IO.File]::Delete($temp)}}
 }
 function Resolve-PendingShortcut {
@@ -56,7 +67,8 @@ function Resolve-PendingShortcut {
         Copy-Atomic (Join-Path $folder 'replacement.lnk') $ShortcutPath
         Copy-Atomic (Join-Path $folder 'next-original.lnk') $original
         Copy-Atomic (Join-Path $folder 'next-state.json') $statePath
-        Notify-LayoutShortcutChanged $ShortcutPath
+        $iconPath=if($next.installed){Join-Path $StateRoot 'TS6-Enhanced.exe'}else{''}
+        Notify-LayoutShortcutChanged $ShortcutPath -IconPath $iconPath
         Remove-Item -LiteralPath $pendingPath
     }
     return [pscustomobject]@{State=$next;Original=(Join-Path $folder 'next-original.lnk')}
@@ -113,20 +125,21 @@ if ($Action -eq 'Status') {
 }
 if ($Action -eq 'Uninstall' -and (!$state -or !$state.installed)) { Write-Output 'Shortcut persistence is already absent.'; return }
 $files = @('scripts\Start-Layout.ps1','scripts\Start-ManagedLayout.ps1','scripts\Start-Inspection.ps1','scripts\Maintenance.ps1','scripts\Runtime.ps1','scripts\Theme.ps1','scripts\Install-Persistence.ps1',
-    'release.json','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\live-update.mjs','tools\manager.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
+    'release.json','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\live-update.mjs','tools\manager.mjs','tools\managed-session.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
     'tools\cdp.mjs','tools\client.mjs','tools\workspace-runtime.js','tools\streams-runtime.js')
 if ($Action -eq 'Install') {
     $powershell = Get-LayoutPowerShell
     $bundledNode=(Test-Path -LiteralPath (Join-Path $project 'runtime\node.exe')) -or (Test-Path -LiteralPath (Join-Path $project 'SHA256SUMS.txt'))
     if($bundledNode){
         $node=Resolve-LayoutNode $project
-        $files+=@('runtime\node.exe','runtime\LICENSE')
+        $files+=@('runtime\node.exe','runtime\LICENSE','runtime\TS6-Enhanced.exe')
     }else{
         # Source-checkout development can use an explicitly supplied/local Node.
         $node = if ($NodePath) { [IO.Path]::GetFullPath($NodePath) } else { (Get-Command node -ErrorAction Stop).Source }
     }
     $nodeVersion = & $node --version
     if ($LASTEXITCODE -ne 0 -or [int]($nodeVersion -replace '^v(\d+).*','$1') -lt 22) { throw 'Node 22 or newer is required.' }
+    $launcherSource=if($bundledNode){Join-Path $project 'runtime\TS6-Enhanced.exe'}else{Join-Path $project '.local\launcher\TS6-Enhanced.exe'}
     $clientExe = Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
     if (!(Test-Path -LiteralPath $clientExe)) { throw 'Installed TeamSpeak executable not found.' }
     foreach ($file in $files) {
@@ -141,7 +154,7 @@ if((!$state -or !$state.installed) -and $Action -eq 'Install'){
     # prove it native: a managed original must still be rejected.
     $inspect=if($state -and $state.currentHash -eq $state.originalHash){$original}else{$ShortcutPath}
     $native=(New-Object -ComObject WScript.Shell).CreateShortcut($inspect)
-    if($native.Arguments -match 'Start-Layout\.ps1'){throw 'A managed shortcut cannot become the native original. Restore the verified original shortcut from recovery history first.'}
+    if($native.Arguments -match 'Start-Layout\.ps1' -or [IO.Path]::GetFileName($native.TargetPath) -eq 'TS6-Enhanced.exe'){throw 'A managed shortcut cannot become the native original. Restore the verified original shortcut from recovery history first.'}
 }
 if (!$PSCmdlet.ShouldProcess($ShortcutPath, "$Action automatic layout attachment; retain byte-for-byte shortcut recovery")) { return }
 New-Item -ItemType Directory -Path $StateRoot -Force | Out-Null
@@ -196,20 +209,28 @@ if ($Action -eq 'Install') {
     Assert-PlainPath $launcher
     if(Test-Path -LiteralPath $launcher){Copy-Item -LiteralPath $launcher -Destination (Join-Path $history 'previous-launcher.ps1')}
     Copy-Atomic (Join-Path $release 'scripts\Start-ManagedLayout.ps1') $launcher
+    if(!$bundledNode){& (Join-Path $project 'scripts\Build-Launcher.ps1') -OutputPath $launcherSource}
+    # Keep the worker immutable while a queued installer replaces the stable EXE.
+    $workerLauncher=Join-Path $release 'runtime\TS6-Enhanced.exe'
+    if(!$bundledNode){New-Item -ItemType Directory -Path (Split-Path -Parent $workerLauncher) -Force | Out-Null;Copy-Atomic $launcherSource $workerLauncher}
+    $nativeLauncher=Join-Path $StateRoot 'TS6-Enhanced.exe'
+    Assert-PlainPath $nativeLauncher
+    if(Test-Path -LiteralPath $nativeLauncher){Copy-Item -LiteralPath $nativeLauncher -Destination (Join-Path $history 'previous-launcher.exe')}
+    Copy-Atomic $launcherSource $nativeLauncher
     $staged = Join-Path $history 'replacement.lnk'
     # Keep the native AppUserModelID and other Shell properties. A new blank
     # link loses that identity, leaving Windows Search's old app entry behind.
     Copy-Item -LiteralPath $nextOriginal -Destination $staged
     $link = $shell.CreateShortcut($staged)
-    $link.TargetPath = $powershell
-    $link.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+$launcher+'" -Quiet'
+    $link.TargetPath = $nativeLauncher
+    $link.Arguments = ''
     $link.WorkingDirectory = $StateRoot
-    $link.IconLocation = $clientExe+',0'
+    $link.IconLocation = $nativeLauncher+',0'
     $link.Description = 'TeamSpeak with automatic local layout enhancements'
     $link.WindowStyle = 7
     $link.Save()
     $check = $shell.CreateShortcut($staged)
-    if ($check.TargetPath -ne $powershell -or $check.Arguments -ne $link.Arguments) { throw 'Shortcut verification failed; original remains unchanged.' }
+    if ($check.TargetPath -ne $nativeLauncher -or $check.Arguments -ne '') { throw 'Shortcut verification failed; original remains unchanged.' }
     $state.release = $release
     $state.installed = $true
 } else {

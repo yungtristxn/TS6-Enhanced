@@ -13,7 +13,7 @@ export async function claimManager(root){
   }catch(e){if(!['EADDRINUSE','EACCES'].includes(e.code))throw e}
   // A second launcher must wait for the actual owner to attach, not equate a
   // running process with a working maintenance panel.
-  for(let attempt=0;attempt<100;attempt++){
+  for(let attempt=0;attempt<600;attempt++){
     const current=await new Promise((ok,fail)=>{
       const socket=createConnection(path);let text='';
       socket.setTimeout(1000,()=>socket.destroy(Error('Manager status timed out')));

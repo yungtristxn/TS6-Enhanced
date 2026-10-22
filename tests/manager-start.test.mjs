@@ -2,6 +2,8 @@ import {test} from 'node:test';import assert from 'node:assert/strict';
 import {mkdtemp,writeFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {claimManager} from '../tools/manager-lock.mjs';import {readJSON} from '../tools/install-state.mjs';
 import {spawn} from 'node:child_process';import {once} from 'node:events';
+import {maintainSession} from '../tools/managed-session.mjs';
+import {EventEmitter} from 'node:events';
 
 test('manager exclusion is kernel-owned, ignores incomplete legacy PID files and waits for readiness',async()=>{
  const root=await mkdtemp(join(tmpdir(),'tsix-manager-'));
@@ -34,4 +36,17 @@ test('runtime receipts written by Windows PowerShell 5.1 remain readable; malfor
  const path=join(await mkdtemp(join(tmpdir(),'tsix-runtime-')),'runtime.json'),runtime={node:'C:\\node.exe',pwsh:'C:\\pwsh.exe'};
  await writeFile(path,'\uFEFF'+JSON.stringify(runtime));assert.deepEqual(await readJSON(path),runtime);
  await writeFile(path,'\uFEFF{');await assert.rejects(readJSON(path),SyntaxError);
+});
+
+test('manager recovery stops on client exit and never retries listener trust failures',async()=>{
+ const events=new EventEmitter(),states=[];let opens=0,attaches=0;
+ const c={on(name,callback){events.on(name,callback);return()=>events.off(name,callback)},onClose(callback){events.once('close',callback)},close(){events.emit('close')},
+  async send(method){if(method==='Runtime.enable')events.emit('Runtime.executionContextCreated',{context:{id:7,origin:'tsui://default',auxData:{isDefault:true,frameId:'main'}}});if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'main'}}}}
+ };
+ await maintainSession({open:async()=>{if(++opens===1)return c;throw Object.assign(Error('Client closed'),{code:'TSIX_NO_LISTENER'})},attach:async(client,id)=>{assert.equal(id,7);attaches++},
+  onState(state){states.push(state.status);if(state.status==='ready')queueMicrotask(()=>events.emit('close'))},retryMs:1});
+ assert.equal(opens,2);assert.equal(attaches,1);assert.deepEqual(states,['starting','ready','recovering','stopped']);
+ let unsafeAttempts=0;
+ await assert.rejects(maintainSession({open:async()=>{unsafeAttempts++;throw Error('Non-loopback listener refused')},attach:async()=>assert.fail('Unsafe attachment')}),/Non-loopback/);
+ assert.equal(unsafeAttempts,1);
 });

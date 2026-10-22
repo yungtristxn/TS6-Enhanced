@@ -3,45 +3,42 @@ import {join,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomBytes} from 'node:crypto';
 import {spawn} from 'node:child_process';
-import {connect,readClientBuild} from './cdp.mjs';
+import {connect} from './cdp.mjs';
+import {attachSession} from './session.mjs';
+import {maintainSession,isSessionTransition} from './managed-session.mjs';
 import {atomicJSON,readJSON,captureBaseline,stateRoot,plainPath} from './install-state.mjs';
 import {claimManager} from './manager-lock.mjs';
 import {checkUpdate,compatible,stageLatestUpdate,displayVersion,compareVersions,canApplyStyles,downloadStyles} from './updates.mjs';
 import {applyLiveStyles} from './live-update.mjs';
 const root=stateRoot(),project=fileURLToPath(new URL('../',import.meta.url));
 const readyIndex=process.argv.indexOf('--ready-file'),readyFile=readyIndex<0?null:process.argv[readyIndex+1];
-const report=async value=>{if(readyFile)await atomicJSON(readyFile,value)};
+const portIndex=process.argv.indexOf('--port'),port=Number(portIndex<0?9988:process.argv[portIndex+1]);
+if(!Number.isInteger(port)||port<1024||port>65535)throw Error('Invalid manager port');
+let reported=false;
+const report=async value=>{if(readyFile&&!reported){await atomicJSON(readyFile,value);reported=true}};
 await plainPath(root);await mkdir(root,{recursive:true});
-let c,timer,claim;const nonce=randomBytes(24).toString('hex');let busy=false;
+let active,timer,claim,removeBinding;let busy=false;
 try{
   claim=await claimManager(root);
   if(!claim.owner){await report({status:'ready'});process.exit(0)}
   const release=JSON.parse(await readFile(join(project,'release.json'),'utf8'));
   const runtime=await readJSON(join(root,'install-runtime.json'));
   if(!['node','pwsh'].every(k=>typeof runtime[k]==='string'&&isAbsolute(runtime[k])))throw Error('Invalid maintenance runtime receipt. Run setup again to repair it.');
-  c=await connect();
-  const disconnected=new Promise(resolve=>c.onClose(resolve));
-  const build=await readClientBuild(c);
-  if(build!==release.supportedClient.build)throw Error('Unsupported TeamSpeak build; maintenance UI was not attached');
-  const baseline=await captureBaseline(c);
-  let state={version:displayVersion(release.version),configured:!!release.updates?.repository,legacy:baseline.legacy,busy:false,available:null,detail:null,message:release.updates?.repository?'Checking for updates…':'Updates aren’t configured.'};
+  let state={version:displayVersion(release.version),configured:!!release.updates?.repository,legacy:false,busy:false,available:null,detail:null,message:release.updates?.repository?'Checking for updates…':'Updates aren’t configured.'};
   const queued=await readJSON(join(root,'pending-update.json')).catch(()=>null);
   if(queued?.schema===2&&queued.mode==='next-launch'&&queued.fromVersion===release.version&&compareVersions(queued.version,release.version)>0){
     state.pending=displayVersion(queued.version);state.message=`Version ${state.pending} is ready. It will install next time you open TeamSpeak.`;
   }
-  const publish=async(patch={})=>{state={...state,...patch,busy};await c.evaluate(`window.__tsixManager?.setState(${JSON.stringify(state)},${JSON.stringify(nonce)})`)};
+  const publish=async(patch={})=>{
+    state={...state,...patch,busy};
+    if(!active)return false;
+    try{return await active.client.evaluate(`(()=>{if(!window.__tsixManager)return false;window.__tsixManager.setState(${JSON.stringify(state)},${JSON.stringify(active.nonce)});return true})()`)}
+    catch(error){if(!isSessionTransition(error))throw error;return false}
+  };
   const ui=await readFile(join(project,'tools/manager-runtime.js'),'utf8');
-  let contextId;
-  c.on('Runtime.executionContextCreated',({context})=>{if(context.origin==='tsui://default'&&context.auxData?.isDefault)contextId=context.id});
-  await c.send('Runtime.enable');
-  if(!contextId)throw Error('Main renderer context not found');
-  await c.send('Runtime.addBinding',{name:'__tsixMaintenanceRequest',executionContextId:contextId});
-  await c.evaluate(ui);
   // The profile/settings button can be unmounted by native navigation. Load
   // its existing artwork locally so our entry never depends on that DOM node.
   const settingsIcon=await readFile(join(process.env.LOCALAPPDATA,'Programs/TeamSpeak/html/client_ui/images/icons/settings.svg'),'utf8');
-  await c.evaluate(`window.__tsixManager.setIcon(${JSON.stringify(settingsIcon)})`);
-  await publish();
   const check=async()=>{
     if(busy||state.pending||!release.updates?.repository)return;
     busy=true;await publish({message:'Checking for updates…',detail:null});
@@ -63,8 +60,10 @@ try{
     child.on('exit',async code=>{if(code){busy=false;const detail=await readFile(join(root,'setup-logs/maintenance-error.txt'),'utf8').catch(()=>`Setup exited with code ${code}`);publish({message:`${action} stopped. Try again.`,detail:detail.trim()}).catch(()=>{})}});
     child.unref();
   };
-  c.on('Runtime.bindingCalled',async event=>{
-    if(event.name!=='__tsixMaintenanceRequest'||event.executionContextId!==contextId||event.payload.length>512||busy)return;
+  const handleRequest=async event=>{
+    if(!active)return;
+    const {contextId,nonce}=active;
+    if(event.name!=='__tsixMaintenanceRequest'||event.executionContextId!==contextId||typeof event.payload!=='string'||event.payload.length>512||busy)return;
     let request;try{request=JSON.parse(event.payload)}catch{return}
     if(request.nonce!==nonce||!['check','update','uninstall'].includes(request.action))return;
     if(request.action==='check'){await check();return}
@@ -79,8 +78,8 @@ try{
         const {update,path}=selected;
         await atomicJSON(join(root,'pending-update.json'),{schema:2,mode:'next-launch',fromVersion:release.version,path,version:update.version,sha256:update.installer.sha256,resourceHashes:update.manifest.supportedClient.resourceHashes});
         let applied=false,detail=null;
-        if(canApplyStyles(release,update)){
-          try{applied=await applyLiveStyles(c,await downloadStyles(update),update.manifest.themeVersion)}
+        if(active&&canApplyStyles(release,update)){
+          try{const css=await downloadStyles(update);if(active)applied=await applyLiveStyles(active.client,css,update.manifest.themeVersion)}
           catch(error){detail='The update is saved, but its appearance will apply on the next launch. '+error.message}
         }
         busy=false;
@@ -91,11 +90,33 @@ try{
         else launch(runtime.pwsh,['-NoProfile','-ExecutionPolicy','Bypass','-File',join(project,'scripts/Maintenance.ps1'),'-Action','Remove','-NodePath',process.execPath,'-Restart','-Background'],'Uninstall');
       }
     }catch(e){busy=false;await publish({message:request.action==='update'?'Update stopped. Try again.':'Uninstall stopped. Try again.',detail:e.message})}
+  };
+  await maintainSession({
+    open:()=>connect({port}),
+    async attach(c,contextId){
+      await attachSession(c);
+      state.legacy=(await captureBaseline(c)).legacy;
+      await c.send('Runtime.addBinding',{name:'__tsixMaintenanceRequest',executionContextId:contextId});
+      await c.evaluate(ui);
+      await c.evaluate(`window.__tsixManager.setIcon(${JSON.stringify(settingsIcon)})`);
+      removeBinding?.();
+      removeBinding=c.on('Runtime.bindingCalled',event=>{handleRequest(event).catch(error=>{
+        atomicJSON(join(root,'manager-error.json'),{at:new Date().toISOString(),status:'failed',message:error.message}).catch(()=>{});
+      })});
+      active={client:c,contextId,nonce:randomBytes(24).toString('hex')};
+      if(!await publish())throw Error('Main renderer is not ready');
+    },
+    onState(value){
+      claim.setState(value);
+      if(value.status!=='ready'){active=null;removeBinding?.();removeBinding=null;return}
+      if(!timer){
+        check().catch(()=>{});
+        timer=setInterval(()=>check().catch(()=>{}),Math.max(1,release.updates?.checkIntervalHours||6)*3600000);
+      }
+      return report({status:'ready'});
+    }
   });
-  claim.setState({status:'ready'});await report({status:'ready'});
-  await check();timer=setInterval(()=>check().catch(()=>{}),Math.max(1,release.updates?.checkIntervalHours||6)*3600000);
-  await disconnected;
 }catch(e){
   const failure={status:'failed',message:e.message};claim?.setState?.(failure);
   await atomicJSON(join(root,'manager-error.json'),{at:new Date().toISOString(),...failure});await report(failure);process.exitCode=1;
-}finally{clearInterval(timer);c?.close();await claim?.close?.()}
+}finally{clearInterval(timer);removeBinding?.();await claim?.close?.()}

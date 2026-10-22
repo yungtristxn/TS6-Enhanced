@@ -53,5 +53,5 @@ catch {
 }
 Write-Output "TS6 Enhanced $($release.version) installed for the current Windows user."
 Write-Output 'The next managed launch activates the theme and compact tree automatically.'
-Write-Output 'Subsequent Start Menu launches attach automatically. Existing direct EXE launches, protocol links and taskbar pins are not intercepted.'
+Write-Output 'Open TeamSpeak from Search, or pin that entry to the taskbar. Direct EXE and protocol launches do not load enhancements.'
 }finally{Exit-LayoutOperation $operation}

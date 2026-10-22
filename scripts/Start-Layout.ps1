@@ -63,9 +63,9 @@ if(Test-Path -LiteralPath (Join-Path $project 'tools\manager.mjs')) {
     $statusRoot=Join-Path $env:LOCALAPPDATA 'TS6-Layout\launcher'
     New-Item -ItemType Directory -Path $statusRoot -Force | Out-Null
     $receipt=Join-Path $statusRoot ('manager-'+[guid]::NewGuid().ToString('N')+'.json')
-    $worker=Start-Process -FilePath $node -ArgumentList ('"'+$manager+'" --ready-file "'+$receipt+'"') -WindowStyle Hidden -PassThru
+    $worker=Start-Process -FilePath $node -ArgumentList ('"'+$manager+'" --port '+$Port+' --ready-file "'+$receipt+'"') -WindowStyle Hidden -PassThru
     try {
-        $deadline=[DateTime]::UtcNow.AddSeconds(20)
+        $deadline=[DateTime]::UtcNow.AddSeconds(75)
         while(!(Test-Path -LiteralPath $receipt)){
             if($worker.HasExited -or [DateTime]::UtcNow -ge $deadline){throw 'Maintenance controls did not start. See TS6-Layout\manager-error.json in LocalAppData, then retry the Start Menu shortcut.'}
             Start-Sleep -Milliseconds 100
@@ -75,12 +75,10 @@ if(Test-Path -LiteralPath (Join-Path $project 'tools\manager.mjs')) {
     }finally{$worker.Dispose();if(Test-Path -LiteralPath $receipt){Remove-Item -LiteralPath $receipt}}
 }
 Write-Output 'This session uses a loopback-only inspection listener. Exit TS6 and launch normally to remove it. No background service was installed.'
-if ($Quiet) {
-    $statusRoot = Join-Path $env:LOCALAPPDATA 'TS6-Layout\launcher'
-    New-Item -ItemType Directory -Path $statusRoot -Force | Out-Null
-    @{ status='ready'; timestamp=[DateTime]::UtcNow.ToString('o'); release=$project } | ConvertTo-Json |
-        Set-Content -LiteralPath (Join-Path $statusRoot 'last-launch.json') -Encoding utf8
-}
+$statusRoot = Join-Path $env:LOCALAPPDATA 'TS6-Layout\launcher'
+New-Item -ItemType Directory -Path $statusRoot -Force | Out-Null
+@{ status='ready'; timestamp=[DateTime]::UtcNow.ToString('o'); release=$project; entry='script' } | ConvertTo-Json |
+    Set-Content -LiteralPath (Join-Path $statusRoot 'last-launch.json') -Encoding utf8
 } catch {
     if (!$Quiet) { throw }
     $statusRoot = Join-Path $env:LOCALAPPDATA 'TS6-Layout\launcher'

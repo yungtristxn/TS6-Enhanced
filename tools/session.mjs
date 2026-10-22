@@ -36,6 +36,9 @@ export async function attachSession(c,{setup=false,preserve=false,refreshTree=()
   }
   if(!ready)throw Error('Select TS6 Enhanced in Appearance, then launch the TeamSpeak Start Menu shortcut again. No restart is needed.');
   if(await readClientBuild(c)!==release.supportedClient.build)throw Error('Unsupported TS6 build; no helpers attached');
+  // Reopening the shortcut or recovering the management connection must not
+  // dispose healthy media helpers (which would reset active audio graphs).
+  if(await c.evaluate('!!window.__tsixWorkspace && !!window.__tsixStreams'))return;
   await c.evaluate(`(()=>{
     if(document.fullscreenElement)throw Error('Exit fullscreen before attaching layout helpers');
     const vm=document.querySelector('.tsv-window').__vue__;
@@ -49,8 +52,9 @@ export async function attachSession(c,{setup=false,preserve=false,refreshTree=()
   }else console.log('Layout theme is disabled. Update and uninstall controls remain available; your appearance choice was retained.');
   // Both runtimes remain dormant without their CSS marker and observe later
   // theme loads. A disabled or delayed stylesheet must not skip attachment.
-  await c.evaluate(await readFile(new URL('./workspace-runtime.js',import.meta.url),'utf8'));
-  await c.evaluate(await readFile(new URL('./streams-runtime.js',import.meta.url),'utf8'));
+  for(const [name,file] of [['__tsixWorkspace','workspace-runtime.js'],['__tsixStreams','streams-runtime.js']]){
+    await c.evaluate(`if(!window.${name}){${await readFile(new URL(file,import.meta.url),'utf8')}}`);
+  }
 }
 const entryPath=process.argv[1]?resolve(process.argv[1]):'',modulePath=fileURLToPath(import.meta.url);
 if(entryPath&&(process.platform==='win32'?modulePath.toLowerCase()===entryPath.toLowerCase():modulePath===entryPath)) {
@@ -62,7 +66,7 @@ while(!c) {
   catch(error) {
     // The CEF listener can appear before its main page/bridge on cold launch.
     // Do not retry failed listener ownership or non-loopback checks.
-    if(Date.now()>=deadline||!/Expected one TS6 target|TS6 document identity check failed|CDP connection (failed|timeout)|Cannot find context|Execution context was destroyed/.test(error.message))throw error;
+    if(Date.now()>=deadline||(!['TSIX_NO_LISTENER','TSIX_DISCOVERY_UNAVAILABLE'].includes(error.code)&&!/Expected one TS6 target|TS6 document identity check failed|CDP connection (failed|timeout)|Cannot find context|Execution context was destroyed/.test(error.message)))throw error;
     await new Promise(r=>setTimeout(r,250));
   }
 }

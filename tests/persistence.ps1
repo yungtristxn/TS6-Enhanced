@@ -15,6 +15,7 @@ New-Item -ItemType Directory -Path (Join-Path $package 'runtime') -Force | Out-N
 foreach($name in @('scripts','tools','release.json')){Copy-Item (Join-Path $project $name) $package -Recurse}
 Copy-Item (Get-Command node).Source (Join-Path $package 'runtime\node.exe')
 'Fixture license' | Set-Content (Join-Path $package 'runtime\LICENSE')
+& (Join-Path $project 'scripts\Build-Launcher.ps1') -OutputPath (Join-Path $package 'runtime\TS6-Enhanced.exe') -IconSource ''
 $installer = Join-Path $package 'scripts\Install-Persistence.ps1'
 $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut($shortcut)
@@ -32,11 +33,12 @@ $state = Get-Content (Join-Path $stateRoot 'state.json') -Raw | ConvertFrom-Json
 Check ($state.installed) 'Install state missing'
 Check ((Get-FileHash (Join-Path $stateRoot 'original-TeamSpeak.lnk')).Hash -eq $hash) 'Backup not byte-identical'
 $owned = $shell.CreateShortcut($shortcut)
-Check ($owned.TargetPath -eq (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')) 'Wrong launcher executable'
-Check ($owned.Arguments.Contains('-WindowStyle Hidden') -and $owned.Arguments.EndsWith('-Quiet')) 'Launcher must be unobtrusive'
+Check ($owned.TargetPath -eq (Join-Path $stateRoot 'TS6-Enhanced.exe')) 'Shortcut must target its own application launcher'
+Check ($owned.Arguments -eq '') 'Native launcher must not depend on cached script arguments'
+Check ($owned.IconLocation -eq ((Join-Path $stateRoot 'TS6-Enhanced.exe')+',0')) 'Shortcut icon must come from the installed launcher'
 Check ($owned.Hotkey -eq $link.Hotkey) 'Managed shortcut discarded native shortcut properties'
-Check ($owned.Arguments.Contains((Join-Path $stateRoot 'Start-Layout.ps1'))) 'Shortcut must use the stable launcher'
 $stableArguments=$owned.Arguments
+$stableTarget=$owned.TargetPath
 $savedNode=(Get-Content (Join-Path $state.release 'runtime.json') -Raw | ConvertFrom-Json).node
 Check ($savedNode -eq (Join-Path $state.release 'runtime\node.exe')) 'Bundled Node was not pinned to the permanent release'
 Check ((Get-FileHash $savedNode).Hash -eq (Get-FileHash (Join-Path $package 'runtime\node.exe')).Hash) 'Bundled runtime changed during copying'
@@ -49,6 +51,7 @@ $oldRelease = $state.release
 $state = Get-Content (Join-Path $stateRoot 'state.json') -Raw | ConvertFrom-Json
 Check ($oldRelease -ne $state.release -and (Test-Path -LiteralPath $oldRelease)) 'Update did not preserve the previous release'
 Check ($shell.CreateShortcut($shortcut).Arguments -ceq $stableArguments) 'Updating must not change the cached shortcut command'
+Check ($shell.CreateShortcut($shortcut).TargetPath -ceq $stableTarget) 'Updating must not change the registered application target'
 $currentEntry=Join-Path $state.release 'scripts\Start-Layout.ps1'
 $entryBytes=[IO.File]::ReadAllBytes($currentEntry)
 try {
@@ -167,4 +170,83 @@ foreach($stamp in @('20261022-000000-000-aaaaaaaa','20261022-000000-000-bbbbbbbb
 @{owner='ts6-layout-shortcut-v1';installed=$true;release=$project} | ConvertTo-Json | Set-Content (Join-Path $dispatch 'state.json')
 $refused=$false;try{& $entry}catch{$refused=$_.Exception.Message.Contains('escaped')};Check $refused 'Launcher accepted a release outside its installation'
 Write-Output 'PASS: stable shortcut dispatch selects the current release and rejects escaped paths.'
+# Exercise the actual native dispatch with inert client/session/manager programs.
+# No real TeamSpeak process, endpoint, updater or PowerShell launcher is invoked.
+$nativeCase=Join-Path $root 'native-launcher';New-Item -ItemType Directory -Path $nativeCase | Out-Null
+Copy-Item -LiteralPath (Join-Path $package 'runtime\TS6-Enhanced.exe') -Destination (Join-Path $nativeCase 'TS6-Enhanced.exe')
+'throw "The native launcher must not invoke this PowerShell wrapper."' | Set-Content -LiteralPath (Join-Path $nativeCase 'Start-Layout.ps1')
+$fakeSource=Join-Path $nativeCase 'Client.cs'
+@'
+using System;using System.IO;
+class Fixture { static void Main(string[] args) { File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA"),"client-arguments.txt"),String.Join("|",args)); } }
+'@ | Set-Content -LiteralPath $fakeSource
+& (Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') /nologo /target:winexe ('/out:'+(Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe')) $fakeSource
+Check ($LASTEXITCODE -eq 0) 'Fixture client did not compile'
+$launcherHash=(Get-FileHash (Join-Path $nativeCase 'TS6-Enhanced.exe')).Hash
+foreach($stamp in @('20261022-000000-000-cccccccc','20261022-000000-000-dddddddd')){
+    $fixtureRelease=Join-Path $nativeCase ('releases\'+$stamp)
+    New-Item -ItemType Directory -Path (Join-Path $fixtureRelease 'tools'),(Join-Path $fixtureRelease 'runtime') -Force | Out-Null
+    Copy-Item (Join-Path $nativeCase 'TS6-Enhanced.exe') (Join-Path $fixtureRelease 'runtime\TS6-Enhanced.exe')
+    @{node=(Get-Command node).Source;preserveAppearance=$true} | ConvertTo-Json | Set-Content (Join-Path $fixtureRelease 'runtime.json')
+    @{version='1.0.7'} | ConvertTo-Json | Set-Content (Join-Path $fixtureRelease 'release.json')
+    @'
+import {writeFileSync} from 'node:fs';
+if(!process.env.TSIX_OPERATION_TOKEN)throw Error('Lost operation lease');
+writeFileSync(new URL('../session-arguments.json',import.meta.url),JSON.stringify(process.argv.slice(2)));
+'@ | Set-Content (Join-Path $fixtureRelease 'tools\session.mjs')
+    @'
+import {writeFileSync} from 'node:fs';
+if(process.env.TSIX_OPERATION_TOKEN)throw Error('Long-lived manager inherited the operation token');
+writeFileSync(process.argv[process.argv.indexOf('--ready-file')+1],JSON.stringify({status:'ready'}));
+'@ | Set-Content (Join-Path $fixtureRelease 'tools\manager.mjs')
+    @{owner='ts6-layout-shortcut-v1';installed=$true;release=$fixtureRelease} | ConvertTo-Json | Set-Content (Join-Path $nativeCase 'state.json')
+    $native=Start-Process -FilePath (Join-Path $nativeCase 'TS6-Enhanced.exe') -ArgumentList '--port','9999' -WindowStyle Hidden -PassThru
+    try{Check ($native.WaitForExit(5000) -and $native.ExitCode -eq 0) 'Native entry did not dispatch successfully'}finally{$native.Dispose()}
+    $deadline=[DateTime]::UtcNow.AddSeconds(12);$launchReceipt=Join-Path $env:LOCALAPPDATA 'TS6-Layout\launcher\last-launch.json'
+    do{
+        $started=if(Test-Path $launchReceipt){Get-Content $launchReceipt -Raw | ConvertFrom-Json}else{$null}
+        if($started.status -eq 'failed'){throw $started.message}
+        if($started.status -eq 'ready' -and $started.release -eq $fixtureRelease){break}
+        if([DateTime]::UtcNow -ge $deadline){throw 'Native worker did not finish'}
+        Start-Sleep -Milliseconds 100
+    }while($true)
+    Check ($started.entry -eq 'native' -and $started.port -eq 9999) 'Wrong launch receipt'
+    Check (((Get-Content (Join-Path $fixtureRelease 'session-arguments.json') -Raw | ConvertFrom-Json) -join '|') -eq '--port|9999|--upgrade') 'Native startup lost activation or port arguments'
+    Check ((Get-Content (Join-Path $env:LOCALAPPDATA 'client-arguments.txt') -Raw) -eq '--remote-debugging-address=127.0.0.1|--remote-debugging-port=9999') 'Native client lost loopback debugging flags'
+    Check ((Get-FileHash (Join-Path $nativeCase 'TS6-Enhanced.exe')).Hash -eq $launcherHash) 'Changing releases replaced the stable entry during dispatch'
+}
+# A queued update must be able to replace the stable EXE while the immutable
+# worker retains the same lifecycle lease as the existing maintenance scripts.
+New-Item -ItemType Directory -Path (Join-Path $fixtureRelease 'scripts') -Force | Out-Null
+Copy-Item (Join-Path $project 'scripts\Runtime.ps1') (Join-Path $fixtureRelease 'scripts\Runtime.ps1')
+@{fromVersion='1.0.7'} | ConvertTo-Json | Set-Content (Join-Path $env:LOCALAPPDATA 'TS6-Layout\pending-update.json')
+@'
+param($Action)
+$ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Runtime.ps1')
+$operation=Enter-LayoutOperation
+try{
+    $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
+    $stable=Join-Path $root 'TS6-Enhanced.exe';$next=$stable+'.replacement'
+    Copy-Item -LiteralPath $stable -Destination $next
+    [IO.File]::Replace($next,$stable,[NullString]::Value)
+    @{Action=$Action;Major=$PSVersionTable.PSVersion.Major;Token=$env:TSIX_OPERATION_TOKEN} | ConvertTo-Json | Set-Content (Join-Path $root 'update-handoff.json')
+}finally{Exit-LayoutOperation $operation}
+'@ | Set-Content (Join-Path $fixtureRelease 'scripts\Maintenance.ps1')
+$native=Start-Process -FilePath (Join-Path $nativeCase 'TS6-Enhanced.exe') -WindowStyle Hidden -PassThru
+try{Check ($native.WaitForExit(5000) -and $native.ExitCode -eq 0) 'Update dispatch failed'}finally{$native.Dispose()}
+$deadline=[DateTime]::UtcNow.AddSeconds(12)
+while(!(Test-Path (Join-Path $nativeCase 'update-handoff.json'))){if([DateTime]::UtcNow -ge $deadline){throw 'Native update handoff did not finish'};Start-Sleep -Milliseconds 100}
+$handoff=Get-Content (Join-Path $nativeCase 'update-handoff.json') -Raw | ConvertFrom-Json
+Check ($handoff.Action -eq 'Update' -and $handoff.Major -eq 5 -and $handoff.Token -match '^[a-f0-9]{32}$') 'Maintenance handoff lost the Windows host or lifecycle lease'
+@{owner='ts6-layout-shortcut-v1';installed=$false;release=$fixtureRelease} | ConvertTo-Json | Set-Content (Join-Path $nativeCase 'state.json')
+'pending' | Set-Content (Join-Path $env:LOCALAPPDATA 'client-arguments.txt')
+$native=Start-Process -FilePath (Join-Path $nativeCase 'TS6-Enhanced.exe') -WindowStyle Hidden -PassThru
+try{Check ($native.WaitForExit(5000) -and $native.ExitCode -eq 0) 'Removed installation did not launch native TeamSpeak'}finally{$native.Dispose()}
+$deadline=[DateTime]::UtcNow.AddSeconds(5)
+while((Get-Content (Join-Path $env:LOCALAPPDATA 'client-arguments.txt') -Raw)){
+    if([DateTime]::UtcNow -ge $deadline){throw 'Removed installation retained enhancement launch flags'}
+    Start-Sleep -Milliseconds 100
+}
+Write-Output 'PASS: native entry selects the current release, invokes Node directly, permits queued replacement with the lifecycle lease, and launches stock after removal.'
 }finally{$env:LOCALAPPDATA=$previousLocalData}

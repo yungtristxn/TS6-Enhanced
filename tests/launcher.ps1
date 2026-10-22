@@ -33,10 +33,13 @@ Check (($arguments -join '|') -eq '--port|9988|--upgrade') 'An update must prese
 # Use the real Node launch/receipt path; failure must not be reported as ready.
 @'
 import {writeFileSync} from 'node:fs';
+writeFileSync(new URL('../manager-arguments.json',import.meta.url),JSON.stringify(process.argv.slice(2)));
 writeFileSync(process.argv[process.argv.indexOf('--ready-file')+1],JSON.stringify({status:'failed',message:'fixture manager failure'}));
 '@ | Set-Content (Join-Path $scratch 'tools\manager.mjs')
-$refused=$false;try{& $launcher}catch{$refused=$_.Exception.Message.Contains('fixture manager failure')}
+$refused=$false;try{& $launcher -Port 9989}catch{$refused=$_.Exception.Message.Contains('fixture manager failure')}
 Check $refused 'Manager initialization failure was reported as successful launch'
+$managerArguments=Get-Content -LiteralPath (Join-Path $scratch 'manager-arguments.json') -Raw | ConvertFrom-Json
+Check ($managerArguments[0] -eq '--port' -and $managerArguments[1] -eq '9989') 'The manager lost the selected debugger port'
 Remove-Item -LiteralPath (Join-Path $scratch 'tools\manager.mjs')
 Remove-Item -LiteralPath (Join-Path $scratch '.theme-ready')
 'console.error("fixture activation failure");process.exit(1)' | Set-Content -LiteralPath (Join-Path $scratch 'tools\session.mjs')

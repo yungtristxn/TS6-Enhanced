@@ -65,21 +65,39 @@ function Write-LayoutFailure([string]$Path,[string]$Message) {
     }catch{Write-Warning 'Could not write the setup error summary; details remain in the setup log.'}
 }
 
-function Notify-LayoutShortcutChanged([string]$Path) {
+function Notify-LayoutShortcutChanged([string]$Path,[string]$IconPath='') {
     if(!('TS6Enhanced.ShellChanges' -as [type])){
         Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 namespace TS6Enhanced {
     public static class ShellChanges {
+        [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+        struct FileInfo {
+            public IntPtr Icon; public int Index; public uint Attributes;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst=260)] public string DisplayName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst=80)] public string TypeName;
+        }
         [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
         public static extern void SHChangeNotify(int events, uint flags, string path, IntPtr unused);
+        [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+        static extern IntPtr SHGetFileInfo(string path, uint attributes, out FileInfo info, uint size, uint flags);
+        [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+        static extern void SHUpdateImage(string path, int index, uint flags, int imageIndex);
+        public static void RefreshExecutableIcon(string path) {
+            FileInfo info;
+            if(SHGetFileInfo(path, 0, out info, (uint)Marshal.SizeOf(typeof(FileInfo)), 0x4000) != IntPtr.Zero)
+                SHUpdateImage(path, 0, 0, info.Index);
+            SHChangeNotify(0x2000, 0x1005, path, IntPtr.Zero);
+        }
     }
 }
 '@
     }
-    # SHCNE_UPDATEITEM, SHCNF_PATHW: announce the committed shortcut replacement.
-    [TS6Enhanced.ShellChanges]::SHChangeNotify(0x2000,0x0005,$Path,[IntPtr]::Zero)
+    # Refresh this app's icon cache entry as well as its shortcut metadata.
+    if($IconPath){[TS6Enhanced.ShellChanges]::RefreshExecutableIcon($IconPath)}
+    [TS6Enhanced.ShellChanges]::SHChangeNotify(0x2000,0x1005,$Path,[IntPtr]::Zero)
+    [TS6Enhanced.ShellChanges]::SHChangeNotify(0x1000,0x1005,(Split-Path -Parent $Path),[IntPtr]::Zero)
 }
 
 # A short mutex serializes admission; shared read handles retain the operation

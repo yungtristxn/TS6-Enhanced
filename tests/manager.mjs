@@ -4,6 +4,8 @@ const source=await readFile(new URL('../tools/manager-runtime.js',import.meta.ur
 import {clientPath as client} from './client-path.mjs';
 import {applyLiveStyles} from '../tools/live-update.mjs';
 import {readClientBuild} from '../tools/cdp.mjs';
+import {maintainSession} from '../tools/managed-session.mjs';
+import {attachSession} from '../tools/session.mjs';
 const nativeIcon=await readFile(`${client}/html/client_ui/images/icons/settings.svg`,'utf8');
 const browser=await chromium.launch({headless:true,...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
 const errors=[],checks=[];
@@ -76,5 +78,44 @@ try{
  await p.evaluate(()=>{tsclient_internal.getClientLibVersion=()=>{}});
  await assert.rejects(readClientBuild(renderer),/did not answer its version check/);
  await gc.detach();checks.push('Native version callback survives garbage collection, retries a collected promise and times out cleanly when the bridge does not answer');
+ // Real document/context recreation and CDP detach, with only the native
+ // bridge and origin supplied by a local fixture. No TeamSpeak reload occurs.
+ await p.route('http://tsix-recovery.test/**',route=>route.fulfill({contentType:'text/html',body:`<main><div class="tsv-window"><div class="tsv-central-toolbar"></div><video></video></div></main><script>
+ window.tsclient_internal={getClientLibVersion:callback=>callback(null,1791901251)};
+ document.querySelector('.tsv-window').__vue__={windowLayout:{},collapseSidebar(){},$watch(){return()=>{}}};
+ document.querySelector('main').__vue__={appearanceSettings:{}};
+ </script>`}));
+ await p.goto('http://tsix-recovery.test/');
+ const abort=new AbortController(),recoveries=[],requests=[];let connection,attachment=0,removeRequest;
+ const following=maintainSession({signal:abort.signal,retryMs:10,open:async()=>{
+  const session=await p.context().newCDPSession(p);let closed=false;const onClose=[];
+  connection={send:(...args)=>session.send(...args),async evaluate(expression){const result=await session.send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);return result.result.value},
+   on(method,callback){const handler=params=>{if(method==='Runtime.executionContextCreated'&&params.context.origin==='http://tsix-recovery.test')params={...params,context:{...params.context,origin:'tsui://default'}};callback(params)};session.on(method,handler);return()=>session.off(method,handler)},
+   onClose(callback){onClose.push(callback)},close(){if(closed)return;closed=true;session.detach().catch(()=>{});for(const callback of onClose)callback()}}
+  return connection;
+ },attach:async(c,id)=>{
+  await attachSession(c,{refreshTree:()=>assert.fail('Disabled theme should not refresh native trees')});
+  await c.send('Runtime.addBinding',{name:'__tsixMaintenanceRequest',executionContextId:id});
+  await c.evaluate(source);const token='generation-'+(++attachment);
+  await c.evaluate(`__tsixManager.setState(${JSON.stringify({...base,configured:true,legacy:false})},${JSON.stringify(token)})`);
+  removeRequest?.();removeRequest=c.on('Runtime.bindingCalled',event=>{if(event.executionContextId===id)requests.push(JSON.parse(event.payload))});
+ },onState:state=>{recoveries.push(state.status)}});
+ let followError;following.catch(error=>{followError=error});
+ const waitReady=async count=>{const until=Date.now()+8000;while(recoveries.filter(s=>s==='ready').length<count){if(followError)throw followError;if(Date.now()>until)throw Error('Recovery did not become ready');await new Promise(r=>setTimeout(r,25))}};
+ try{
+  await waitReady(1);
+  await p.evaluate(()=>{window.savedHelpers={workspace:__tsixWorkspace,streams:__tsixStreams,video:document.querySelector('video')};window.disposals=0;for(const helper of [__tsixWorkspace,__tsixStreams])helper.dispose=()=>{disposals++;throw Error('Healthy helper was disposed')}});
+  await attachSession(connection);await attachSession(connection);
+  assert.ok(await p.evaluate(()=>savedHelpers.workspace===__tsixWorkspace&&savedHelpers.streams===__tsixStreams&&savedHelpers.video===document.querySelector('video')&&disposals===0));
+  connection.close();await waitReady(2);
+  assert.ok(await p.evaluate(()=>savedHelpers.workspace===__tsixWorkspace&&savedHelpers.streams===__tsixStreams&&savedHelpers.video===document.querySelector('video')&&disposals===0));
+  await p.reload();await waitReady(3);
+  assert.equal(await p.locator('[data-tsix-manager-open]').count(),1);assert.equal(await p.locator('#tsix-manager').count(),1);
+  assert.ok(await p.evaluate(()=>!!__tsixWorkspace&&!!__tsixStreams));
+  await p.locator('[data-tsix-manager-open]').click();await p.getByRole('button',{name:'Check for updates',exact:true}).click();
+  await p.waitForTimeout(50);assert.equal(requests.length,1);assert.equal(requests[0].action,'check');assert.equal(requests[0].nonce,'generation-'+attachment);
+  assert.deepEqual(errors,[]);
+ }finally{abort.abort();await following;removeRequest?.()}
+ checks.push('Renderer reload and CDP reconnect restore one updater with a fresh binding; repeat attachment and reconnect preserve existing helpers and media nodes without disposal');
  console.log(JSON.stringify({result:'PASS',checks,errors,scope:'Native icon and trusted browser input with a recording-only bridge; no real restart or removal'},null,2));
 }finally{await browser.close()}

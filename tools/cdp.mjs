@@ -21,18 +21,23 @@ export async function readClientBuild(c) {
 
 export function verifyListener(port) {
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw Error('Invalid port');
-  const script = `$ErrorActionPreference='Stop'; $listeners=@(Get-NetTCPConnection -LocalPort ${port} -State Listen); if (!$listeners.Count) { throw 'No listener' }; $expected=Join-Path $env:LOCALAPPDATA 'Programs\\TeamSpeak\\TeamSpeak.exe'; foreach($listener in $listeners) { if($listener.LocalAddress -notin @('127.0.0.1','::1')) { throw 'Non-loopback listener refused' }; $owner=Get-CimInstance Win32_Process -Filter ('ProcessId = '+$listener.OwningProcess); if($owner.ExecutablePath -ne $expected) { throw 'Listener is not the installed TeamSpeak client' } }; 'verified'`;
+  const script = `$ErrorActionPreference='Stop'; $listeners=@(Get-NetTCPConnection -State Listen | Where-Object LocalPort -eq ${port}); if (!$listeners.Count) { 'missing'; exit 0 }; $expected=Join-Path $env:LOCALAPPDATA 'Programs\\TeamSpeak\\TeamSpeak.exe'; foreach($listener in $listeners) { if($listener.LocalAddress -notin @('127.0.0.1','::1')) { throw 'Non-loopback listener refused' }; $owner=Get-CimInstance Win32_Process -Filter ('ProcessId = '+$listener.OwningProcess); if($owner.ExecutablePath -ne $expected) { throw 'Listener is not the installed TeamSpeak client' } }; 'verified'`;
   // Node does not perform PowerShell 7's WinPSModulePath handoff. In particular,
   // a portable PS7 install must not supply its modules to Windows PowerShell.
   const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>key.toUpperCase()!=='PSMODULEPATH'));
   const powershell=join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
-  try {execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, stdio: 'pipe', env, timeout:30000 });}
+  let result;
+  try {result=execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, stdio: 'pipe', env, timeout:30000 }).toString().trim();}
   catch(error){throw Error(`Could not verify TeamSpeak's local connection. ${String(error.stderr||error.message).trim()}`);}
+  if(result==='missing')throw Object.assign(Error('TeamSpeak has no local inspection listener. Open its managed shortcut when the client is closed.'),{code:'TSIX_NO_LISTENER'});
+  if(result!=='verified')throw Error('Unexpected TeamSpeak listener verification result');
 }
 
 export async function targets(port = 9988) {
   verifyListener(port);
-  const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000), redirect: 'error' });
+  let response;
+  try{response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000), redirect: 'error' })}
+  catch(error){throw Object.assign(Error(`TeamSpeak target discovery is temporarily unavailable: ${error.message}`),{code:'TSIX_DISCOVERY_UNAVAILABLE'})}
   if (!response.ok) throw Error(`Target discovery failed: ${response.status}`);
   return (await response.json()).filter(t => t.type === 'page' && t.url.startsWith('tsui://default/index.html'));
 }
@@ -68,6 +73,7 @@ export async function connect({ port = 9988, targetId, context = 'main' } = {}) 
     data.error ? entry.reject(Error(data.error.message)) : entry.resolve(data.result);
   });
   const send = (method, params = {}) => new Promise((resolve, reject) => {
+    if(ws.readyState!==WebSocket.OPEN){reject(Error('CDP disconnected'));return}
     const id = ++nextId;
     const timer = setTimeout(() => { pending.delete(id); reject(Error(`${method} timed out`)); }, 10000);
     pending.set(id, { resolve, reject, timer });
