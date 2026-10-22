@@ -20,6 +20,7 @@ $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut($shortcut)
 $link.TargetPath = Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
 $link.Description = 'Untouched original'
+$link.Hotkey = 'CTRL+ALT+SHIFT+F12'
 $link.Save()
 $hash = (Get-FileHash -LiteralPath $shortcut).Hash
 function Check($condition,[string]$message) { if (!$condition) { throw $message } }
@@ -33,6 +34,7 @@ Check ((Get-FileHash (Join-Path $stateRoot 'original-TeamSpeak.lnk')).Hash -eq $
 $owned = $shell.CreateShortcut($shortcut)
 Check ($owned.TargetPath -eq (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')) 'Wrong launcher executable'
 Check ($owned.Arguments.Contains('-WindowStyle Hidden') -and $owned.Arguments.EndsWith('-Quiet')) 'Launcher must be unobtrusive'
+Check ($owned.Hotkey -eq $link.Hotkey) 'Managed shortcut discarded native shortcut properties'
 Check ($owned.Arguments.Contains((Join-Path $stateRoot 'Start-Layout.ps1'))) 'Shortcut must use the stable launcher'
 $stableArguments=$owned.Arguments
 $savedNode=(Get-Content (Join-Path $state.release 'runtime.json') -Raw | ConvertFrom-Json).node
@@ -47,6 +49,13 @@ $oldRelease = $state.release
 $state = Get-Content (Join-Path $stateRoot 'state.json') -Raw | ConvertFrom-Json
 Check ($oldRelease -ne $state.release -and (Test-Path -LiteralPath $oldRelease)) 'Update did not preserve the previous release'
 Check ($shell.CreateShortcut($shortcut).Arguments -ceq $stableArguments) 'Updating must not change the cached shortcut command'
+$currentEntry=Join-Path $state.release 'scripts\Start-Layout.ps1'
+$entryBytes=[IO.File]::ReadAllBytes($currentEntry)
+try {
+    'param($Port,[switch]$Quiet); "current:${Port}:${Quiet}"' | Set-Content -LiteralPath $currentEntry
+    $result=& (Join-Path $oldRelease 'scripts\Start-Layout.ps1') -Port 9999 -Quiet
+    Check ($result -eq 'current:9999:True') 'A cached legacy shortcut did not forward to the current release'
+}finally{[IO.File]::WriteAllBytes($currentEntry,$entryBytes)}
 Check ((Get-FileHash (Join-Path $stateRoot 'original-TeamSpeak.lnk')).Hash -eq $hash) 'Update replaced original recovery'
 # Model a binary metadata change with unchanged WScript launch properties.
 # The terminal extra-data marker ends the link; trailing padding is not launched.

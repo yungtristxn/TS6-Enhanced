@@ -197,6 +197,9 @@ if ($Action -eq 'Install') {
     if(Test-Path -LiteralPath $launcher){Copy-Item -LiteralPath $launcher -Destination (Join-Path $history 'previous-launcher.ps1')}
     Copy-Atomic (Join-Path $release 'scripts\Start-ManagedLayout.ps1') $launcher
     $staged = Join-Path $history 'replacement.lnk'
+    # Keep the native AppUserModelID and other Shell properties. A new blank
+    # link loses that identity, leaving Windows Search's old app entry behind.
+    Copy-Item -LiteralPath $nextOriginal -Destination $staged
     $link = $shell.CreateShortcut($staged)
     $link.TargetPath = $powershell
     $link.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+$launcher+'" -Quiet'
@@ -222,6 +225,34 @@ $hashes=@{}
 foreach($name in @('TeamSpeak.lnk','replacement.lnk','previous-original.lnk','next-original.lnk','state.json','next-state.json')){$hashes[$name]=Get-Hash (Join-Path $history $name)}
 Write-LayoutJSON $pendingPath @{owner=$owner;shortcut=$ShortcutPath;history=$stamp;hashes=$hashes}
 Resolve-PendingShortcut | Out-Null
+if($Action -eq 'Install'){
+    # Windows can retain a launch command from an older registered app entry.
+    # Preserve those entry scripts, then forward them to the stable dispatcher.
+    # Helper payloads and their manifests remain available for recovery.
+    $forwarder=Join-Path $history 'legacy-launcher.ps1'
+    @'
+#requires -Version 5.1
+[CmdletBinding()]
+param([ValidateRange(1024,65535)][int]$Port=9988,[switch]$Quiet)
+$entry=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\Start-Layout.ps1'))
+$powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$launchArguments=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$entry,'-Port',"$Port")
+if($Quiet){$launchArguments+='-Quiet'}
+& $powershell @launchArguments
+if($LASTEXITCODE -ne 0){throw 'The managed TeamSpeak launcher failed. See the launcher log in LocalAppData\TS6-Layout.'}
+'@ | Set-Content -LiteralPath $forwarder -Encoding UTF8
+    foreach($previous in Get-ChildItem -LiteralPath (Join-Path $StateRoot 'releases') -Directory){
+        if($previous.FullName -eq $release -or $previous.Name -notmatch '^\d{8}-\d{6}-\d{3}-[a-f0-9]{8}$'){continue}
+        Assert-PlainPath $previous.FullName
+        $entry=Join-Path $previous.FullName 'scripts\Start-Layout.ps1'
+        $receipt=Join-Path $previous.FullName 'runtime.json'
+        Assert-PlainPath $entry;Assert-PlainPath $receipt
+        if(!(Test-Path -LiteralPath $entry -PathType Leaf) -or !(Test-Path -LiteralPath $receipt -PathType Leaf)){continue}
+        if((Get-Hash $entry) -eq (Get-Hash $forwarder)){continue}
+        Copy-Item -LiteralPath $entry -Destination (Join-Path $history ('launcher-before-'+$previous.Name+'.ps1'))
+        Copy-Atomic $forwarder $entry
+    }
+}
 Write-Output "$Action complete: $ShortcutPath"
 Write-Output "Original shortcut backup: $original"
 Write-Output 'No running client, native file, startup task, protocol handler or pinned taskbar shortcut was changed.'

@@ -1,7 +1,7 @@
 /* TS6 beta5 / 1791901251. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 1.0.6;
+  --tsix-layout-version: 1.0.7;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
