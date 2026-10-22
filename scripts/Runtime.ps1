@@ -65,6 +65,23 @@ function Write-LayoutFailure([string]$Path,[string]$Message) {
     }catch{Write-Warning 'Could not write the setup error summary; details remain in the setup log.'}
 }
 
+function Notify-LayoutShortcutChanged([string]$Path) {
+    if(!('TS6Enhanced.ShellChanges' -as [type])){
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace TS6Enhanced {
+    public static class ShellChanges {
+        [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+        public static extern void SHChangeNotify(int events, uint flags, string path, IntPtr unused);
+    }
+}
+'@
+    }
+    # SHCNE_UPDATEITEM, SHCNF_PATHW: announce the committed shortcut replacement.
+    [TS6Enhanced.ShellChanges]::SHChangeNotify(0x2000,0x0005,$Path,[IntPtr]::Zero)
+}
+
 # A short mutex serializes admission; shared read handles retain the operation
 # across parent/child handoffs, including an updater waiting for Inno. Windows
 # releases handles after a crash. Only descendants with the current token join.

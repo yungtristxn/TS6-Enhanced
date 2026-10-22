@@ -56,6 +56,7 @@ function Resolve-PendingShortcut {
         Copy-Atomic (Join-Path $folder 'replacement.lnk') $ShortcutPath
         Copy-Atomic (Join-Path $folder 'next-original.lnk') $original
         Copy-Atomic (Join-Path $folder 'next-state.json') $statePath
+        Notify-LayoutShortcutChanged $ShortcutPath
         Remove-Item -LiteralPath $pendingPath
     }
     return [pscustomobject]@{State=$next;Original=(Join-Path $folder 'next-original.lnk')}
@@ -111,7 +112,7 @@ if ($Action -eq 'Status') {
     return
 }
 if ($Action -eq 'Uninstall' -and (!$state -or !$state.installed)) { Write-Output 'Shortcut persistence is already absent.'; return }
-$files = @('scripts\Start-Layout.ps1','scripts\Start-Inspection.ps1','scripts\Maintenance.ps1','scripts\Runtime.ps1','scripts\Theme.ps1','scripts\Install-Persistence.ps1',
+$files = @('scripts\Start-Layout.ps1','scripts\Start-ManagedLayout.ps1','scripts\Start-Inspection.ps1','scripts\Maintenance.ps1','scripts\Runtime.ps1','scripts\Theme.ps1','scripts\Install-Persistence.ps1',
     'release.json','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\live-update.mjs','tools\manager.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
     'tools\cdp.mjs','tools\client.mjs','tools\workspace-runtime.js','tools\streams-runtime.js')
 if ($Action -eq 'Install') {
@@ -191,11 +192,15 @@ if ($Action -eq 'Install') {
     # Retain the receipt field name for compatibility with an older updater.
     Write-LayoutJSON (Join-Path (Split-Path -Parent $StateRoot) 'install-runtime.json') @{node=$node;pwsh=$powershell}
     $shell = New-Object -ComObject WScript.Shell
+    $launcher=Join-Path $StateRoot 'Start-Layout.ps1'
+    Assert-PlainPath $launcher
+    if(Test-Path -LiteralPath $launcher){Copy-Item -LiteralPath $launcher -Destination (Join-Path $history 'previous-launcher.ps1')}
+    Copy-Atomic (Join-Path $release 'scripts\Start-ManagedLayout.ps1') $launcher
     $staged = Join-Path $history 'replacement.lnk'
     $link = $shell.CreateShortcut($staged)
     $link.TargetPath = $powershell
-    $link.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+(Join-Path $release 'scripts\Start-Layout.ps1')+'" -Quiet'
-    $link.WorkingDirectory = $release
+    $link.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+$launcher+'" -Quiet'
+    $link.WorkingDirectory = $StateRoot
     $link.IconLocation = $clientExe+',0'
     $link.Description = 'TeamSpeak with automatic local layout enhancements'
     $link.WindowStyle = 7

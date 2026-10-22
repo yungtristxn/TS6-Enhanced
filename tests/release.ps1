@@ -8,7 +8,7 @@ $manifest = Get-Content (Join-Path $project 'release.json') -Raw | ConvertFrom-J
 $prefix = 'TS6-Enhanced-'+$manifest.version+'-windows-x64/'
 $expectedFiles = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE','README.md','SHA256SUMS.txt','runtime/node.exe','runtime/LICENSE',
     'scripts/Bootstrap.ps1','scripts/Runtime.ps1','scripts/Complete-Setup.ps1','scripts/Maintenance.ps1',
-    'scripts/Setup.ps1','scripts/Start-Layout.ps1','scripts/Start-Inspection.ps1',
+    'scripts/Setup.ps1','scripts/Start-Layout.ps1','scripts/Start-ManagedLayout.ps1','scripts/Start-Inspection.ps1',
     'scripts/Install-Persistence.ps1','scripts/Theme.ps1',
     'tools/cdp.mjs','tools/client.mjs','tools/session.mjs','tools/appearance.mjs','tools/install-state.mjs','tools/restore.mjs','tools/updates.mjs','tools/live-update.mjs','tools/manager.mjs','tools/manager-lock.mjs','tools/manager-runtime.js','tools/streams-runtime.js','tools/workspace-runtime.js',
     'theme/local.tsix.layout/package.json','theme/local.tsix.layout/layout.css','theme/local.tsix.layout/preview.svg')

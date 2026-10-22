@@ -26,7 +26,7 @@ for ($cursor=$OutputDirectory; $cursor; $cursor=Split-Path -Parent $cursor) {
 # profile, screenshots, logs, runtime backups or personal launch shortcuts.
 $files = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE',
     'scripts\Bootstrap.ps1','scripts\Runtime.ps1','scripts\Complete-Setup.ps1','scripts\Maintenance.ps1',
-    'scripts\Setup.ps1','scripts\Start-Layout.ps1','scripts\Start-Inspection.ps1',
+    'scripts\Setup.ps1','scripts\Start-Layout.ps1','scripts\Start-ManagedLayout.ps1','scripts\Start-Inspection.ps1',
     'scripts\Install-Persistence.ps1','scripts\Theme.ps1',
     'tools\cdp.mjs','tools\client.mjs','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\live-update.mjs','tools\manager.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
     'tools\streams-runtime.js','tools\workspace-runtime.js',

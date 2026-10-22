@@ -22,6 +22,7 @@ pwsh -NoProfile -File scripts/Upload-Release.ps1
 ```
 
 Files go to `dist/<version>/`. Use a new version or `-OutputDirectory` for another package. The upload command creates a GitHub draft; publish it when ready.
+The Start Menu uses a fixed launcher path that resolves the current installed helper release. Shortcut changes also notify Windows Shell.
 Packaging downloads the pinned Node archive into `.local/runtime-cache`, verifies its SHA-256, and includes only `node.exe` and its license. Setup uses the bundled runtime without a download or PATH changes.
 The separate stylesheet can apply live only when the packaged runtime fingerprint matches. Keep helper version constants unchanged for CSS-only releases; bump `release.json`, `themeVersion`, the theme manifest and its CSS version marker together.
 
@@ -30,7 +31,7 @@ The separate stylesheet can apply live only when the packaged runtime fingerprin
 Run as the signed-in Windows user:
 
 ```powershell
-$installer = Start-Process '.\TS6-Enhanced-1.0.5-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+$installer = Start-Process '.\TS6-Enhanced-1.0.6-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
 $installer.WaitForExit()
 if ($installer.ExitCode -ne 0) { throw "Setup failed with exit code $($installer.ExitCode)" }
 ```

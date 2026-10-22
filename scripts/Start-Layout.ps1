@@ -78,14 +78,14 @@ Write-Output 'This session uses a loopback-only inspection listener. Exit TS6 an
 if ($Quiet) {
     $statusRoot = Join-Path $env:LOCALAPPDATA 'TS6-Layout\launcher'
     New-Item -ItemType Directory -Path $statusRoot -Force | Out-Null
-    @{ status='ready'; timestamp=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json |
+    @{ status='ready'; timestamp=[DateTime]::UtcNow.ToString('o'); release=$project } | ConvertTo-Json |
         Set-Content -LiteralPath (Join-Path $statusRoot 'last-launch.json') -Encoding utf8
 }
 } catch {
     if (!$Quiet) { throw }
     $statusRoot = Join-Path $env:LOCALAPPDATA 'TS6-Layout\launcher'
     New-Item -ItemType Directory -Path $statusRoot -Force | Out-Null
-    @{ status='failed'; timestamp=[DateTime]::UtcNow.ToString('o'); message=$_.Exception.Message } |
+    @{ status='failed'; timestamp=[DateTime]::UtcNow.ToString('o'); release=$project; message=$_.Exception.Message } |
         ConvertTo-Json | Set-Content -LiteralPath (Join-Path $statusRoot 'last-launch.json') -Encoding utf8
     Add-Type -AssemblyName System.Windows.Forms
     [void][System.Windows.Forms.MessageBox]::Show(

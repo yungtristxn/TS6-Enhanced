@@ -33,6 +33,8 @@ Check ((Get-FileHash (Join-Path $stateRoot 'original-TeamSpeak.lnk')).Hash -eq $
 $owned = $shell.CreateShortcut($shortcut)
 Check ($owned.TargetPath -eq (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')) 'Wrong launcher executable'
 Check ($owned.Arguments.Contains('-WindowStyle Hidden') -and $owned.Arguments.EndsWith('-Quiet')) 'Launcher must be unobtrusive'
+Check ($owned.Arguments.Contains((Join-Path $stateRoot 'Start-Layout.ps1'))) 'Shortcut must use the stable launcher'
+$stableArguments=$owned.Arguments
 $savedNode=(Get-Content (Join-Path $state.release 'runtime.json') -Raw | ConvertFrom-Json).node
 Check ($savedNode -eq (Join-Path $state.release 'runtime\node.exe')) 'Bundled Node was not pinned to the permanent release'
 Check ((Get-FileHash $savedNode).Hash -eq (Get-FileHash (Join-Path $package 'runtime\node.exe')).Hash) 'Bundled runtime changed during copying'
@@ -44,6 +46,7 @@ $oldRelease = $state.release
 & $installer Install -ShortcutPath $shortcut -StateRoot $stateRoot
 $state = Get-Content (Join-Path $stateRoot 'state.json') -Raw | ConvertFrom-Json
 Check ($oldRelease -ne $state.release -and (Test-Path -LiteralPath $oldRelease)) 'Update did not preserve the previous release'
+Check ($shell.CreateShortcut($shortcut).Arguments -ceq $stableArguments) 'Updating must not change the cached shortcut command'
 Check ((Get-FileHash (Join-Path $stateRoot 'original-TeamSpeak.lnk')).Hash -eq $hash) 'Update replaced original recovery'
 # Model a binary metadata change with unchanged WScript launch properties.
 # The terminal extra-data marker ends the link; trailing padding is not launched.
@@ -141,4 +144,18 @@ $refused=$false
 try { & $installer Install -ShortcutPath $shortcut -StateRoot $collision } catch { $refused=$true }
 Check $refused 'Must refuse an unowned state directory'
 Write-Output 'PASS: dry run, runtime copy, repeat update, exact restoration, explicit metadata repair/backups, repair dry run, execution-flag/user-edit refusal, and ownership collisions.'
+# Exercise the stable entry with inert scripts. No real shortcut/client launch.
+$dispatch=Join-Path $root 'dispatch';New-Item -ItemType Directory -Path $dispatch | Out-Null
+$entry=Join-Path $dispatch 'Start-Layout.ps1';Copy-Item (Join-Path $project 'scripts\Start-ManagedLayout.ps1') $entry
+foreach($stamp in @('20261022-000000-000-aaaaaaaa','20261022-000000-000-bbbbbbbb')){
+    $target=Join-Path $dispatch ('releases\'+$stamp)
+    New-Item -ItemType Directory -Path (Join-Path $target 'scripts') -Force | Out-Null
+    'param($Port,[switch]$Quiet); [pscustomobject]@{Release=(Split-Path -Leaf (Split-Path -Parent $PSScriptRoot)); Port=$Port; Quiet=[bool]$Quiet}' | Set-Content (Join-Path $target 'scripts\Start-Layout.ps1')
+    @{owner='ts6-layout-shortcut-v1';installed=$true;release=$target} | ConvertTo-Json | Set-Content (Join-Path $dispatch 'state.json')
+    $result=& $entry -Port 9999 -Quiet
+    Check ($result.Release -ceq $stamp -and $result.Port -eq 9999 -and $result.Quiet) 'Cached entry did not dispatch to the current release'
+}
+@{owner='ts6-layout-shortcut-v1';installed=$true;release=$project} | ConvertTo-Json | Set-Content (Join-Path $dispatch 'state.json')
+$refused=$false;try{& $entry}catch{$refused=$_.Exception.Message.Contains('escaped')};Check $refused 'Launcher accepted a release outside its installation'
+Write-Output 'PASS: stable shortcut dispatch selects the current release and rejects escaped paths.'
 }finally{$env:LOCALAPPDATA=$previousLocalData}
