@@ -85,12 +85,34 @@ bool StartEnhancedHost(const std::wstring& directory) {
     return success;
 }
 
-std::u16string EnhancedScript(HMODULE module) {
-    auto resource=FindResourceW(module,MAKEINTRESOURCEW(101),RT_RCDATA);
+static std::u16string ResourceText(HMODULE module, WORD id) {
+    auto resource=FindResourceW(module,MAKEINTRESOURCEW(id),RT_RCDATA);
     if(!resource)return {};
     DWORD length=SizeofResource(module,resource);
     auto raw=static_cast<const char*>(LockResource(LoadResource(module,resource)));
     if(!raw||!length||length>2*1024*1024)return {};
+    int count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,raw,length,nullptr,0);
+    if(count<=0)return {};
+    std::u16string result(count,u'\0');
+    MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,raw,length,reinterpret_cast<wchar_t*>(result.data()),count);
+    return result;
+}
+
+static void AppendJsonString(std::u16string& output, std::u16string_view value) {
+    constexpr char16_t hex[]=u"0123456789abcdef";
+    output+=u'"';
+    for(char16_t ch:value){
+        if(ch==u'"'||ch==u'\\'){output+=u'\\';output+=ch;}
+        else if(ch<0x20||ch==0x2028||ch==0x2029){
+            output+=u"\\u";for(int shift=12;shift>=0;shift-=4)output+=hex[(ch>>shift)&15];
+        }else output+=ch;
+    }
+    output+=u'"';
+}
+
+std::u16string EnhancedScript(HMODULE module) {
+    auto payload=ResourceText(module,101),css=ResourceText(module,102);
+    if(payload.empty()||css.empty())return {};
     wchar_t endpoint[96]{},token[65]{};
     wcscpy_s(endpoint,rendererEndpoint);wcscpy_s(token,rendererToken);
     size_t e=wcslen(endpoint),t=wcslen(token);
@@ -98,13 +120,13 @@ std::u16string EnhancedScript(HMODULE module) {
     bool valid=e>15&&e<96&&t==64&&address.starts_with(L"ws://127.0.0.1:");
     for(size_t i=15;valid&&i<address.size();++i)valid=address[i]>=L'0'&&address[i]<=L'9';
     for(unsigned i=0;valid&&i<64;++i)valid=(token[i]>=L'0'&&token[i]<=L'9')||(token[i]>=L'a'&&token[i]<=L'f');
-    int count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,raw,length,nullptr,0);
-    if(count<=0)return {};
     std::u16string result=u"(()=>{const connection=";
     if(valid){result+=u"{endpoint:'";result.append(reinterpret_cast<char16_t*>(endpoint));result+=u"',token:'";result.append(reinterpret_cast<char16_t*>(token));result+=u"'};";}
     else result+=u"null;";
-    size_t offset=result.size();result.resize(offset+count);
-    MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,raw,length,reinterpret_cast<wchar_t*>(result.data()+offset),count);
+    // A single raw CSS resource serves early loading and the JS fallback.
+    // Escape as JSON here instead of shipping another copy inside payload.js.
+    result+=u"const css=";AppendJsonString(result,css);result+=u';';
+    result+=payload;
     result+=u"})()";
     return result;
 }

@@ -7,6 +7,7 @@
 #include "include/capi/cef_app_capi.h"
 #include "include/capi/views/cef_browser_view_capi.h"
 #include "runtime.h"
+#include "css_delivery.h"
 #include "compatibility.h"
 static HMODULE ownModule=nullptr;
 static wchar_t clientDllPath[1024]{};
@@ -108,6 +109,7 @@ static cef_browser_view_t* BrowserView(cef_client_t* client,const cef_string_t* 
         try{std::wstring directory(clientDllPath);directory.resize(directory.find_last_of(L"\\"));TSIX_NATIVE_STATUS.connectionReady=StartEnhancedHost(directory);}
         catch(...){TSIX_NATIVE_STATUS.protectError=ERROR_NOT_ENOUGH_MEMORY;}
     }
+    if(target==mainUrl)AttachEarlyCss(ownModule,client,request);
     return originalBrowserView(client,url,settings,main?ConnectionInfo(info):info,request,delegate);
 }
 

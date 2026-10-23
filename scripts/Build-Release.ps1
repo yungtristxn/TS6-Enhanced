@@ -99,7 +99,7 @@ $runtimeInputs+=((Get-FileHash -LiteralPath (Join-Path $project 'installer\Setup
 if($release.nativeLoader.schema -eq 1){
     # The DLL embeds release metadata and CSS. Fingerprint its behavior inputs
     # separately so a CSS-only release can still apply during an active call.
-    foreach($file in @('native/loader.cpp','native/runtime.cpp','native/runtime.h','native/version.def','native/cef.lock.json','tools/native-runtime.js','tools/workspace-runtime.js','tools/streams-runtime.js','tools/manager-runtime.js','tools/build-native.mjs')){
+    foreach($file in @('native/loader.cpp','native/runtime.cpp','native/runtime.h','native/css_delivery.cpp','native/css_delivery.h','native/version.def','native/cef.lock.json','tools/native-runtime.js','tools/workspace-runtime.js','tools/streams-runtime.js','tools/manager-runtime.js','tools/build-native.mjs')){
         $runtimeInputs+=((Get-FileHash -LiteralPath (Join-Path $project $file)).Hash.ToLowerInvariant()+'  '+$file)
     }
 }

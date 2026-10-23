@@ -24,14 +24,32 @@ async function startNativeEnhanced() {
   }
   if(!Number.isInteger(build)){state.status='unavailable';state.error='TeamSpeak did not answer its version check';return}
   if(build!==release.supportedClient.build){state.status='unsupported';return}
-  const style=document.createElement('style');style.id='tsix-native-style';style.textContent=css;document.head.append(style);
+  // Keep a single replaceable group inside native main.css. Live updates can
+  // disable that group without leaving obsolete selectors underneath an overlay.
+  const mainSheet=[...document.styleSheets].find(sheet=>{
+    try{return new URL(sheet.href).protocol==='tsui:'&&new URL(sheet.href).hostname==='default'&&new URL(sheet.href).pathname==='/main.css'}catch{return false}
+  });
+  let earlyRule=null;
+  try{earlyRule=[...(mainSheet?.cssRules||[])].find(rule=>rule.type===CSSRule.MEDIA_RULE&&rule.media.mediaText==='all'&&
+    rule.cssRules[0]?.selectorText===':root'&&rule.cssRules[0].style.getPropertyValue('--tsix-css-delivery').trim()==='resource-v1')||null}catch{}
+  const style=document.createElement('style');style.id='tsix-native-style';
+  const insertStyle=()=>{
+    if(style.isConnected)return;
+    // Match early loading's cascade position. Native/user Appearance styles
+    // loaded after main.css retain the same precedence with either delivery path.
+    const anchor=mainSheet?.ownerNode;
+    if(anchor?.parentNode)anchor.after(style);else document.head.append(style);
+  };
+  const earlyCurrent=earlyRule&&getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()===(release.themeVersion||release.version);
+  if(!earlyCurrent){if(earlyRule)earlyRule.media.mediaText='not all';style.textContent=css;insertStyle()}
+  state.cssDelivery=earlyCurrent?'resource':'javascript';
   // Runtime-owned styles leave native Appearance settings untouched. Removing
   // the DLL removes these styles on next startup, including after a failed host.
   if(!window.__tsixWorkspace)attachWorkspace();
   if(!window.__tsixStreams)attachStreams();
   attachManager();
   state.status='ready';
-  const unavailable=message=>window.__tsixManager.setState({version:release.version,configured:false,busy:false,message,detail:'Run the installer again to repair native update support.'},'');
+  const unavailable=(message,detail='Run the installer again to repair native update support.')=>window.__tsixManager.setState({version:release.version,configured:false,busy:false,message,detail},'');
   if(!connection){unavailable('Update support couldn’t start.');return}
   let socket,sequence=0,stopped=false,retry=1000,lastStyle='';
   const pending=new Map();
@@ -42,23 +60,40 @@ async function startNativeEnhanced() {
   });
   window.__tsixMaintenanceRequest=raw=>{
     let message;try{message=JSON.parse(raw)}catch{return}
-    if(message.nonce!==connection.token||!['check','update','uninstall'].includes(message.action))return;
+    if(!message||typeof message!=='object'||message.nonce!==connection.token||!['check','update','uninstall'].includes(message.action))return;
     request('/action',{action:message.action}).catch(error=>{state.error=error.message;unavailable('Update support is unavailable.');});
   };
   window.addEventListener('pagehide',()=>{stopped=true;socket?.close()},{once:true});
   const applyStyle=job=>{
     if(document.fullscreenElement)return false;
-    const previous=style.textContent;
+    const previous=style.textContent,connected=style.isConnected,previousMedia=earlyRule?.media.mediaText;
     try{
+      if(typeof job.css!=='string'||!job.css||typeof job.themeVersion!=='string')return false;
+      if(earlyRule)earlyRule.media.mediaText='not all';
       style.textContent=job.css;
+      insertStyle();
       if(getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()!==job.themeVersion)throw Error('Stylesheet version mismatch');
       window.__tsixWorkspace?.refresh();window.__tsixStreams?.sync();return true;
-    }catch{style.textContent=previous;return false}
+    }catch{
+      style.textContent=previous;if(!connected)style.remove();
+      if(earlyRule)earlyRule.media.mediaText=previousMedia;
+      try{window.__tsixWorkspace?.refresh();window.__tsixStreams?.sync()}catch{}
+      return false;
+    }
   };
   const appearance=document.querySelector('main')?.__vue__?.appearanceSettings;
+  let storage;
+  try{storage=Object.fromEntries(['tsix.layout.chatVisible','tsix.layout.streamTrayCollapsed'].map(key=>[key,localStorage.getItem(key)]))}
+  catch(error){
+    // The interface works with in-memory preferences. Do not invent a recovery
+    // baseline when storage cannot be read, or mark working helpers as failed.
+    state.error=error.message;
+    unavailable('Update support couldn’t read saved preferences.','Restart TeamSpeak to retry. Your layout remains available.');
+    return;
+  }
   const baseline={schema:1,owner:'tsix-install-baseline',capturedAt:new Date().toISOString(),legacy:false,
     appearance:{user_style:appearance?.user_style??null,...(typeof appearance?.tree_compact==='boolean'?{tree_compact:appearance.tree_compact}:{}),...(appearance?.chat_input_toolbar_visibility?{chat_input_toolbar_visibility:appearance.chat_input_toolbar_visibility}:{})},
-    storage:Object.fromEntries(['tsix.layout.chatVisible','tsix.layout.streamTrayCollapsed'].map(key=>[key,localStorage.getItem(key)]))};
+    storage};
   const connect=()=>{
     if(stopped)return;
     socket=new WebSocket(connection.endpoint,`tsix.v1.${connection.token}`);

@@ -23,24 +23,79 @@ try{
  await check('idle has no live indicator',async()=>assert.equal(await bar.count(),0));
  await check('hidden own stream shows real viewers without changing sessions',async()=>{
   await page.evaluate(()=>lab.start());await bar.waitFor();assert.equal(await bar.getAttribute('data-state'),'live');
-  assert.match(await toggle.getAttribute('aria-label'),/Alex Viewer, Sam Friend/);assert.equal(await page.locator('[data-tsix-viewer-icons] [data-tsix-viewer-icon]').count(),2);
+  assert.equal(await toggle.getAttribute('aria-label'),'2 watching. Show viewer list');assert.match(await toggle.getAttribute('title'),/Alex Viewer\nSam Friend/);assert.equal(await page.locator('[data-tsix-viewer-icons] [data-tsix-viewer-icon]').count(),2);
   assert.deepEqual(await page.evaluate(()=>lab.report()),{actions:0,watchers:1,sameVideo:true,sameMedia:true,hidden:true,showOwn:false});
   assert.deepEqual(await shell(),idleShell,'Starting sharing must not resize or move native content');
  });
  await check('viewer list supports keyboard, Friends overlay, Escape and outside dismissal',async()=>{
   await toggle.focus();await toggle.press('Enter');await list.waitFor({state:'visible'});assert.match(await list.innerText(),/Sam Friend/);
+  assert.equal(await toggle.getAttribute('aria-label'),'2 watching. Hide viewer list');
   await page.evaluate(()=>document.querySelector('.fixtureFriends').hidden=false);
   assert.ok(await list.evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}));
   await page.evaluate(()=>document.querySelector('.fixtureFriends').hidden=true);
   await page.keyboard.press('Escape');await list.waitFor({state:'hidden'});assert.ok(await toggle.evaluate(e=>e===document.activeElement));
+  assert.equal(await toggle.getAttribute('aria-label'),'2 watching. Show viewer list');
   await toggle.click();await page.locator('.fixtureStage p').click();await list.waitFor({state:'hidden'});
+ });
+ await check('sharing controls expose disabled state, reject pending key input and settle without idle writes',async()=>{
+  const native=page.locator('#nativeShare');
+  await native.focus();await page.keyboard.down('Space');
+  await page.evaluate(()=>{lab.native.__vue__.button.isDisabled=true});
+  await page.keyboard.up('Space');assert.equal(await page.evaluate(()=>lab.state.actions),0);
+  await page.evaluate(()=>lab.native.classList.add('tsv-is-visually-disabled'));
+  await page.waitForFunction(()=>lab.native.getAttribute('aria-disabled')==='true');
+  assert.equal(await native.getAttribute('aria-disabled'),'true');assert.equal(await native.getAttribute('tabindex'),'-1');
+  await page.evaluate(()=>{lab.native.__vue__.button.isDisabled=false;lab.native.classList.remove('tsv-is-visually-disabled')});
+  await page.waitForFunction(()=>lab.native.getAttribute('aria-disabled')==='false');
+  assert.equal(await native.getAttribute('aria-disabled'),'false');assert.equal(await native.getAttribute('tabindex'),'0');
+  const writes=await page.evaluate(()=>new Promise(resolve=>{
+   let count=0;const observer=new MutationObserver(entries=>count+=entries.length);
+   observer.observe(lab.root,{subtree:true,childList:true,attributes:true});
+   for(let i=0;i<50;i++)window.__tsixStreams.sync();
+   queueMicrotask(()=>{observer.disconnect();resolve(count)});
+  }));
+  assert.equal(writes,0,'An unchanged live badge must not keep rewriting attributes');
+  const imageLoads=await page.evaluate(async()=>{
+   const chat=document.createElement('div'),image=document.createElement('img');chat.className='ts-chat-container';chat.append(image);lab.root.append(chat);
+   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+   const original=window.getComputedStyle;let reads=0;
+   window.getComputedStyle=(node,...args)=>{if(node===document.documentElement)reads++;return original(node,...args)};
+   try{
+    for(let i=0;i<30;i++){image.dispatchEvent(new Event('load'));await new Promise(r=>setTimeout(r,0))}
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    return reads;
+   }finally{window.getComputedStyle=original;chat.remove()}
+  });
+  assert.equal(imageLoads,0,'Chat image loads must not trigger stream reconciliation');
  });
  await check('join, leave, rename, overflow and zero viewers update reactively',async()=>{
   await page.evaluate(()=>lab.viewers([1,2,3,4,5,6]));await page.waitForFunction(()=>document.querySelector('[data-tsix-viewer-count]').textContent==='6 watching');
   await toggle.click();assert.equal(await list.locator('li').count(),6);assert.equal(await list.locator('[data-tsix-viewer-icon]').count(),6);await page.keyboard.press('Escape');
-  await page.evaluate(()=>{lab.clients.get(1).displayName='A <script> Name';lab.tick()});await page.waitForFunction(()=>document.querySelector('[data-tsix-viewer-toggle]').getAttribute('aria-label').includes('A <script> Name'));
+  await page.evaluate(()=>{lab.clients.get(1).displayName='A <script> Name';lab.tick()});await page.waitForFunction(()=>document.querySelector('[data-tsix-viewer-toggle]').getAttribute('title').includes('A <script> Name'));
   assert.equal(await bar.locator('script').count(),0);await page.evaluate(()=>lab.viewers([]));await page.waitForFunction(()=>document.querySelector('[data-tsix-viewer-count]').textContent==='0 watching');
   await toggle.click();assert.match(await list.innerText(),/Nobody is watching yet/);await page.keyboard.press('Escape');
+ });
+ await check('replacing a native split menu restores detached controls and removes their keyboard handlers',async()=>{
+  await page.evaluate(()=>{
+   window.menuCalls=0;window.removedMenus=[];
+   const menu=document.createElement('div');menu.className='tsv-tool-button-context-menu-toggle';menu.id='sharing-menu';menu.title='Original menu';
+   menu.addEventListener('click',event=>{event.stopPropagation();menuCalls++});lab.native.append(menu);
+  });
+  await page.waitForFunction(()=>document.querySelector('#sharing-menu').getAttribute('role')==='button');
+  for(let i=0;i<5;i++){
+   await page.evaluate(()=>{
+    const old=document.querySelector('#sharing-menu'),next=document.createElement('div');
+    next.id=old.id;next.className=old.className;next.title='Original menu';
+    next.addEventListener('click',event=>{event.stopPropagation();menuCalls++});old.replaceWith(next);removedMenus.push(old);
+   });
+   await page.waitForFunction(()=>document.querySelector('#sharing-menu').getAttribute('role')==='button');
+  }
+  assert.deepEqual(await page.evaluate(()=>{
+   for(const menu of removedMenus)menu.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}));
+   return {calls:menuCalls,restored:removedMenus.every(menu=>!menu.hasAttribute('role')&&!menu.hasAttribute('tabindex')&&menu.title==='Original menu')};
+  }),{calls:0,restored:true});
+  await page.locator('#sharing-menu').press('Enter');assert.equal(await page.evaluate(()=>menuCalls),1);
+  await page.locator('#sharing-menu').evaluate(node=>node.remove());
  });
  await check('paused remains visible; multiple streams deduplicate viewers',async()=>{
   await page.evaluate(()=>{lab.viewers([1,2]);lab.pause(true)});await page.waitForFunction(()=>document.querySelector('[data-tsix-broadcast-bar]').dataset.state==='paused');
@@ -109,7 +164,9 @@ try{
   assert.equal(await bar.count(),1);assert.equal(await page.evaluate(()=>lab.watchers.size),1);
   await page.evaluate(()=>lab.stop());await bar.waitFor({state:'detached'});assert.equal(await page.locator('[data-tsix-broadcast]').count(),0);
   const afterStop=await shell();await page.evaluate(()=>lab.start());await bar.waitFor();assert.deepEqual(await shell(),afterStop);await page.evaluate(()=>lab.stop());await bar.waitFor({state:'detached'});assert.deepEqual(await shell(),afterStop);
-  await page.evaluate(()=>window.__tsixStreams.dispose());assert.equal(await page.evaluate(()=>lab.watchers.size),0);
+  await page.evaluate(()=>{const previous=window.__tsixStreams;previous.dispose();previous.sync()});
+  assert.equal(await page.evaluate(()=>lab.watchers.size),0);
+  assert.equal(await bar.count(),0,'A stale helper handle must not recreate its watcher or owned DOM after disposal');
  });
  assert.deepEqual(errors,[]);console.log(JSON.stringify({result:'PASS',checks,errors,scope:'Synthetic state, geometry and lifecycle; native streaming is checked separately'},null,2));
 }finally{await browser?.close();await new Promise(r=>server.close(r))}

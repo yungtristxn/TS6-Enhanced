@@ -45,6 +45,16 @@ try{
  assert.ok(baseline.errors.every(e=>e.includes('ResizeObserver loop')));
  await p.evaluate(()=>{vm.$destroy();vm.$el.remove();resizeErrors.length=0;mountList(true)});
  for(let i=0;i<4;i++)await cycle();
+ const measurements=await p.evaluate(()=>{
+  const g=controller.engine.geometry,key=g.keyAt(0),height=g.heightAt(0),entry={key,height:height+31,width:g.width,version:g.versionAt(0),epoch:g.epoch};
+  const stale={...entry,height:99999,version:-1};
+  originalMeasure.call(controller,[entry,stale]);const native=g.heightAt(0);
+  originalMeasure.call(controller,[{...entry,height}]);
+  controller.measure([entry]);controller.measure([stale]);patch.dispose();const deferred=g.heightAt(0);
+  originalMeasure.call(controller,[{...entry,height}]);patch=deferChatLayout(controller);
+  return {native,deferred};
+ });
+ assert.equal(measurements.deferred,measurements.native,'A later stale row measurement must not discard the queued current measurement');
  const report=await p.evaluate(async()=>{
   const before=controller.engine.geometry.total;
   controller.measure([{key:0,height:99999,width:600,version:-1,epoch:-1}]);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
@@ -57,5 +67,5 @@ try{
   return{atBottom,mounted,errors:resizeErrors.slice(),transactionsInObserver,staleMeasurementRejected:true,cleanupCycles:10};
  });
  assert.ok(report.atBottom&&report.mounted>0);assert.equal(report.transactionsInObserver,0);assert.deepEqual(report.errors,[]);
- console.log(JSON.stringify({result:'PASS',nativeBaselineTransactionsInObserver:baseline.transactionsInObserver,nativeBaselineWarnings:baseline.errors.length,resizeChanges:32,...report},null,2));
+ console.log(JSON.stringify({result:'PASS',nativeBaselineTransactionsInObserver:baseline.transactionsInObserver,nativeBaselineWarnings:baseline.errors.length,resizeChanges:32,queuedCurrentMeasurementPreserved:true,...report},null,2));
 }finally{await browser.close()}

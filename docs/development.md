@@ -12,7 +12,9 @@ Additional checks: `npm run test:browser`, `npm run test:native` and `npm run te
 
 ## Native integration
 
-`native/` builds the application-local `version.dll`. It checks the supported native images and chains CEF callbacks to load the bundled stylesheet and interface helpers. The original TeamSpeak executable and shortcuts remain the entry points; normal startup does not open a debugging port.
+`native/` builds the application-local `version.dll`. It checks the supported native images and adds the bundled CSS to the verified main stylesheet response before the UI renders. Vendor files stay unchanged. JavaScript handles interactions, accessibility and maintenance; it supplies the CSS fallback when early loading is unavailable. The original TeamSpeak executable and shortcuts remain the entry points; normal startup does not open a debugging port.
+
+Keep shared control colors, spacing and states in `theme/layout.css`. The maintenance panel retains fallback styling so update and uninstall remain usable without the theme. Tree sizing reads CSS variables and only repairs cached geometry when it differs. Live CSS updates replace the Enhanced rules while retaining native styles, media and component state.
 
 The bundled Node helper handles update checks and maintenance through an authenticated loopback WebSocket. TeamSpeak owns its lifetime. Recovery adapters are retained only to restore preferences and shortcuts from older installations.
 
@@ -30,16 +32,16 @@ pwsh -NoProfile -File scripts/Upload-Release.ps1 -NotesFile .\release-notes.md
 
 Files go to `dist/<version>/`. Use a new version or `-OutputDirectory` for another package. Write short release notes in the file passed to `-NotesFile`. The upload command creates a GitHub draft; publish it when ready.
 
-Packaging downloads and verifies the pinned Node archive and CEF headers, then bundles Node, `ws` and their licenses. Pass `-CefSdkDirectory` to reuse an SDK. For the DLL alone, use `scripts/Build-Native.ps1 -SdkDirectory <path>`.
+Packaging downloads and verifies the pinned Node archive and CEF headers, then bundles Node, `ws` and their licenses. Pass `-CefSdkDirectory` to reuse an SDK. For the DLL alone, use `scripts/Build-Native.ps1 -SdkDirectory <path>`; add `-Test` to run the native CSS filter's chunking, integrity and fallback checks.
 
-Use semantic versions internally: release **2.0** is `2.0.0` and tag `v2.0.0`. Update the release and theme versions in `release.json` and the version marker in `theme/layout.css` together. A stylesheet applies live only when the packaged runtime fingerprint matches; keep component version constants unchanged for CSS-only releases.
+Use semantic versions internally: release **2.1** is `2.1.0` and tag `v2.1.0`. Update the release and theme versions in `release.json` and the version marker in `theme/layout.css` together. A stylesheet applies live only when the packaged runtime fingerprint matches; keep component version constants unchanged for CSS-only releases.
 
 ## Unattended installation
 
 Run as the signed-in Windows user:
 
 ```powershell
-$installer = Start-Process '.\TS6-Enhanced-2.0.0-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+$installer = Start-Process '.\TS6-Enhanced-2.1.0-Setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
 $installer.WaitForExit()
 if ($installer.ExitCode -ne 0) { throw "Setup failed with exit code $($installer.ExitCode)" }
 ```

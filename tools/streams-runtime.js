@@ -34,6 +34,16 @@
   };
   const attrs = ['role', 'tabindex', 'aria-label', 'title', 'aria-disabled'];
   const setAttr = (node,key,value) => { if(value===null){if(node.hasAttribute(key))node.removeAttribute(key)}else if(node.getAttribute(key)!==String(value))node.setAttribute(key,String(value)); };
+  const controlDisabled = node => !!(node?.__vue__?.disabled || node?.__vue__?.button?.isDisabled || node?.__vue__?.button?.disabled ||
+    (node?.matches('.tsv-tool-button-context-menu-toggle') && node.closest('.tsv-tool-button')?.__vue__?.button?.contextMenuButtonDisabled) ||
+    node?.matches('.disabled,.tsv-is-disabled,.tsv-is-visually-disabled,[disabled]'));
+  const cloneIcon = source => {
+    const icon=source.cloneNode(true);icon.setAttribute('aria-hidden','true');icon.setAttribute('focusable','false');
+    // Native SVGs have IDs. Owned copies must not shadow those IDs or create
+    // a second keyboard/accessibility target inside their labelled button.
+    for(const node of [icon,...icon.querySelectorAll('[id]')])node.removeAttribute('id');
+    return icon;
+  };
   const themeActive = () => getComputedStyle(document.documentElement).getPropertyValue('--tsix-stream-stage-api').trim() === '1';
   const playerActive = (node, session) => !!node?.querySelector('video') || !!session?.isJoining ||
     (session?.isInbound===true && session.status===4) ||
@@ -154,8 +164,7 @@
       record.chatResize=new ResizeObserver(schedule);record.chatResize.observe(host);
     }
     if(!record.chatIcon){
-      record.chatIcon=native.cloneNode(true);record.chatIcon.setAttribute('aria-hidden','true');record.chatIcon.setAttribute('data-tsix-chat-icon','');
-      for(const n of [record.chatIcon,...record.chatIcon.querySelectorAll('[id]')])n.removeAttribute('id');
+      record.chatIcon=cloneIcon(native);record.chatIcon.setAttribute('data-tsix-chat-icon','');
     }
     if(button.firstChild!==record.chatIcon)button.replaceChildren(record.chatIcon);
     if(bar.parentElement!==host)host.append(bar);
@@ -193,7 +202,8 @@
       if (!record.chatToolbar) {
         const bar = document.createElement('div'), button = document.createElement('button');
         bar.setAttribute('data-tsix-stream-toolbar',''); button.type = 'button'; button.setAttribute('data-tsix-chat-toggle','');
-        button.addEventListener('click',()=>{chatVisible=!chatVisible;try{localStorage.setItem(chatPreferenceKey,String(chatVisible))}catch{}sync()});
+        button.addEventListener('click',event=>{event.stopPropagation();chatVisible=!chatVisible;try{localStorage.setItem(chatPreferenceKey,String(chatVisible))}catch{}sync()});
+        for(const type of ['pointerdown','mousedown','dblclick'])button.addEventListener(type,event=>event.stopPropagation());
         bar.append(button); element.insertBefore(bar,element.querySelector(':scope > .tsv-body'));
         record.chatToolbar = bar;
       }
@@ -295,10 +305,10 @@
       if(!entry||entry.native!==native){
         entry?.button.remove();
         const button=document.createElement('button');button.type='button';button.setAttribute('data-tsix-view-action',name);
-        button.setAttribute('aria-label',labels[name]);button.title=labels[name];button.append(icon.cloneNode(true));
+        button.setAttribute('aria-label',labels[name]);button.title=labels[name];button.append(cloneIcon(icon));
         if(name==='dots')button.setAttribute('aria-haspopup','menu');
         button.addEventListener('click',e=>{
-          e.stopPropagation();if(button.disabled||!native.isConnected)return;
+          e.stopPropagation();if(button.disabled||controlDisabled(native)||!native.isConnected)return;
           const b=button.getBoundingClientRect();
           const point={target:button,currentTarget:button,clientX:b.x+b.width/2,clientY:b.y+b.height/2};
           // The native overlay manager also owns its event.target. Dispatching
@@ -309,7 +319,7 @@
         });
         dock.buttons.set(source,entry={native,button});dock.group.append(button);
       }
-      const disabled=!!native.__vue__?.disabled||native.classList.contains('disabled');
+      const disabled=controlDisabled(native);
       if(entry.button.disabled!==disabled)entry.button.disabled=disabled;
     }
     for(const [source,entry]of dock.buttons)if(!seen.has(source)){entry.button.remove();dock.buttons.delete(source)}
@@ -427,7 +437,19 @@
       if(pending.length)originalMeasure.call(controller,pending);
     };
     const queue=()=>{if(!dead&&!frame)frame=requestAnimationFrame(flush)};
-    const measure=entries=>{if(dead||controller.disposed)return;for(const entry of entries)rows.set(entry.key,entry);queue()};
+    const measure=entries=>{
+      if(dead||controller.disposed)return;
+      for(const entry of entries){
+        // A late callback from a recycled row must not replace an already
+        // queued current measurement. Native measure validates again at flush.
+        if(rows.has(entry.key)){
+          const geometry=controller.engine.geometry,index=geometry.indexOf(entry.key);
+          if(index<0||geometry.versionAt(index)!==entry.version||geometry.epoch!==entry.epoch)continue;
+        }
+        rows.set(entry.key,entry);
+      }
+      queue();
+    };
     const refreshLayout=()=>{if(dead||controller.disposed)return;controller.layoutDirty=true;layout=true;queue()};
     controller.measure=measure;controller.refreshLayout=refreshLayout;
     return {controller,dispose(){
@@ -505,7 +527,7 @@
         if (!buttons.has(node)) {
           const before = Object.fromEntries(attrs.map(key=>[key,node.getAttribute(key)]));
           const activate = () => {
-            if (node.__vue__?.disabled || node.getAttribute('aria-disabled') === 'true') return;
+            if (controlDisabled(node) || node.getAttribute('aria-disabled') === 'true') return;
             // Native menus use the click coordinates. HTMLElement.click() uses
             // (0,0), sending keyboard-opened menus to the opposite window corner.
             const rect = node.getBoundingClientRect();
@@ -524,7 +546,7 @@
           node.addEventListener('keydown',keydown); node.addEventListener('keyup',keyup); node.addEventListener('blur',blur);
           buttons.set(node,{before,keydown,keyup,blur});
         }
-        const disabled = !!node.__vue__?.disabled || node.classList.contains('disabled');
+        const disabled = controlDisabled(node);
         setAttr(node,'role','button');setAttr(node,'tabindex',disabled?'-1':'0');
         setAttr(node,'aria-label',label);setAttr(node,'title',label);setAttr(node,'aria-disabled',disabled);
       }
@@ -532,6 +554,7 @@
     for (const [node,record] of buttons) if (!seen.has(node)) releaseButton(node,record);
   }
   function sync() {
+    if (disposed) return;
     const enabled = themeActive();
     broadcast.sync(enabled);
     const live = new Set(document.querySelectorAll('.tsv-screenshare'));
@@ -794,16 +817,17 @@
       }
       return {count:sessions.length, paused:sessions.length > 0 && sessions.every(s => s.paused), people:[...people.values()]};
     }
-    function releaseControl() {
-      for (const [node, record] of controlParts) {
-        node.removeEventListener('keydown', record.keydown);
-        node.removeEventListener('keyup', record.keyup);
-        node.removeEventListener('blur', record.blur);
-        for (const [key, value] of Object.entries(record.before)) {
-          if (value === null) node.removeAttribute(key); else node.setAttribute(key, value);
-        }
+    function releaseControlPart(node, record) {
+      node.removeEventListener('keydown', record.keydown);
+      node.removeEventListener('keyup', record.keyup);
+      node.removeEventListener('blur', record.blur);
+      for (const [key, value] of Object.entries(record.before)) {
+        setAttr(node,key,value);
       }
-      controlParts.clear();
+      controlParts.delete(node);
+    }
+    function releaseControl() {
+      for (const [node, record] of controlParts) releaseControlPart(node,record);
       if (control) {
         if (controlBefore === null) control.removeAttribute('data-tsix-broadcast-control');
         else control.setAttribute('data-tsix-broadcast-control', controlBefore);
@@ -813,10 +837,10 @@
     function labelControl(node, label) {
       if (!node) return;
       if (!controlParts.has(node)) {
-        const before = Object.fromEntries(['role','tabindex','aria-label','title'].map(k=>[k,node.getAttribute(k)]));
+        const before = Object.fromEntries(['role','tabindex','aria-label','aria-disabled','aria-haspopup','title'].map(k=>[k,node.getAttribute(k)]));
         let pressed=false;
         const activate = () => {
-          if (control?.__vue__?.button?.isDisabled || control?.__vue__?.button?.disabled || node.classList.contains('tsv-is-visually-disabled')) return;
+          if (controlDisabled(control) || controlDisabled(node)) return;
           const r = node.getBoundingClientRect();
           node.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true, view:window, clientX:r.x+r.width/2, clientY:r.y+r.height/2}));
         };
@@ -829,8 +853,10 @@
         const blur=()=>{pressed=false};
         node.addEventListener('keydown',keydown);node.addEventListener('keyup',keyup);node.addEventListener('blur',blur);controlParts.set(node,{before,keydown,keyup,blur});
       }
-      node.setAttribute('role','button'); node.setAttribute('tabindex','0');
-      node.setAttribute('title',label); node.setAttribute('aria-label',label);
+      const disabled=controlDisabled(control)||controlDisabled(node);
+      setAttr(node,'role','button');setAttr(node,'tabindex',disabled?'-1':'0');setAttr(node,'aria-disabled',disabled);
+      setAttr(node,'title',label);setAttr(node,'aria-label',label);
+      if(node.matches('.tsv-tool-button-context-menu-toggle'))setAttr(node,'aria-haspopup','menu');
     }
     function clear() {
       positionObserver.disconnect(); anchors.clear();
@@ -840,8 +866,15 @@
     }
     function setOpen(open) {
       if (!host) return;
-      host.querySelector('[data-tsix-viewer-list]').hidden = !open;
-      host.querySelector('[data-tsix-viewer-toggle]').setAttribute('aria-expanded', String(open));
+      const list=host.querySelector('[data-tsix-viewer-list]'),toggle=host.querySelector('[data-tsix-viewer-toggle]');
+      if(list.hidden===open)list.hidden=!open;
+      setAttr(toggle,'aria-expanded',open);
+      labelViewers();
+    }
+    function labelViewers() {
+      const toggle=host.querySelector('[data-tsix-viewer-toggle]');
+      const count=host.querySelector('[data-tsix-viewer-count]').textContent;
+      setAttr(toggle,'aria-label',`${count}. ${toggle.getAttribute('aria-expanded')==='true'?'Hide':'Show'} viewer list`);
     }
     function dismiss(event) {
       if (!host || host.querySelector('[data-tsix-viewer-list]').hidden) return;
@@ -892,7 +925,7 @@
         if (!host) mount();
         const mode = state.paused ? 'paused' : 'live';
         if (root.getAttribute('data-tsix-broadcast') !== mode) root.setAttribute('data-tsix-broadcast', mode);
-        host.setAttribute('data-state', mode);
+        setAttr(host,'data-state',mode);
         // Only our own badge moves into fullscreen; native players stay put.
         const fullscreen = document.fullscreenElement;
         const parent = fullscreen && !['VIDEO','IFRAME','CANVAS'].includes(fullscreen.tagName) ? fullscreen : root.querySelector('.main-pane-layout') || root;
@@ -900,17 +933,19 @@
         host.toggleAttribute('data-fullscreen', parent === fullscreen);
         const native = [...root.querySelectorAll('.tsv-central-toolbar .tsv-tool-button')].find(e => e.__vue__?.button === toolbar?.screenshareButton);
         if (native !== control) { releaseControl(); if (native) { control = native; controlBefore = native.getAttribute('data-tsix-broadcast-control'); native.setAttribute('data-tsix-broadcast-control', ''); } }
+        const menu=control?.querySelector('.tsv-tool-button-context-menu-toggle');
+        for(const [node,record]of controlParts)if(node!==control&&node!==menu)releaseControlPart(node,record);
         labelControl(control, state.paused ? 'Resume screen sharing' : 'Pause screen sharing');
-        labelControl(control?.querySelector('.tsv-tool-button-context-menu-toggle'), 'Stream controls');
+        labelControl(menu, 'Stream controls');
         host.toggleAttribute('data-native-control', !!control);
         setText(host.querySelector('[data-tsix-broadcast-state]'), state.paused ? 'SHARING PAUSED' : state.count === 1 ? 'YOU’RE LIVE' : `LIVE · ${state.count}`);
-        host.querySelector('[data-tsix-broadcast-state]').title = state.paused ? 'Sharing is paused. Your stream is still open.' : `You are sharing ${state.count === 1 ? 'your screen' : `${state.count} streams`}, even when the preview is hidden.`;
+        setAttr(host.querySelector('[data-tsix-broadcast-state]'),'title',state.paused ? 'Sharing is paused. Your stream is still open.' : `You are sharing ${state.count === 1 ? 'your screen' : `${state.count} streams`}, even when the preview is hidden.`);
         const nextSignature = JSON.stringify(state.people);
         if (nextSignature !== signature) {
           signature = nextSignature;
           const toggle = host.querySelector('[data-tsix-viewer-toggle]'), icons = host.querySelector('[data-tsix-viewer-icons]'), list = host.querySelector('[data-tsix-viewer-list]');
           setText(host.querySelector('[data-tsix-viewer-count]'), `${state.people.length} watching`);
-          toggle.setAttribute('aria-label', state.people.length ? `${state.people.length} watching: ${state.people.map(p=>p.name).join(', ')}. Show viewer list` : 'Nobody is watching yet. Show viewer list');
+          labelViewers();
           toggle.title = state.people.length ? state.people.map(p=>p.name).join('\n') : 'Nobody is watching yet';
           icons.replaceChildren(...state.people.slice(0,3).map(avatar));
           if (state.people.length > 3) { const more = document.createElement('span'); more.setAttribute('data-tsix-viewer-icon', ''); more.textContent = `+${state.people.length-3}`; icons.append(more); }
@@ -925,11 +960,16 @@
       dispose() { unwatch?.(); clear(); document.removeEventListener('keydown', dismiss, true); document.removeEventListener('pointerdown', dismiss); }
     };
   }
-  // Child changes cover navigation/keep-alive and stream control replacement.
-  // Only stylesheet-relevant attributes are observed, avoiding our own markers.
-  const observer = new MutationObserver(changes=>{if(changes.some(change=>{const node=change.target.nodeType===1?change.target:change.target.parentElement;return !node?.closest('.ts-chat-container,[data-tsix-volume-control],[data-tsix-stream-toolbar],[data-tsix-broadcast-bar]')}))schedule()});
-  observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['href','disabled']});
-  document.addEventListener('load',schedule,true);
+  // Native buttons express disabled state through classes. Watch those classes
+  // narrowly; message/media class changes and our own markers need no pass.
+  const observer = new MutationObserver(changes=>{if(changes.some(change=>{
+    const node=change.target.nodeType===1?change.target:change.target.parentElement;
+    if(change.attributeName==='class'&&!node?.matches('.tsv-button,.tsv-tool-button,.tsv-tool-button-context-menu-toggle,.tsv-window'))return false;
+    return !node?.closest('.ts-chat-container,[data-tsix-volume-control],[data-tsix-stream-toolbar],[data-tsix-broadcast-bar]');
+  }))schedule()});
+  observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['href','disabled','class']});
+  const onStyleLoad=event=>{if(event.target?.tagName==='LINK')schedule()};
+  document.addEventListener('load',onStyleLoad,true);
   document.addEventListener('loadedmetadata',schedule,true);
   document.addEventListener('loadeddata',schedule,true);
   document.addEventListener('fullscreenchange',onFullscreenChange);
@@ -944,7 +984,7 @@
       for (const control of volumes.values()) control.dispose();
       volumes.clear();
       for(const {button}of joins.values())button.remove();joins.clear();
-      document.removeEventListener('load',schedule,true);
+      document.removeEventListener('load',onStyleLoad,true);
       document.removeEventListener('loadedmetadata',schedule,true);
       document.removeEventListener('loadeddata',schedule,true);
       document.removeEventListener('fullscreenchange',onFullscreenChange);

@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';import {readFile,writeFile} from 'node:fs/promises';import {pathToFileURL} from 'node:url';
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href:'playwright');
 const source=await readFile(new URL('../tools/manager-runtime.js',import.meta.url),'utf8');
+const css=await readFile(new URL('../theme/layout.css',import.meta.url),'utf8');
 import {clientPath as client} from './client-path.mjs';
 import {readClientBuild} from '../tools/cdp.mjs';
+const nativeCss=await readFile(`${client}/html/client_ui/main.css`,'utf8');
 const nativeIcon=await readFile(`${client}/html/client_ui/images/icons/settings.svg`,'utf8');
 const browser=await chromium.launch({headless:true,...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
 const errors=[],checks=[];
 try{
  const p=await browser.newPage({viewport:{width:1000,height:700}});p.on('pageerror',e=>errors.push(e.message));
  await p.setContent('<title>TS6 Enhanced maintenance fixture</title><style>body{margin:0;background:#131d2b;font:13px "Segoe UI",sans-serif}.tsv-window{height:100vh;color:#edf1fa;--tsv-font-color:#edf1fa;--tsv-font-subtitle-color:#aeb9ca;--tsv-shaded-bg:#202a3c;--tsv-header-bg:#172034}.tsv-central-toolbar{height:44px;display:flex;align-items:center;padding-left:200px;background:#172034}.native-art{display:none}</style><div class="tsv-window"><div class="tsv-central-toolbar"><button>Mic</button><button>Audio</button></div><div class="native-art">'+nativeIcon+'</div><p>TeamSpeak workspace</p></div>');
+ await p.addStyleTag({content:nativeCss});
  await p.evaluate(()=>{window.requests=[];window.__tsixMaintenanceRequest=value=>requests.push(JSON.parse(value));document.querySelector('.native-art svg').classList.add('tsv-icon-settings')});await p.evaluate(source);
  await p.evaluate(()=>document.querySelector('.native-art').remove());
  const base={version:'1.0',configured:false,legacy:true,busy:false,available:null,detail:null,message:'Updates aren’t configured.'};
@@ -18,9 +21,14 @@ try{
  await set({});assert.equal(await p.title(),'TS6 Enhanced maintenance fixture');
  assert.equal(await entry.locator('svg').count(),1);const normal=await entry.boundingBox();assert.equal(normal.width,32);assert.equal(normal.height,32);assert.equal(await entry.getAttribute('aria-label'),'TS6 Enhanced');
  await entry.focus();await entry.press('Enter');assert.equal(await entry.getAttribute('aria-expanded'),'true');assert.ok(await dialog.isVisible());
+ assert.equal(await dialog.evaluate(e=>getComputedStyle(e).borderRadius),'8px');
+ await p.addStyleTag({content:css});
+ assert.deepEqual(await entry.boundingBox(),normal);
  assert.equal(await p.getByRole('button',{name:'Check for updates'}).count(),0);assert.equal(await p.getByRole('button',{name:'Update…',exact:true}).count(),0);
  assert.doesNotMatch(await dialog.innerText(),/older installation|original appearance|shortcut|GitHub/);await capture('manager-overview');
  checks.push('32px native settings icon has a tooltip, accessible name and keyboard activation; overview shows only relevant actions');
+ const unchanged=await p.evaluate(()=>new Promise(resolve=>{let count=0;const observer=new MutationObserver(entries=>count+=entries.length);observer.observe(document.getElementById('tsix-manager'),{attributes:true,childList:true,subtree:true});for(let i=0;i<25;i++)__tsixManager.setState({version:'1.0',configured:false,legacy:true,busy:false,available:null,detail:null,message:'Updates aren’t configured.'},'fixture-token');queueMicrotask(()=>{observer.disconnect();resolve(count)})}));assert.equal(unchanged,0);
+ checks.push('Manager styling remains usable without the theme; shared tokens preserve its geometry; unchanged status polls perform no DOM writes');
  await p.getByRole('button',{name:'Uninstall…',exact:true}).click();assert.equal(await p.getByRole('heading').innerText(),'Uninstall TS6 Enhanced?');assert.match(await dialog.innerText(),/TeamSpeak will restart and end any calls or streams/);assert.match(await dialog.innerText(),/Other settings and personal data stay/);
  assert.equal(await p.evaluate(()=>document.activeElement.textContent),'Cancel');await capture('manager-uninstall');
  await p.getByRole('button',{name:'Cancel',exact:true}).press('Enter');assert.equal(await p.evaluate(()=>requests.length),0);assert.equal(await p.evaluate(()=>document.activeElement.textContent),'Uninstall…');
@@ -46,12 +54,28 @@ try{
  await entry.waitFor();await entry.click();assert.ok(await dialog.isVisible());
  assert.equal(await p.locator('[data-tsix-manager-open]').count(),1);assert.equal(await p.locator('#tsix-manager').count(),1);
  checks.push('Update button and dialog recover after toolbar, host and window replacement while retaining update state');
+ const beforeRemount=await p.evaluate(()=>requests.length);
+ await p.getByRole('button',{name:'Update…',exact:true}).click();
+ for(const replaceWindow of [false,true]){
+  await p.evaluate(replaceWindow=>{
+   if(replaceWindow){const replacement=document.createElement('div');replacement.className='tsv-window';replacement.innerHTML='<div class="tsv-central-toolbar"></div>';document.querySelector('.tsv-window').replaceWith(replacement)}
+   else document.getElementById('tsix-manager').remove();
+  },replaceWindow);
+  await p.waitForFunction(()=>document.querySelector('#tsix-manager dialog')?.matches(':modal'));
+  assert.equal(await p.getByRole('heading').innerText(),'Update TS6 Enhanced?');assert.equal(await entry.getAttribute('aria-expanded'),'true');
+  await entry.focus();assert.equal(await p.evaluate(()=>document.activeElement.textContent),'Cancel');
+  await p.getByRole('button',{name:'Cancel',exact:true}).press('Tab');assert.equal(await p.evaluate(()=>document.activeElement.textContent),'Download update');
+  await p.getByRole('button',{name:'Cancel',exact:true}).focus();
+ }
+ assert.equal(await p.evaluate(()=>requests.length),beforeRemount);await p.keyboard.press('Escape');
+ checks.push('Open confirmation survives host and window replacement with modal backdrop, contained keyboard focus, Cancel focus and no requested action');
  const beforeChange=await p.evaluate(()=>requests.length);await p.getByRole('button',{name:'Update…',exact:true}).click();
  await set({configured:true,available:'0.12.0',message:'Version 0.12.0 is available.'});assert.equal(await p.getByRole('heading').innerText(),'TS6 Enhanced');assert.equal(await p.evaluate(()=>requests.length),beforeChange);
  await set({configured:true,legacy:false,message:'Couldn’t check for updates. Try again.',detail:'Download failed: <img src=x onerror=alert(1)>'});assert.equal(await p.locator('details').getAttribute('open'),null);assert.equal(await p.locator('#tsix-manager img').count(),0);await p.getByText('Details',{exact:true}).click();assert.match(await p.locator('details').innerText(),/Download failed/);
  await p.getByRole('button',{name:'Check for updates',exact:true}).click();assert.equal(await p.evaluate(()=>requests.at(-1).action),'check');
  await set({configured:true,busy:true,message:'Downloading update…'});assert.ok(await p.getByRole('button',{name:'Uninstall…',exact:true}).isDisabled());assert.equal(await p.locator('details').isVisible(),false);
  await p.setViewportSize({width:360,height:480});const box=await dialog.boundingBox();assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=360&&box.y+box.height<=480);
+ await p.emulateMedia({forcedColors:'active'});await capture('manager-contrast');assert.equal(await p.getByRole('button',{name:'Uninstall…',exact:true}).evaluate(e=>getComputedStyle(e).opacity),'1');await p.emulateMedia({forcedColors:'none'});await capture('manager-narrow');
  checks.push('Error details are optional and escaped; busy actions are disabled; the dialog fits 360px width');
  await set({legacy:false});await p.getByRole('button',{name:'Uninstall…',exact:true}).click();assert.match(await dialog.innerText(),/Restores your previous appearance/);await p.getByRole('button',{name:'Cancel',exact:true}).click();
  await p.evaluate(source);await p.evaluate(source);assert.equal(await p.locator('[data-tsix-manager-open]').count(),1);assert.equal(await p.locator('#tsix-manager').count(),1);

@@ -11,7 +11,7 @@ import {atomicJSON,readJSON,plainPath,stateRoot,validateBaseline} from './instal
 
 export async function createNativeManager({token,release,root,client,applyMaintenance,fetcher=fetch,onStatus=async()=>{}}) {
   if(!/^[a-f0-9]{64}$/.test(token||''))throw Error('Invalid native session token');
-  let busy=false,closing=false,revision=0,started=false,styleJob=null;
+  let busy=false,closing=false,revision=0,started=false,styleJob=null,pendingReady=null;
   let state={version:displayVersion(release.version),configured:!!release.updates?.repository,legacy:false,busy:false,available:null,message:'Checking for updates…'};
   const sockets=new WebSocketServer({noServer:true,maxPayload:1024,perMessageDeflate:false});
   const send=(socket,value)=>{if(socket.readyState!==WebSocket.OPEN)return;if(socket.bufferedAmount>4*1024*1024){socket.terminate();return}socket.send(JSON.stringify(value));};
@@ -23,21 +23,37 @@ export async function createNativeManager({token,release,root,client,applyMainte
     styleJob=job;job.timer=setTimeout(()=>job.finish(false),10000);publish({});
   })});
   publish(updates.snapshot());
+  const finishOperation=()=>{
+    busy=false;publish({});
+    if(pendingReady&&!closing){
+      const {baseline}=pendingReady;pendingReady=null;
+      void begin(baseline).catch(error=>publish({detail:error.message}));
+    }
+  };
   const check=async()=>{
     if(busy||closing||!state.configured)return;
     busy=true;publish({message:'Checking for updates…',detail:null});
     try{publish(await updates.check());await onStatus({checkedAt:new Date().toISOString(),updateError:null})}
     catch(e){publish({...updates.snapshot(),message:'Couldn’t check for updates. Try again.',detail:e.message});await onStatus({updateError:e.message}).catch(()=>{})}
-    finally{busy=false;publish({})}
+    finally{finishOperation()}
   };
   const begin=async baseline=>{
-    if(!started){
-      try{validateBaseline(baseline);await atomicJSON(join(root,'before-install.json'),baseline,{exclusive:true});}
-      catch(e){if(e.code!=='EEXIST'){publish({message:'Appearance recovery could not be saved.',detail:e.message});return}}
-      started=true;
-    }
-    await onStatus({uiReady:true});
-    try{publish(await updates.restore({reset:true}))}catch(e){publish({detail:e.message})}
+    if(closing)return;
+    // Reattachment must not reset the active version or cancel a style job
+    // while a download/check/restore is running. Only the latest retry is needed.
+    if(busy){pendingReady={baseline};return}
+    busy=true;publish({});
+    try{
+      if(!started){
+        try{validateBaseline(baseline);await atomicJSON(join(root,'before-install.json'),baseline,{exclusive:true});}
+        catch(e){if(e.code!=='EEXIST'){publish({message:'Appearance recovery could not be saved.',detail:e.message});return}}
+        started=true;
+      }
+      if(closing)return;
+      await onStatus({uiReady:true});
+      if(closing)return;
+      try{publish(await updates.restore({reset:true}))}catch(e){publish({detail:e.message})}
+    }finally{finishOperation()}
     await check();
   };
   const action=async(action,baseline)=>{
@@ -49,7 +65,7 @@ export async function createNativeManager({token,release,root,client,applyMainte
       if(action==='update')publish(await updates.download(update=>publish({message:`Downloading version ${displayVersion(update.version)}…`})));
       else await applyMaintenance('uninstall');
     }catch(e){publish({message:action==='update'?'Update stopped. Try again.':'Uninstall stopped. Try again.',detail:e.message})}
-    finally{busy=false;publish({})}
+    finally{finishOperation()}
   };
   const server=createServer((request,response)=>{response.writeHead(404);response.end()});
   server.on('upgrade',(request,socket,head)=>{
@@ -80,7 +96,7 @@ export async function createNativeManager({token,release,root,client,applyMainte
   server.requestTimeout=10000;server.headersTimeout=5000;server.maxHeadersCount=16;
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve)});
   const timer=setInterval(()=>void check(),Math.max(1,release.updates?.checkIntervalHours||6)*3600000);timer.unref();
-  return {port:server.address().port,async close(){closing=true;clearInterval(timer);styleJob?.finish(false);for(const socket of sockets.clients)socket.terminate();await new Promise(resolve=>sockets.close(resolve));await new Promise(resolve=>{server.close(resolve);server.closeIdleConnections()})}};
+  return {port:server.address().port,async close(){closing=true;pendingReady=null;clearInterval(timer);styleJob?.finish(false);for(const socket of sockets.clients)socket.terminate();await new Promise(resolve=>sockets.close(resolve));await new Promise(resolve=>{server.close(resolve);server.closeIdleConnections()})}};
 }
 
 async function main(){

@@ -11,7 +11,7 @@
   const controls = new Map();
   const attributes = ['role', 'tabindex', 'aria-label', 'aria-expanded', 'title'];
   const attr=(node,key,value)=>{if(node.getAttribute(key)!==value)node.setAttribute(key,value)};
-  let queued = false, disposed = false;
+  let frame = 0, disposed = false;
   let community=null;
   function syncCommunity(enabled){
     const node=root.querySelector('.sidebar-pane-layout .ts-join-community .tsv-button-content');
@@ -27,7 +27,7 @@
     for(const n of [icon,...icon.querySelectorAll('[id]')])n.removeAttribute('id');
     node.replaceChildren(icon,document.createTextNode('Create community'));
   }
-  function schedule() { if (queued || disposed) return; queued = true; queueMicrotask(() => { queued = false; if (!disposed) sync(); }); }
+  function schedule() { if (frame || disposed) return; frame = requestAnimationFrame(() => { frame = 0; if (!disposed) sync(); }); }
   function sync() {
     if(disposed)return;
     const enabled = getComputedStyle(document.documentElement).getPropertyValue('--tsix-workspace-api').trim() === '1';
@@ -93,6 +93,13 @@
   // These audited native controls are clickable DIVs in beta5. Add keyboard
   // access to the existing click handlers, including split-button menus. Never
   // invoke an audio, connection or sharing API while reconciling the layout.
+  function controlDisabled(node) {
+    const owner=node.closest('.tsv-tool-button')||node, model=owner.__vue__?.button;
+    return !!(model?.isDisabled || model?.disabled || owner.__vue__?.disabled ||
+      (node.matches('.tsv-tool-button-context-menu-toggle') && model?.contextMenuButtonDisabled) ||
+      node.matches('.tsv-is-disabled,.tsv-is-visually-disabled,[disabled]') ||
+      owner.matches('.tsv-is-disabled,.tsv-is-visually-disabled,[disabled]'));
+  }
   function syncControls(enabled) {
     const seen = new Set();
     const icons = {'mode-info':'Info', 'mode-chat':'Chat', 'mode-files':'Files'};
@@ -123,7 +130,9 @@
         const before = Object.fromEntries(keys.map(key => [key,node.getAttribute(key)]));
         let pressed = false;
         const activate = () => {
-          if (node.getAttribute('aria-disabled') === 'true') return;
+          // State can change between keydown and keyup, before Vue updates the
+          // DOM. Read the current native model as well as the announced state.
+          if (controlDisabled(node) || node.getAttribute('aria-disabled') === 'true') return;
           const r = node.getBoundingClientRect();
           node.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window,clientX:r.x+r.width/2,clientY:r.y+r.height/2}));
         };
@@ -142,8 +151,7 @@
         node.addEventListener('keydown',keydown); node.addEventListener('keyup',keyup); node.addEventListener('blur',blur);
         controls.set(node,{before,keydown,keyup,blur});
       }
-      const disabled = !!(model?.disabled || owner.__vue__?.disabled ||
-        node.matches('.tsv-is-disabled,.tsv-is-visually-disabled') || owner.matches('.tsv-is-disabled,.tsv-is-visually-disabled'));
+      const disabled = controlDisabled(node);
       attr(node,'data-tsix-keyboard','');
       attr(node,'role','button'); attr(node,'tabindex',disabled ? '-1' : '0');
       attr(node,'aria-disabled',String(disabled)); attr(node,'aria-label',label); attr(node,'title',label);
@@ -164,25 +172,61 @@
   }
   // Appearance changes regenerate the native style variables. Keep every tree,
   // including previews, measured from the same CSS instead of hardcoded rows.
-  let metricSignature='';
+  const metricKeys={'--ts-tree-client-height-compact':'clientHeightCompact','--ts-tree-client-height-default':'clientHeightDetailed','--ts-tree-channel-height-default':'channelHeightDefault','--ts-tree-spacer-height-default':'spacerHeightDefault'};
+  let metricSignature='', metricOwner=null, treeMetrics=null;
   function syncTreeMetrics() {
     const cache=document.querySelector('main')?.__vue__?.variableCache;
-    if(!cache?.element?.parentElement||!(cache.cache instanceof Map))return;
-    const keys={'--ts-tree-client-height-compact':'clientHeightCompact','--ts-tree-client-height-default':'clientHeightDetailed','--ts-tree-channel-height-default':'channelHeightDefault','--ts-tree-spacer-height-default':'spacerHeightDefault'};
-    const signature=root.className+'|'+Object.keys(keys).map(k=>getComputedStyle(cache.element).getPropertyValue(k)).join('|');
-    if(signature===metricSignature)return;
-    cache.recomputeStyles();const probe=document.createElement('div');probe.style.cssText='position:absolute;visibility:hidden;pointer-events:none;height:0;padding:0;border:0;margin:0;box-sizing:content-box;min-width:0;max-width:none';cache.element.parentElement.append(probe);
-    const metrics={};
-    try{for(const [key,field] of Object.entries(keys)){probe.style.width=getComputedStyle(cache.element).getPropertyValue(key);const n=probe.getBoundingClientRect().width;if(!Number.isFinite(n)||n<20||n>200)return;metrics[field]=n;cache.cache.set(key,n)}}finally{probe.remove()}
-    metricSignature=signature;
-    for(const e of root.querySelectorAll('.ts-server-tree-wrapper')){const t=e.parentElement.__vue__;if(!t||typeof t.flattenServer!=='function')continue;
-      if(Object.entries(metrics).every(([k,v])=>t[k]===v))continue;const s=e.querySelector('.scroller'),top=s?.scrollTop;Object.assign(t,metrics);t.flattenServer();t.$nextTick(()=>{if(s&&Number.isFinite(top))s.scrollTop=top});}
+    if(!cache?.element?.parentElement||!(cache.cache instanceof Map)||typeof cache.recomputeStyles!=='function')return;
+    const computed=getComputedStyle(cache.element), entries=Object.entries(metricKeys);
+    const values=entries.map(([key])=>computed.getPropertyValue(key).trim());
+    // Early resource CSS lets TeamSpeak initialize these values correctly.
+    // Literal pixel rows need no DOM probe, cache write or initial tree rebuild.
+    const pixels=values.every(value=>/^\d+(?:\.\d+)?px$/.test(value));
+    const signature=values.join('|')+(pixels?'':`|${root.className}|${computed.fontSize}|${innerWidth}|${innerHeight}`);
+    if(cache!==metricOwner||signature!==metricSignature){
+      let metrics;
+      if(pixels)metrics=values.map(Number.parseFloat);
+      else{
+        const probe=document.createElement('div');probe.style.cssText='position:absolute;visibility:hidden;pointer-events:none;height:0;padding:0;border:0;margin:0;box-sizing:content-box;min-width:0;max-width:none';cache.element.parentElement.append(probe);
+        try{metrics=values.map(value=>{probe.style.width='';probe.style.width=value;return probe.style.width?probe.getBoundingClientRect().width:NaN})}finally{probe.remove()}
+      }
+      if(metrics.some(value=>!Number.isFinite(value)||value<20||value>200))return;
+      treeMetrics=Object.fromEntries(entries.map(([,field],index)=>[field,metrics[index]]));
+      metricOwner=cache;metricSignature=signature;
+    }
+    if(entries.some(([key,field])=>cache.cache.get(key)!==treeMetrics[field])){
+      cache.recomputeStyles();
+      for(const [key,field]of entries)cache.cache.set(key,treeMetrics[field]);
+    }
+    // A preview or newly mounted server tree may arrive after the CSS signature
+    // settled. Compare its actual model instead of skipping it with the cache.
+    for(const element of root.querySelectorAll('.ts-server-tree-wrapper')){
+      const tree=element.parentElement.__vue__;
+      if(!tree||typeof tree.flattenServer!=='function'||Object.entries(treeMetrics).every(([key,value])=>tree[key]===value))continue;
+      const scroller=element.querySelector('.scroller'),top=scroller?.scrollTop;
+      Object.assign(tree,treeMetrics);tree.flattenServer();
+      tree.$nextTick(()=>{if(!disposed&&element.isConnected&&element.parentElement.__vue__===tree&&scroller&&Number.isFinite(top))scroller.scrollTop=top});
+    }
   }
-  const observer = new MutationObserver(schedule);
-  observer.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['class']});
+  // Chat messages, virtual tree rows and stream overlays do not change the
+  // workspace controls or row metrics. Avoid rescanning the shell for their
+  // frequent content/state updates; mounting their containers still reaches us.
+  const observer = new MutationObserver(changes=>{if(changes.some(change=>{
+    const node=change.target.nodeType===1?change.target:change.target.parentElement;
+    if(change.type==='attributes')return node===root||node?.matches('.tsv-button,.tsv-tool-button,.tsv-tool-button-context-menu-toggle,.tsv-segmented-button');
+    if(node?.closest('.ts-server-tree-wrapper')){
+      // The virtual list's top slot also contains the native server header.
+      // Its tools can mount independently of recycled channel/client rows.
+      const tools='.tsv-tool-button,.tsv-tool-button-context-menu-toggle';
+      return !!node.closest(tools)||[...change.addedNodes,...change.removedNodes].some(child=>child.nodeType===1&&(child.matches(tools)||child.querySelector(tools)));
+    }
+    return !node?.closest('.ts-chat-container,.tsv-screenshare,.tsv-screenshare-portal-ctx,[data-tsix-broadcast-bar]');
+  }))schedule()});
+  observer.observe(root, {childList: true, subtree: true, attributes: true, attributeFilter: ['class','disabled']});
   const themeObserver = new MutationObserver(schedule);
   themeObserver.observe(document.head,{childList:true,subtree:true,attributes:true,attributeFilter:['href','disabled']});
-  document.addEventListener('load',sync,true);
+  const onStyleLoad=event=>{if(event.target?.tagName==='LINK')schedule()};
+  document.addEventListener('load',onStyleLoad,true);
   window.addEventListener('resize',schedule);
   const unwatch = vm.$watch('collapsedSidebar', sync);
   sync();
@@ -191,10 +235,11 @@
     refresh: schedule,
     dispose() {
       disposed = true;
+      if(frame)cancelAnimationFrame(frame);
       syncCommunity(false);
       observer.disconnect(); themeObserver.disconnect(); unwatch();
       for (const [node, record] of controls) releaseControl(node, record);
-      document.removeEventListener('load',sync,true);
+      document.removeEventListener('load',onStyleLoad,true);
       window.removeEventListener('resize',schedule);
       for (const [node, record] of tracked) release(node, record);
       delete window.__tsixWorkspace;

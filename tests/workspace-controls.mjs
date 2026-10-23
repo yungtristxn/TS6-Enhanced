@@ -43,6 +43,30 @@ try {
  await audio.focus();await page.keyboard.down('Space');await menu.focus();await page.keyboard.up('Space');
  assert.deepEqual(await page.evaluate(()=>[calls.audio,calls.menu]),[2,2]);
  checks.push('Moving focus cancels a pending Space activation');
+ await audio.focus();await page.keyboard.down('Space');
+ await page.evaluate(()=>{document.querySelector('#audio').__vue__.button.isDisabled=true});
+ await page.keyboard.up('Space');assert.equal(await page.evaluate(()=>calls.audio),2);
+ await page.evaluate(()=>window.__tsixWorkspace.refresh());
+ await page.waitForFunction(()=>document.querySelector('#audio').getAttribute('aria-disabled')==='true');
+ assert.equal(await audio.getAttribute('tabindex'),'-1');assert.equal(await menu.getAttribute('tabindex'),'-1');
+ await page.evaluate(()=>{document.querySelector('#audio').__vue__.button.isDisabled=false;window.__tsixWorkspace.refresh()});
+ await page.waitForFunction(()=>document.querySelector('#audio').getAttribute('aria-disabled')==='false');
+ checks.push('Native isDisabled state blocks a pending key activation before DOM updates and removes both split-button targets from Tab');
+ await menu.focus();await page.keyboard.down('Space');
+ await page.evaluate(()=>{document.querySelector('#audio').__vue__.button.contextMenuButtonDisabled=true});
+ await page.keyboard.up('Space');assert.equal(await page.evaluate(()=>calls.menu),2);
+ await page.evaluate(()=>window.__tsixWorkspace.refresh());
+ await page.waitForFunction(()=>document.querySelector('#menu').getAttribute('aria-disabled')==='true');
+ assert.equal(await audio.getAttribute('tabindex'),'0');assert.equal(await menu.getAttribute('tabindex'),'-1');
+ await page.evaluate(()=>{document.querySelector('#audio').__vue__.button.contextMenuButtonDisabled=false;window.__tsixWorkspace.refresh()});
+ await page.waitForFunction(()=>document.querySelector('#menu').getAttribute('aria-disabled')==='false');
+ checks.push('A disabled split-menu rejects pending input without disabling its primary action');
+ await audio.evaluate(node=>node.setAttribute('disabled',''));
+ await page.waitForFunction(()=>document.querySelector('#audio').getAttribute('aria-disabled')==='true');
+ assert.equal(await menu.getAttribute('tabindex'),'-1');
+ await audio.evaluate(node=>node.removeAttribute('disabled'));
+ await page.waitForFunction(()=>document.querySelector('#audio').getAttribute('aria-disabled')==='false');
+ checks.push('Native disabled attributes update keyboard availability without requiring a class change');
  await page.evaluate(()=>{document.querySelector('#audio').__vue__.button.disabled=true;document.querySelector('#audio').classList.add('tsv-is-disabled')});
  await page.waitForFunction(()=>document.querySelector('#audio').getAttribute('aria-disabled')==='true');
  assert.equal(await audio.getAttribute('tabindex'),'-1');assert.equal(await menu.getAttribute('tabindex'),'-1');
@@ -52,6 +76,39 @@ try {
  await page.waitForFunction(()=>document.querySelector('#info').getAttribute('aria-pressed')==='true');
  assert.equal(await page.locator('#chat').getAttribute('aria-pressed'),'false');
  checks.push('View switching updates the announced active state');
+ const backgroundReads=await page.evaluate(async()=>{
+  const root=document.querySelector('.tsv-window'),chat=document.createElement('div'),tree=document.createElement('div');
+  chat.className='ts-chat-container';tree.className='ts-server-tree-wrapper';root.append(chat,tree);
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  const original=window.getComputedStyle;let reads=0;
+  window.getComputedStyle=(node,...args)=>{if(node===document.documentElement)reads++;return original(node,...args)};
+  try{
+   for(let i=0;i<30;i++){
+    const message=document.createElement('span'),row=document.createElement('span');chat.replaceChildren(message);tree.replaceChildren(row);
+    message.className='updated';row.className='talking';message.dispatchEvent(new Event('load'));
+    await new Promise(r=>setTimeout(r,0));
+   }
+   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+   return reads;
+  }finally{window.getComputedStyle=original;chat.remove();tree.remove()}
+ });
+ assert.equal(backgroundReads,0);
+ checks.push('Thirty chat/tree updates and content loads trigger no workspace style reads');
+ await page.evaluate(()=>{
+  const tree=document.createElement('div');tree.className='ts-server-tree-wrapper';tree.id='late-tree';
+  tree.innerHTML='<div class="ts-server-header"></div>';document.querySelector('.main-pane-layout').append(tree);
+ });
+ await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ await page.evaluate(()=>{
+  const tool=document.createElement('div');tool.className='tsv-tool-button';tool.id='header-tool';tool.__vue__={button:{title:'Server header action'}};
+  window.headerCalls=0;tool.addEventListener('click',()=>headerCalls++);document.querySelector('#late-tree .ts-server-header').append(tool);
+ });
+ await page.waitForFunction(()=>document.querySelector('#header-tool').getAttribute('role')==='button');
+ await page.locator('#header-tool').press('Enter');assert.equal(await page.evaluate(()=>headerCalls),1);
+ await page.evaluate(()=>{window.removedHeaderTool=document.querySelector('#header-tool');removedHeaderTool.remove()});
+ await page.waitForFunction(()=>!removedHeaderTool.hasAttribute('role'));
+ await page.evaluate(()=>document.querySelector('#late-tree').remove());
+ checks.push('Native tools mounted later inside the virtual tree header are enhanced and released normally');
  await page.evaluate(()=>{window.saved=document.querySelector('#menu');saved.remove()});
  await page.waitForFunction(()=>!saved.hasAttribute('data-tsix-keyboard'));
  await page.evaluate(()=>{document.querySelector('#audio').append(saved)});

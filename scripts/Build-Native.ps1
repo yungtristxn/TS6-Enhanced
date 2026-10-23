@@ -1,6 +1,6 @@
 #requires -Version 7.0
 [CmdletBinding()]
-param([string]$OutputDirectory,[string]$SdkDirectory)
+param([string]$OutputDirectory,[string]$SdkDirectory,[switch]$Test)
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
 if(!$OutputDirectory){$OutputDirectory=Join-Path $project '.local\native-build'}
@@ -21,6 +21,7 @@ if(!$SdkDirectory){
         if($LASTEXITCODE){throw 'CEF SDK extraction failed'}
     }
 }
+$SdkDirectory=[IO.Path]::GetFullPath($SdkDirectory)
 $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $vs=& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if(!$vs){throw 'Install Visual Studio C++ build tools before building the native loader.'}
@@ -38,10 +39,19 @@ $commands=@(
     'if errorlevel 1 exit /b 1',
     'rc /nologo /fo payload.res payload.rc',
     'if errorlevel 1 exit /b 1',
-    ('cl /nologo /LD /MT /O2 /W4 /WX /EHsc /guard:cf /std:c++20 /DUNICODE /D_UNICODE /I"'+$SdkDirectory+'" /I"'+$OutputDirectory+'" "'+$project+'\native\loader.cpp" "'+$project+'\native\runtime.cpp" version.exp payload.res bcrypt.lib /link /OUT:version.dll /DYNAMICBASE /NXCOMPAT'),
+    ('cl /nologo /LD /MT /O2 /W4 /WX /EHsc /guard:cf /std:c++20 /DUNICODE /D_UNICODE /I"'+$SdkDirectory+'" /I"'+$OutputDirectory+'" "'+$project+'\native\loader.cpp" "'+$project+'\native\runtime.cpp" "'+$project+'\native\css_delivery.cpp" version.exp payload.res bcrypt.lib /link /OUT:version.dll /DYNAMICBASE /NXCOMPAT'),
     'if errorlevel 1 exit /b 1',
-    'dumpbin /nologo /exports version.dll > exports.txt'
+    'dumpbin /nologo /exports version.dll > exports.txt',
+    'if errorlevel 1 exit /b 1'
 )
+if($Test){
+    $commands+=@(
+        ('cl /nologo /MT /O2 /W4 /WX /EHsc /guard:cf /std:c++20 /DUNICODE /D_UNICODE /I"'+$SdkDirectory+'" /I"'+$OutputDirectory+'" "'+$project+'\tests\css-delivery.cpp" bcrypt.lib /Fe:css-delivery-test.exe /link /DYNAMICBASE /NXCOMPAT'),
+        'if errorlevel 1 exit /b 1',
+        'css-delivery-test.exe',
+        'if errorlevel 1 exit /b 1'
+    )
+}
 $batch=Join-Path $OutputDirectory 'build.cmd'
 [IO.File]::WriteAllLines($batch,$commands,[Text.UTF8Encoding]::new($false))
 & $batch
