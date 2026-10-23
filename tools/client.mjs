@@ -23,63 +23,11 @@ if (command === 'targets') {
           const v = e.parentElement.__vue__;
           return { renderedRows:e.querySelectorAll('.ts-server-tree-item-leaf').length, metrics:v && {channel:v.channelHeightDefault, spacer:v.spacerHeightDefault, compact:v.clientHeightCompact, detailed:v.clientHeightDetailed} };
         });
-        return {version, viewport:{width:innerWidth,height:innerHeight,devicePixelRatio}, themeLoaded:!!document.getElementById('userStyle')?.sheet,
-          projectThemeLoaded:document.getElementById('userStyle')?.href.includes('/local.tsix.layout/') ?? false, trees,
+        return {version, viewport:{width:innerWidth,height:innerHeight,devicePixelRatio}, themeLoaded:!!document.getElementById('userStyle')?.sheet,nativeEnhanced:window.__tsixNative?.status??null,
+          projectThemeLoaded:!!document.getElementById('tsix-native-style')?.sheet, trees,
           rowHeights:[...new Set(rows.map(e=>e.getBoundingClientRect().height))],
           viewerCount:[...document.querySelectorAll('.tsv-screenshare')].filter(e=>e.__vue__?.$refs.fullArea).length, videoTileCount:document.querySelectorAll('.screen-video-wrapper,.screen-tile-wrapper--video').length,
           chatCount:document.querySelectorAll('.ts-chat-container').length, fullscreen:!!document.fullscreenElement};
-      })()`);
-      console.log(JSON.stringify(result, null, 2));
-    } else if (command === 'refresh-tree') {
-      if (context !== 'main') throw Error('Tree refresh is only supported in the main window');
-      // Read-only preflight finishes before changing any layout state.
-      const result = await client.evaluate(`(async () => {
-        const build = await new Promise(resolve => tsclient_internal.getClientLibVersion((error, build) => resolve(error ? -1 : build)));
-        if (build !== 1791901251) throw Error('Unsupported build; re-audit the tree internals before using this helper');
-        const root = document.querySelector('main')?.__vue__;
-        const cache = root?.variableCache;
-        if (!cache || !(cache.cache instanceof Map) || !cache.element?.parentElement || typeof cache.recomputeStyles !== 'function') throw Error('Unexpected CSS variable cache');
-        const fields = {
-          '--ts-tree-client-height-compact':'clientHeightCompact',
-          '--ts-tree-client-height-default':'clientHeightDetailed',
-          '--ts-tree-channel-height-default':'channelHeightDefault',
-          '--ts-tree-spacer-height-default':'spacerHeightDefault'
-        };
-        const liveTrees = [...document.querySelectorAll('.ts-server-tree-wrapper')].filter(e=>!e.closest('.preview')).map(e=>({element:e,vm:e.parentElement.__vue__}));
-        if (!liveTrees.length && ${!args.includes('--allow-empty')}) throw Error('Open the server tree before refreshing');
-        for (const {vm} of liveTrees) {
-          if (!vm || typeof vm.flattenServer !== 'function' || Object.values(fields).some(f=>typeof vm[f] !== 'number')) throw Error('Unexpected tree component');
-        }
-        // Resolve pixel expressions synchronously in the same parent as TS6's
-        // measuring element. Its updateSingle({}) waits on animation frames and
-        // can hang while the native window is hidden/minimized.
-        cache.recomputeStyles();
-        const metrics = {};
-        const probe = document.createElement('div');
-        probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;height:0;padding:0;border:0;margin:0;box-sizing:content-box;min-width:0;max-width:none;';
-        cache.element.parentElement.appendChild(probe);
-        try {
-          for (const [variable,field] of Object.entries(fields)) {
-            const expression = getComputedStyle(cache.element).getPropertyValue(variable);
-            if (!expression.trim() || !CSS.supports('width',expression)) throw Error('Invalid row expression: ' + variable);
-            probe.style.width = expression;
-            const size = probe.getBoundingClientRect().width;
-            if (!Number.isFinite(size) || size < 20 || size > 200) throw Error('Unexpected row size: ' + variable);
-            metrics[field] = size;
-          }
-        } finally { probe.remove(); }
-        for (const [variable,field] of Object.entries(fields)) {
-          cache.cache.set(variable, metrics[field]);
-        }
-        for (const {element,vm} of liveTrees) {
-          const scroller = element.querySelector('.scroller');
-          const previousScroll = scroller?.scrollTop;
-          Object.assign(vm, metrics);
-          vm.flattenServer();
-          await vm.$nextTick();
-          if (scroller) scroller.scrollTop = previousScroll;
-        }
-        return {build, refreshedTrees:liveTrees.length, metrics};
       })()`);
       console.log(JSON.stringify(result, null, 2));
     } else if (command === 'export-fixture-styles') {
@@ -97,6 +45,6 @@ if (command === 'targets') {
       const shot = await client.send('Page.captureScreenshot', { format: 'png' });
       await writeFile(out, Buffer.from(shot.data, 'base64'));
       console.log(out);
-    } else throw Error('Use inspect, targets, refresh-tree, export-fixture-styles, or screenshot');
+    } else throw Error('Use inspect, targets, export-fixture-styles, or screenshot');
   } finally { client.close(); }
 }

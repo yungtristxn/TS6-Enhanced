@@ -45,7 +45,7 @@ Source: "{#Payload}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cr
 Name: "{userprograms}\Uninstall TS6 Enhanced"; Filename: "{uninstallexe}"
 
 [Messages]
-ConfirmUninstall=Remove TS6 Enhanced and restore the saved appearance settings and original TeamSpeak shortcut?%n%nTeamSpeak will close and reopen. Current calls and streams will end. Your identities, bookmarks, chats and server data will be kept.
+ConfirmUninstall=Remove TS6 Enhanced?%n%nTeamSpeak will close and reopen. Current calls and streams will end. Your accounts, settings and chats will be kept.
 
 [Code]
 var OperationLease: TFileStream;
@@ -187,11 +187,12 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var Arguments: String;
 begin
   if CurStep = ssPostInstall then begin
-    WizardForm.StatusLabel.Caption := 'Activating the layout in TeamSpeak...';
+    WizardForm.StatusLabel.Caption := 'Installing TS6 Enhanced...';
     Arguments := '-RestartClient';
     if ExpandConstant('{param:TSIXDEFERRED|0}') = '1' then Arguments := '-DeferredUpdate';
+    if ExpandConstant('{param:TSIXNOOPEN|0}') = '1' then Arguments := Arguments + ' -NoLaunch';
     if not RunBootstrap(ExpandConstant('{app}'), Arguments) then
-      RaiseException(SetupFailure('Automatic activation could not finish.'));
+      RaiseException(SetupFailure('Installation could not finish.'));
   end;
 end;
 

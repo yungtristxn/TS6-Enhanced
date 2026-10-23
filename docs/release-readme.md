@@ -1,20 +1,19 @@
 # Setup
 
-Requires Windows x64 and the standard per-user installation of TeamSpeak 6.0.0-beta5.
+Requires Windows x64 and TeamSpeak 6.0.0-beta5 (build 1791901251) installed at `%LOCALAPPDATA%\Programs\TeamSpeak`.
 
-Run the installer and click **Install**. Setup uses Windows PowerShell 5.1 and includes Node; no separate runtime download is needed. Finish calls or streams first, as setup restarts TeamSpeak.
+Install TeamSpeak first, then run the TS6 Enhanced installer and click **Install**. Finish calls or streams first, as setup restarts TeamSpeak. All required runtimes are included or already part of Windows.
 
-Open TeamSpeak from **Windows Search** after installation. To use the taskbar, pin that Search entry. Replace an old pin if it opens TeamSpeak without enhancements.
+Open TeamSpeak normally. Enhanced loads through the original application and its existing shortcuts.
 
 ## Update or uninstall
 
-Open **TS6 Enhanced** in the toolbar. Updates are checked at startup and every six hours. **Download update** keeps TeamSpeak open: compatible visual changes apply immediately, and installation finishes when you close and reopen TeamSpeak through Search or its managed taskbar pin.
-The upgrade from 1.0.3 or earlier still uses that version's restart behavior.
+Open **TS6 Enhanced** in the toolbar. Updates are checked at startup and every six hours. **Download update** checks for the newest release and keeps TeamSpeak open. Compatible visual changes apply immediately; other updates install after you close TeamSpeak.
 
-Choose **Uninstall…**, or remove TS6 Enhanced through Windows Installed apps. Removal restores your saved appearance and original shortcut while keeping accounts and chats.
+Choose **Uninstall…**, or remove TS6 Enhanced through Windows Installed apps. TeamSpeak restarts, Enhanced is removed, and your accounts, bookmarks and chats are kept.
 
 ## Help
 
 Logs and recovery files are stored in `%LOCALAPPDATA%\TS6-Layout`.
 
-To start the native client directly, open `%LOCALAPPDATA%\Programs\TeamSpeak\TeamSpeak.exe`.
+If Enhanced prevents startup, close TeamSpeak and create an empty `TS6-Enhanced.disabled` file beside `TeamSpeak.exe`. TeamSpeak will then open without Enhanced. Remove that file and restart TeamSpeak to enable it again.

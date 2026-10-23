@@ -1,5 +1,5 @@
 #requires -Version 5.1
 [CmdletBinding(SupportsShouldProcess)]
-param([switch]$RepairShortcut)
+param()
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'scripts\Setup.ps1') -Action Uninstall -RepairShortcut:$RepairShortcut -WhatIf:$WhatIfPreference
+& (Join-Path $PSScriptRoot 'scripts\Setup.ps1') -Action Uninstall -WhatIf:$WhatIfPreference

@@ -65,6 +65,7 @@ export async function checkUpdate(current,config,{fetcher=fetch,fresh=false}={})
   const metadata=releaseAsset(selected,'release.json',config.repository,65536);
   const manifest=JSON.parse(verifyBytes(await fetchBytes(metadata.browser_download_url,{limit:metadata.size,fetcher}),metadata));
   if(manifest.version!==v)throw Error('Release metadata does not match its tag');
+  if(config.nativeInstall===1&&manifest.nativeLoader?.schema!==1)throw Error('This release does not support native loading');
   const hashes=manifest.supportedClient?.resourceHashes;
   if(!hashes||Object.keys(hashes).length!==2||!['html/client_ui/main.js','html/client_ui/main.css'].every(p=>/^[a-f0-9]{64}$/i.test(hashes[p]||'')))throw Error('Invalid TeamSpeak compatibility metadata');
   const installer=releaseAsset(selected,`TS6-Enhanced-${v}-Setup.exe`,config.repository,512*1024*1024);
@@ -88,7 +89,16 @@ export async function compatible(update,client){
   for(const [file,hash]of Object.entries(update.manifest.supportedClient.resourceHashes)){
     if(!['html/client_ui/main.js','html/client_ui/main.css'].includes(file))throw Error('Unexpected client resource');
     const bytes=await readFile(join(client,file));if(createHash('sha256').update(bytes).digest('hex').toLowerCase()!==hash.toLowerCase())return false;
-  }return true;
+  }
+  if(update.manifest.nativeLoader?.schema===1){
+    const images=update.manifest.supportedClient.nativeImages;
+    if(!images||Object.keys(images).length!==3)return false;
+    for(const file of ['TeamSpeak.exe','TeamSpeak.dll','libcef.dll']){
+      if(!/^[a-f0-9]{64}$/i.test(images[file]?.sha256||''))return false;
+      if(createHash('sha256').update(await readFile(join(client,file))).digest('hex')!==images[file].sha256.toLowerCase())return false;
+    }
+  }
+  return true;
 }
 // An update notice is informational. Resolve and validate the release again at
 // download time; a failed check must never fall back to an earlier offer.
@@ -129,7 +139,7 @@ export async function createUpdateSession(release,client,root,{applyStyles,fetch
     const waiting=compareVersions(newest(),activeVersion)>0;
     const live=waiting&&canApplyStyles(release,{manifest:queued,stylesheet:true});
     const pending=waiting&&!live?displayVersion(newest()):null,ready=live?displayVersion(newest()):null;
-    const message=pending?`Version ${pending} will apply next time you open TeamSpeak.`:ready?'Appearance update ready to apply.':activeVersion!==release.version?`Updated to version ${displayVersion(activeVersion)}.`:'You’re up to date.';
+    const message=pending?(release.nativeLoader?.schema===1?`Version ${pending} will apply after you close TeamSpeak.`:`Version ${pending} will apply next time you open TeamSpeak.`):ready?'Appearance update ready to apply.':activeVersion!==release.version?`Updated to version ${displayVersion(activeVersion)}.`:'You’re up to date.';
     return {version:displayVersion(activeVersion),pending,ready,available:null,detail:null,message};
   };
   const restore=async({reset=false}={})=>{

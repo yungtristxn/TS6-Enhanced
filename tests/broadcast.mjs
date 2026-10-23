@@ -4,7 +4,7 @@ import {createServer} from 'node:http';
 import {readFile,writeFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href:'playwright');
-const files=new Map([['/',new URL('./broadcast.html',import.meta.url)],['/layout.css',new URL('../theme/local.tsix.layout/layout.css',import.meta.url)],['/streams-runtime.js',new URL('../tools/streams-runtime.js',import.meta.url)]]);
+const files=new Map([['/',new URL('./broadcast.html',import.meta.url)],['/layout.css',new URL('../theme/layout.css',import.meta.url)],['/streams-runtime.js',new URL('../tools/streams-runtime.js',import.meta.url)]]);
 const runtime=await readFile(files.get('/streams-runtime.js'),'utf8');
 const server=createServer(async(req,res)=>{const file=files.get(req.url);if(!file){res.writeHead(404).end();return}res.setHeader('Content-Type',req.url.endsWith('.js')?'text/javascript':req.url.endsWith('.css')?'text/css':'text/html');res.end(await readFile(file))});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));let browser;

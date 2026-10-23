@@ -8,7 +8,7 @@ import {settleLayout} from './browser-settle.mjs';
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href : 'playwright');
 const routes=new Map([
  ['/',new URL('./stream-tray.html',import.meta.url)],
- ['/layout.css',new URL('../theme/local.tsix.layout/layout.css',import.meta.url)],
+ ['/layout.css',new URL('../theme/layout.css',import.meta.url)],
  ['/streams-runtime.js',new URL('../tools/streams-runtime.js',import.meta.url)]
 ]);
 const server=createServer(async(req,res)=>{

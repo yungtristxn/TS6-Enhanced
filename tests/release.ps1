@@ -6,18 +6,18 @@ $project = Split-Path -Parent $PSScriptRoot
 $ArchivePath = [IO.Path]::GetFullPath($ArchivePath)
 $manifest = Get-Content (Join-Path $project 'release.json') -Raw | ConvertFrom-Json
 $prefix = 'TS6-Enhanced-'+$manifest.version+'-windows-x64/'
-$expectedFiles = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE','README.md','SHA256SUMS.txt','runtime/node.exe','runtime/LICENSE','runtime/TS6-Enhanced.exe',
+$expectedFiles = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE','README.md','SHA256SUMS.txt','runtime/node.exe','runtime/LICENSE','runtime/version.dll',
     'scripts/Bootstrap.ps1','scripts/Runtime.ps1','scripts/Complete-Setup.ps1','scripts/Maintenance.ps1',
-    'scripts/Setup.ps1','scripts/Start-Layout.ps1','scripts/Start-ManagedLayout.ps1','scripts/Start-Inspection.ps1',
-    'scripts/Install-Persistence.ps1','scripts/Theme.ps1',
-    'tools/cdp.mjs','tools/client.mjs','tools/session.mjs','tools/appearance.mjs','tools/install-state.mjs','tools/restore.mjs','tools/updates.mjs','tools/live-update.mjs','tools/manager.mjs','tools/managed-session.mjs','tools/manager-lock.mjs','tools/manager-runtime.js','tools/streams-runtime.js','tools/workspace-runtime.js',
-    'theme/local.tsix.layout/package.json','theme/local.tsix.layout/layout.css','theme/local.tsix.layout/preview.svg')
+    'scripts/Setup.ps1','scripts/Native-Setup.ps1','scripts/Start-Inspection.ps1',
+    'scripts/Restore-LegacyShortcut.ps1','scripts/Remove-LegacyTheme.ps1',
+    'tools/cdp.mjs','tools/client.mjs','tools/appearance.mjs','tools/install-state.mjs','tools/restore.mjs','tools/updates.mjs','tools/native-manager.mjs',
+    'native/CEF-LICENSE.txt','theme/layout.css')+@($manifest.nativeLoader.dependencies)
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::OpenRead($ArchivePath)
 try {
     $names = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\','/') })
     foreach ($name in $names) {
-        if (!$name.StartsWith($prefix) -or $name -match '(^|/)\.\.?(/|$)|\.local|\.git|node_modules|\.lnk$|\.db|\.log$|screenshots|backups|[a-z]:') {
+        if (!$name.StartsWith($prefix) -or $name -match '(^|/)\.\.?(/|$)|\.local|\.git|node_modules/(?!$|ws/)|\.lnk$|\.db|\.log$|screenshots|backups|[a-z]:') {
             throw "Unexpected or private archive path: $name"
         }
     }
@@ -29,10 +29,8 @@ $scratch = Join-Path $project ('.local\release-tests\'+[guid]::NewGuid().ToStrin
 [IO.Compression.ZipFile]::ExtractToDirectory($ArchivePath,$scratch)
 $root = Join-Path $scratch $prefix.TrimEnd('/')
 $packagedRelease=Get-Content -LiteralPath (Join-Path $root 'release.json') -Raw | ConvertFrom-Json
-$packagedTheme=Get-Content -LiteralPath (Join-Path $root 'theme\local.tsix.layout\package.json') -Raw | ConvertFrom-Json
 if($packagedRelease.version -cne $manifest.version){throw 'Packaged release version differs from the source version'}
 if($ExpectedRepository -and $packagedRelease.updates.repository -cne $ExpectedRepository){throw 'Packaged update repository differs from the intended release repository'}
-if($packagedRelease.updates.repository -and $packagedTheme.repository -cne ('https://github.com/'+$packagedRelease.updates.repository)){throw 'Theme repository and update repository disagree'}
 $checksumLines = Get-Content -LiteralPath (Join-Path $root 'SHA256SUMS.txt')
 $hashedFiles = @()
 foreach ($line in $checksumLines) {
@@ -42,7 +40,7 @@ foreach ($line in $checksumLines) {
     if ($relative -match '(^|/)\.\.?(/|$)|[a-z]:|^/') { throw 'Unsafe checksum path' }
     $file = Join-Path $root $relative
     if ((Get-FileHash -LiteralPath $file).Hash -ne $expected) { throw "Checksum mismatch: $relative" }
-    if($relative -notin @('runtime/node.exe','runtime/TS6-Enhanced.exe')){
+    if($relative -notin @('runtime/node.exe','runtime/version.dll')){
         $content = Get-Content -LiteralPath $file -Raw
         if ($content -match '(?i)[a-z]:[\\/]+Users[\\/]+[^\\/\s]+') { throw "Developer-specific absolute path: $relative" }
     }
@@ -51,7 +49,7 @@ if ($hashedFiles.Count -ne ($hashedFiles | Sort-Object -Unique).Count -or
     (Compare-Object ($expectedFiles | Where-Object { $_ -ne 'SHA256SUMS.txt' }) $hashedFiles)) { throw 'Missing or duplicate file checksums' }
 $artifacts = @($ArchivePath)
 $styleAsset=Join-Path (Split-Path -Parent $ArchivePath) ('TS6-Enhanced-'+$manifest.version+'-layout.css')
-if((Get-FileHash $styleAsset).Hash -ne (Get-FileHash (Join-Path $root 'theme/local.tsix.layout/layout.css')).Hash){throw 'Live stylesheet differs from the package'}
+if((Get-FileHash $styleAsset).Hash -ne (Get-FileHash (Join-Path $root 'theme/layout.css')).Hash){throw 'Live stylesheet differs from the package'}
 if($packagedRelease.liveUpdate.schema -ne 1 -or $packagedRelease.liveUpdate.runtimeHash -notmatch '^[a-f0-9]{64}$'){throw 'Missing live-update compatibility fingerprint'}
 if ($Installer) {
     $directory = Split-Path -Parent $ArchivePath
@@ -82,7 +80,7 @@ if ($PackageOnly) {
 }
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'TeamSpeak.lnk'
 $before = (Get-FileHash -LiteralPath $shortcut).Hash
-& (Join-Path $root 'Install.ps1') -RepairShortcut -WhatIf
+& (Join-Path $root 'Install.ps1') -WhatIf
 if ((Get-FileHash -LiteralPath $shortcut).Hash -ne $before) { throw 'Extracted-package preflight changed the real shortcut' }
 # Prove unsupported resources stop setup before any installer mutation.
 $releaseFile = Join-Path $root 'release.json'

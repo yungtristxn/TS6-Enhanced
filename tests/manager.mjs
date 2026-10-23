@@ -2,18 +2,15 @@ import assert from 'node:assert/strict';import {readFile,writeFile} from 'node:f
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href:'playwright');
 const source=await readFile(new URL('../tools/manager-runtime.js',import.meta.url),'utf8');
 import {clientPath as client} from './client-path.mjs';
-import {applyLiveStyles} from '../tools/live-update.mjs';
 import {readClientBuild} from '../tools/cdp.mjs';
-import {maintainSession} from '../tools/managed-session.mjs';
-import {attachSession} from '../tools/session.mjs';
 const nativeIcon=await readFile(`${client}/html/client_ui/images/icons/settings.svg`,'utf8');
 const browser=await chromium.launch({headless:true,...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
 const errors=[],checks=[];
 try{
  const p=await browser.newPage({viewport:{width:1000,height:700}});p.on('pageerror',e=>errors.push(e.message));
  await p.setContent('<title>TS6 Enhanced maintenance fixture</title><style>body{margin:0;background:#131d2b;font:13px "Segoe UI",sans-serif}.tsv-window{height:100vh;color:#edf1fa;--tsv-font-color:#edf1fa;--tsv-font-subtitle-color:#aeb9ca;--tsv-shaded-bg:#202a3c;--tsv-header-bg:#172034}.tsv-central-toolbar{height:44px;display:flex;align-items:center;padding-left:200px;background:#172034}.native-art{display:none}</style><div class="tsv-window"><div class="tsv-central-toolbar"><button>Mic</button><button>Audio</button></div><div class="native-art">'+nativeIcon+'</div><p>TeamSpeak workspace</p></div>');
- await p.evaluate(()=>{window.requests=[];window.__tsixMaintenanceRequest=value=>requests.push(JSON.parse(value));document.querySelector('.native-art').remove()});await p.evaluate(source);
- await p.evaluate(icon=>__tsixManager.setIcon(icon),nativeIcon);
+ await p.evaluate(()=>{window.requests=[];window.__tsixMaintenanceRequest=value=>requests.push(JSON.parse(value));document.querySelector('.native-art svg').classList.add('tsv-icon-settings')});await p.evaluate(source);
+ await p.evaluate(()=>document.querySelector('.native-art').remove());
  const base={version:'1.0',configured:false,legacy:true,busy:false,available:null,detail:null,message:'Updates aren’t configured.'};
  const set=patch=>p.evaluate(state=>__tsixManager.setState(state,'fixture-token'),{...base,...patch});
  const entry=p.locator('[data-tsix-manager-open]'),dialog=p.locator('#tsix-manager dialog');
@@ -59,26 +56,8 @@ try{
  await set({legacy:false});await p.getByRole('button',{name:'Uninstall…',exact:true}).click();assert.match(await dialog.innerText(),/Restores your previous appearance/);await p.getByRole('button',{name:'Cancel',exact:true}).click();
  await p.evaluate(source);await p.evaluate(source);assert.equal(await p.locator('[data-tsix-manager-open]').count(),1);assert.equal(await p.locator('#tsix-manager').count(),1);
  await p.evaluate(()=>__tsixManager.dispose());assert.equal(await p.locator('#tsix-manager,[data-tsix-manager-open]').count(),0);assert.deepEqual(errors,[]);checks.push('Fresh-install wording, repeated attachment and cleanup preserve the action contract without duplicate UI');
- // Exercise the live stylesheet against a real browser DOM with inert media.
- await p.setContent('<head><link id="userStyle" href="tsui://extension/local.tsix.layout/layout.css"></head><body><video></video></body>');
- await p.evaluate(()=>{window.originalVideo=document.querySelector('video');window.calls={refresh:0,sync:0};window.__tsixWorkspace={refresh(){calls.refresh++}};window.__tsixStreams={sync(){calls.sync++},dispose(){throw Error('Audio helper must not be disposed')}}});
+ // Recovery still uses the native version callback; retain its lifetime checks.
  const renderer={evaluate:expression=>p.evaluate(expression)};
- assert.equal(await applyLiveStyles(renderer,':root{--tsix-layout-version:2.0.0;color:red}','2.0.0'),true);
- assert.ok(await p.evaluate(()=>document.querySelector('video')===originalVideo));
- await p.evaluate(()=>Object.defineProperty(document,'fullscreenElement',{configurable:true,value:document.querySelector('video')}));
- assert.equal(await applyLiveStyles(renderer,':root{--tsix-layout-version:2.0.0;color:red}','2.0.0'),true,'An already-active style stays completed during fullscreen');
- assert.equal(await applyLiveStyles(renderer,':root{--tsix-layout-version:2.0.1}','2.0.1'),false);
- await p.evaluate(()=>delete document.fullscreenElement);
- await assert.rejects(applyLiveStyles(renderer,':root{color:blue}','2.0.1'),/version did not match/);
- assert.equal(await p.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()),'2.0.0');
- await p.evaluate(()=>document.getElementById('userStyle').href='tsui://extension/another.theme/style.css');
- await p.waitForFunction(()=>document.getElementById('tsix-live-release-style').media==='not all');
- assert.equal(await applyLiveStyles(renderer,':root{--tsix-layout-version:2.0.1}','2.0.1'),false);
- await p.evaluate(()=>document.getElementById('userStyle').href='tsui://extension/local.tsix.layout/layout.css');
- await p.waitForFunction(()=>document.getElementById('tsix-live-release-style').media==='all');
- assert.ok(await p.evaluate(()=>document.querySelector('video')===originalVideo));
- await p.evaluate(()=>__tsixLiveStyles.dispose());assert.equal(await p.locator('#tsix-live-release-style').count(),0);
- checks.push('Live CSS preserves media elements, rolls back a wrong version and respects manual theme changes');
  await p.evaluate(()=>{window.tsclient_internal={getClientLibVersion:callback=>setTimeout(()=>callback(null,1791901251),100)}});
  const gc=await p.context().newCDPSession(p);
  const pendingBuild=readClientBuild(renderer);await gc.send('HeapProfiler.collectGarbage');assert.equal(await pendingBuild,1791901251);
@@ -86,44 +65,5 @@ try{
  await p.evaluate(()=>{tsclient_internal.getClientLibVersion=()=>{}});
  await assert.rejects(readClientBuild(renderer),/did not answer its version check/);
  await gc.detach();checks.push('Native version callback survives garbage collection, retries a collected promise and times out cleanly when the bridge does not answer');
- // Real document/context recreation and CDP detach, with only the native
- // bridge and origin supplied by a local fixture. No TeamSpeak reload occurs.
- await p.route('http://tsix-recovery.test/**',route=>route.fulfill({contentType:'text/html',body:`<main><div class="tsv-window"><div class="tsv-central-toolbar"></div><video></video></div></main><script>
- window.tsclient_internal={getClientLibVersion:callback=>callback(null,1791901251)};
- document.querySelector('.tsv-window').__vue__={windowLayout:{},collapseSidebar(){},$watch(){return()=>{}}};
- document.querySelector('main').__vue__={appearanceSettings:{}};
- </script>`}));
- await p.goto('http://tsix-recovery.test/');
- const abort=new AbortController(),recoveries=[],requests=[];let connection,attachment=0,removeRequest;
- const following=maintainSession({signal:abort.signal,retryMs:10,open:async()=>{
-  const session=await p.context().newCDPSession(p);let closed=false;const onClose=[];
-  connection={send:(...args)=>session.send(...args),async evaluate(expression){const result=await session.send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);return result.result.value},
-   on(method,callback){const handler=params=>{if(method==='Runtime.executionContextCreated'&&params.context.origin==='http://tsix-recovery.test')params={...params,context:{...params.context,origin:'tsui://default'}};callback(params)};session.on(method,handler);return()=>session.off(method,handler)},
-   onClose(callback){onClose.push(callback)},close(){if(closed)return;closed=true;session.detach().catch(()=>{});for(const callback of onClose)callback()}}
-  return connection;
- },attach:async(c,id)=>{
-  await attachSession(c,{refreshTree:()=>assert.fail('Disabled theme should not refresh native trees')});
-  await c.send('Runtime.addBinding',{name:'__tsixMaintenanceRequest',executionContextId:id});
-  await c.evaluate(source);const token='generation-'+(++attachment);
-  await c.evaluate(`__tsixManager.setState(${JSON.stringify({...base,configured:true,legacy:false})},${JSON.stringify(token)})`);
-  removeRequest?.();removeRequest=c.on('Runtime.bindingCalled',event=>{if(event.executionContextId===id)requests.push(JSON.parse(event.payload))});
- },onState:state=>{recoveries.push(state.status)}});
- let followError;following.catch(error=>{followError=error});
- const waitReady=async count=>{const until=Date.now()+8000;while(recoveries.filter(s=>s==='ready').length<count){if(followError)throw followError;if(Date.now()>until)throw Error('Recovery did not become ready');await new Promise(r=>setTimeout(r,25))}};
- try{
-  await waitReady(1);
-  await p.evaluate(()=>{window.savedHelpers={workspace:__tsixWorkspace,streams:__tsixStreams,video:document.querySelector('video')};window.disposals=0;for(const helper of [__tsixWorkspace,__tsixStreams])helper.dispose=()=>{disposals++;throw Error('Healthy helper was disposed')}});
-  await attachSession(connection);await attachSession(connection);
-  assert.ok(await p.evaluate(()=>savedHelpers.workspace===__tsixWorkspace&&savedHelpers.streams===__tsixStreams&&savedHelpers.video===document.querySelector('video')&&disposals===0));
-  connection.close();await waitReady(2);
-  assert.ok(await p.evaluate(()=>savedHelpers.workspace===__tsixWorkspace&&savedHelpers.streams===__tsixStreams&&savedHelpers.video===document.querySelector('video')&&disposals===0));
-  await p.reload();await waitReady(3);
-  assert.equal(await p.locator('[data-tsix-manager-open]').count(),1);assert.equal(await p.locator('#tsix-manager').count(),1);
-  assert.ok(await p.evaluate(()=>!!__tsixWorkspace&&!!__tsixStreams));
-  await p.locator('[data-tsix-manager-open]').click();await p.getByRole('button',{name:'Check for updates',exact:true}).click();
-  await p.waitForTimeout(50);assert.equal(requests.length,1);assert.equal(requests[0].action,'check');assert.equal(requests[0].nonce,'generation-'+attachment);
-  assert.deepEqual(errors,[]);
- }finally{abort.abort();await following;removeRequest?.()}
- checks.push('Renderer reload and CDP reconnect restore one updater with a fresh binding; repeat attachment and reconnect preserve existing helpers and media nodes without disposal');
  console.log(JSON.stringify({result:'PASS',checks,errors,scope:'Native icon and trusted browser input with a recording-only bridge; no real restart or removal'},null,2));
 }finally{await browser.close()}

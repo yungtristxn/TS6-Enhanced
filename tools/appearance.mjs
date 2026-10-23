@@ -1,7 +1,7 @@
-// Exact-build adapter for the native Appearance API. Setup only; no profile I/O.
+// Exact-build adapter for uninstall recovery. No profile database I/O.
 // The Vue getter closes over the app module. CDP can read that closure without
 // pausing execution, monkey-patching the client, or opening a settings screen.
-import {captureBaseline,ownedPreferences,validateBaseline} from './install-state.mjs';
+import {ownedPreferences,validateBaseline} from './install-state.mjs';
 import {readClientBuild} from './cdp.mjs';
 export async function withAppearance(c,operation) {
   const group='tsix-appearance-setup';
@@ -15,10 +15,10 @@ export async function withAppearance(c,operation) {
       if(getter.type==='function')break;
       await new Promise(r=>setTimeout(r,250));
     }
-    if(getter?.type!=='function')throw Error('TeamSpeak did not finish loading. Launch its Start Menu entry again.');
+    if(getter?.type!=='function')throw Error('TeamSpeak did not finish loading. Wait for startup to finish and retry removal.');
     if(await readClientBuild(c)!==1791901251)throw Error('Unsupported TS6 build; no appearance settings changed');
     await c.evaluate(`(()=>{
-      if(document.fullscreenElement)throw Error('Exit fullscreen and launch TeamSpeak from Start Menu again to finish setup');
+      if(document.fullscreenElement)throw Error('Exit fullscreen before restoring appearance');
     })()`);
     const properties=await c.send('Runtime.getProperties',{objectId:getter.objectId,ownProperties:true});
     const scopes=properties.internalProperties?.find(p=>p.name==='[[Scopes]]')?.value.objectId;
@@ -39,36 +39,6 @@ export async function withAppearance(c,operation) {
     if(!app)throw Error('Unexpected native Appearance API; no settings changed');
     return await operation(app,unwrap);
   } finally { await c.send('Runtime.releaseObjectGroup',{objectGroup:group}); }
-}
-export async function activateAppearance(c,{preserve=false}={}) {
-  return withAppearance(c,async(app,unwrap)=>{
-    if(preserve){
-      const selected=unwrap(await c.send('Runtime.callFunctionOn',{objectId:app.objectId,returnByValue:true,functionDeclaration:'function(){return this.appearanceSettings.user_style??null}'})).value;
-      if(!['local.tsix.layout//Compact Stream Layout','local.tsix.layout//TS6 Enhanced'].includes(selected))return false;
-    }
-    await captureBaseline(c);
-    const refreshAt=unwrap(await c.send('Runtime.callFunctionOn',{objectId:app.objectId,returnByValue:true,
-      functionDeclaration:'function(){const t=Date.now();this.refreshAvailableUserStyles(true);return t}'})).value;
-    let found=false;
-    for(let i=0;i<80;i++) {
-      found=unwrap(await c.send('Runtime.callFunctionOn',{objectId:app.objectId,returnByValue:true,
-        functionDeclaration:`function(){if(this._userStylesUpdated<${refreshAt})return false;
-          const t=this.getThemeForIdentifier('local.tsix.layout//TS6 Enhanced');
-          if(!t)return false;const u=new URL(t.source);
-          return u.protocol==='tsui:'&&u.hostname==='extension'&&u.pathname==='/local.tsix.layout/layout.css';}`})).value;
-      if(found)break;
-      await new Promise(r=>setTimeout(r,250));
-    }
-    if(!found)throw Error('Installed layout was not found by TeamSpeak. Run Install.cmd again.');
-    unwrap(await c.send('Runtime.callFunctionOn',{objectId:app.objectId,
-      functionDeclaration:`function(){
-        this.applyUserStyle('local.tsix.layout//TS6 Enhanced');
-        ${preserve?'':"this.applyAppearanceSettings({tree_compact:true,chat_input_toolbar_visibility:'dynamic'});"}
-        const link=document.getElementById('userStyle');
-        if(link){const url=new URL(link.href);url.searchParams.set('tsix',Date.now());link.href=url.href;}
-      }`}));
-    return true;
-  });
 }
 export async function restoreAppearance(c,baseline){
   validateBaseline(baseline);

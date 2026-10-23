@@ -19,7 +19,7 @@ try {
  const page=await browser.newPage({viewport:{width:1000,height:700}});page.on('pageerror',e=>errors.push(e.message));
  await page.setContent('<title>TS6 hidden chat refresh regression</title><main class="tsv-screenshare" data-tsix-chat="shown"><div class="tsv-body"><div class="tsv-scroll-area-v"><div id="stage">Stream remains visible</div><div class="ts-chat-container"><div id="host" class="tsv-virtual-list-container"><div id="mount"></div></div><textarea aria-label="Chat draft">Keep this draft</textarea></div></div></div></main>');
  await page.addStyleTag({content:listCSS});
- await page.addStyleTag({content:await readFile(new URL('../theme/local.tsix.layout/layout.css',import.meta.url),'utf8')});
+ await page.addStyleTag({content:await readFile(new URL('../theme/layout.css',import.meta.url),'utf8')});
  await page.addStyleTag({content:'*{box-sizing:border-box}body{margin:0;font:14px/20px sans-serif}.tsv-screenshare{width:600px;height:600px;--tsix-chat-min-height:220px}.tsv-body,.tsv-scroll-area-v{height:100%}.tsv-scroll-area-v{display:flex;flex-direction:column}#stage{flex:1;min-height:0}.ts-chat-container{display:flex;flex-direction:column;max-height:220px}#host{flex:1;min-height:0}textarea{flex:0 0 32px}'});
  await page.evaluate(({vue,list,helpers})=>{
   const modules=new Map(),require=id=>{if(!modules.has(id))throw Error('Unexpected module '+id);return modules.get(id)};

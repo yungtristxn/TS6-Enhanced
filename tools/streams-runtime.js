@@ -1,4 +1,4 @@
-// Injected by session.mjs after verifying process, origin, main context and build.
+// Embedded in the native loader payload for the verified main client context.
 // Native media/session objects stay intact. The exact-build player ref adapter
 // caps HTML volume; amplification uses native gain or Web Audio after input.
 // Volume boost and viewer metadata stay in memory; no profile database access.

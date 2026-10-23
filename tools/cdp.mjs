@@ -1,4 +1,4 @@
-// Development-only transport. No client launch, native bridge mutations or remote hosts.
+// Inspection and uninstall recovery transport. No client launch or remote hosts.
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
@@ -16,7 +16,7 @@ export async function readClientBuild(c) {
     }catch(error){if(!/Promise was collected|Cannot find context|Execution context was destroyed/.test(error.message))throw error}
     if(attempt<2)await new Promise(resolve=>setTimeout(resolve,250));
   }
-  throw Error('TeamSpeak did not answer its version check. Launch its Start Menu shortcut again to retry without restarting.');
+  throw Error('TeamSpeak did not answer its version check. Wait for startup to finish and retry.');
 }
 
 export function verifyListener(port) {
@@ -29,7 +29,7 @@ export function verifyListener(port) {
   let result;
   try {result=execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, stdio: 'pipe', env, timeout:30000 }).toString().trim();}
   catch(error){throw Error(`Could not verify TeamSpeak's local connection. ${String(error.stderr||error.message).trim()}`);}
-  if(result==='missing')throw Object.assign(Error('TeamSpeak has no local inspection listener. Open its managed shortcut when the client is closed.'),{code:'TSIX_NO_LISTENER'});
+  if(result==='missing')throw Object.assign(Error('TeamSpeak has no local inspection listener. Use scripts/Start-Inspection.ps1 while the client is closed.'),{code:'TSIX_NO_LISTENER'});
   if(result!=='verified')throw Error('Unexpected TeamSpeak listener verification result');
 }
 

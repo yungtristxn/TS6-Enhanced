@@ -1,8 +1,7 @@
 // Native shell preservation, measured density, keyboard and idle stability.
 import assert from 'node:assert/strict';import {createServer} from 'node:http';import {readFile} from 'node:fs/promises';import {pathToFileURL} from 'node:url';
-import {attachSession} from '../tools/session.mjs';
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href:'playwright');
-const routes=new Map([['/',new URL('./shell.html',import.meta.url)],['/layout.css',new URL('../theme/local.tsix.layout/layout.css',import.meta.url)],['/workspace-runtime.js',new URL('../tools/workspace-runtime.js',import.meta.url)]]);
+const routes=new Map([['/',new URL('./shell.html',import.meta.url)],['/layout.css',new URL('../theme/layout.css',import.meta.url)],['/workspace-runtime.js',new URL('../tools/workspace-runtime.js',import.meta.url)]]);
 const server=createServer(async(req,res)=>{const file=routes.get(req.url);if(!file){res.writeHead(404).end();return}res.setHeader('Content-Type',req.url.endsWith('.js')?'text/javascript':req.url.endsWith('.css')?'text/css':'text/html');res.end(await readFile(file))});await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await chromium.launch({headless:true,...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})}),checks=[],errors=[];
 try{
@@ -33,8 +32,9 @@ try{
  await p.evaluate('window.__tsixWorkspace.dispose()');assert.equal(await p.locator('[data-tsix-keyboard]').count(),0);
  const js=await readFile(routes.get('/workspace-runtime.js'),'utf8');await p.evaluate(js);await p.evaluate(js);await p.locator('#mic').press('Space');assert.equal(await p.evaluate(()=>lab.actions),2);
  checks.push('Disposal and reattachment restore listeners without duplicate actions');
- // Exercise the actual session entry point before the theme is selected or its
- // stylesheet arrives, rather than testing only an already attached runtime.
+ // Both helpers must remain dormant until their stylesheet arrives, then
+ // activate without duplicate keyboard actions or replacing their instances.
+ const streams=await readFile(new URL('../tools/streams-runtime.js',import.meta.url),'utf8');
  for(const delayed of [false,true]){
   await p.evaluate(delayed=>{
    window.__tsixStreams?.dispose();window.__tsixWorkspace?.dispose();
@@ -42,9 +42,8 @@ try{
    const css=document.querySelector('link[href="/layout.css"]');
    if(delayed){css.remove();window.delayedTheme=css}else css.disabled=true;
   },delayed);
-  let refreshes=0;
-  await attachSession({evaluate:expression=>p.evaluate(expression)},{refreshTree:()=>refreshes++});
-  assert.equal(refreshes,0);assert.equal(await p.locator('[data-tsix-keyboard]').count(),0);
+  await p.evaluate(js);await p.evaluate(streams);
+  assert.equal(await p.locator('[data-tsix-keyboard]').count(),0);
   assert.equal(await p.evaluate(()=>!!window.__tsixStreams&&!!window.__tsixWorkspace),true);
   await p.evaluate(()=>{window.workspaceInstance=window.__tsixWorkspace;window.streamInstance=window.__tsixStreams});
   await p.evaluate(delayed=>{if(delayed)document.head.append(window.delayedTheme);else document.querySelector('link[href="/layout.css"]').disabled=false},delayed);

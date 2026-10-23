@@ -1,17 +1,16 @@
 #requires -Version 5.1
+# Retained only to restore owned shortcuts from installations before version 2.
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [ValidateSet('Install','Uninstall','Status')][string]$Action = 'Install',
+    [ValidateSet('Uninstall','Status')][string]$Action = 'Uninstall',
     [string]$ShortcutPath = (Join-Path ([Environment]::GetFolderPath('Programs')) 'TeamSpeak.lnk'),
     [string]$StateRoot = (Join-Path $env:LOCALAPPDATA 'TS6-Layout\persistence'),
-    [switch]$RepairShortcut,
-    [string]$NodePath
+    [switch]$RepairShortcut
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Runtime.ps1')
 $operation=Enter-LayoutOperation
 try {
-$project = Split-Path -Parent $PSScriptRoot
 $owner = 'ts6-layout-shortcut-v1'
 $ShortcutPath = [IO.Path]::GetFullPath($ShortcutPath)
 $StateRoot = [IO.Path]::GetFullPath($StateRoot).TrimEnd('\')
@@ -124,54 +123,8 @@ if ($Action -eq 'Status') {
     return
 }
 if ($Action -eq 'Uninstall' -and (!$state -or !$state.installed)) { Write-Output 'Shortcut persistence is already absent.'; return }
-$files = @('scripts\Start-Layout.ps1','scripts\Start-ManagedLayout.ps1','scripts\Start-Inspection.ps1','scripts\Maintenance.ps1','scripts\Runtime.ps1','scripts\Theme.ps1','scripts\Install-Persistence.ps1',
-    'release.json','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\live-update.mjs','tools\manager.mjs','tools\managed-session.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
-    'tools\cdp.mjs','tools\client.mjs','tools\workspace-runtime.js','tools\streams-runtime.js')
-if ($Action -eq 'Install') {
-    $powershell = Get-LayoutPowerShell
-    $bundledNode=(Test-Path -LiteralPath (Join-Path $project 'runtime\node.exe')) -or (Test-Path -LiteralPath (Join-Path $project 'SHA256SUMS.txt'))
-    if($bundledNode){
-        $node=Resolve-LayoutNode $project
-        $files+=@('runtime\node.exe','runtime\LICENSE','runtime\TS6-Enhanced.exe')
-    }else{
-        # Source-checkout development can use an explicitly supplied/local Node.
-        $node = if ($NodePath) { [IO.Path]::GetFullPath($NodePath) } else { (Get-Command node -ErrorAction Stop).Source }
-    }
-    $nodeVersion = & $node --version
-    if ($LASTEXITCODE -ne 0 -or [int]($nodeVersion -replace '^v(\d+).*','$1') -lt 22) { throw 'Node 22 or newer is required.' }
-    $launcherSource=if($bundledNode){Join-Path $project 'runtime\TS6-Enhanced.exe'}else{Join-Path $project '.local\launcher\TS6-Enhanced.exe'}
-    $clientExe = Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
-    if (!(Test-Path -LiteralPath $clientExe)) { throw 'Installed TeamSpeak executable not found.' }
-    foreach ($file in $files) {
-        $source = Join-Path $project $file
-        Assert-PlainPath $source
-        if (!(Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing launcher source: $file" }
-    }
-}
-if((!$state -or !$state.installed) -and $Action -eq 'Install'){
-    # For an exact restored link, inspect the verified recovery copy instead of
-    # resolving the live Start Menu path again. A matching hash alone does not
-    # prove it native: a managed original must still be rejected.
-    $inspect=if($state -and $state.currentHash -eq $state.originalHash){$original}else{$ShortcutPath}
-    $native=(New-Object -ComObject WScript.Shell).CreateShortcut($inspect)
-    if($native.Arguments -match 'Start-Layout\.ps1' -or [IO.Path]::GetFileName($native.TargetPath) -eq 'TS6-Enhanced.exe'){throw 'A managed shortcut cannot become the native original. Restore the verified original shortcut from recovery history first.'}
-}
-if (!$PSCmdlet.ShouldProcess($ShortcutPath, "$Action automatic layout attachment; retain byte-for-byte shortcut recovery")) { return }
+if (!$PSCmdlet.ShouldProcess($ShortcutPath, 'Restore the original shortcut; retain byte-for-byte recovery')) { return }
 New-Item -ItemType Directory -Path $StateRoot -Force | Out-Null
-if ($state -and !$state.installed -and $Action -eq 'Install') {
-    # Once removed, the native client/user owns the link again. A fresh install
-    # saves that current link and keeps the preceding baseline as history.
-    $previous=Join-Path $StateRoot ('history\before-reinstall-'+[guid]::NewGuid().ToString('N'))
-    Assert-PlainPath $previous
-    New-Item -ItemType Directory -Path $previous | Out-Null
-    Copy-Item -LiteralPath $original -Destination (Join-Path $previous 'original-TeamSpeak.lnk')
-    Copy-Item -LiteralPath $statePath -Destination (Join-Path $previous 'state.json')
-}
-if (!$state) {
-    Copy-Item -LiteralPath $ShortcutPath -Destination $original
-    $state = [pscustomobject]@{owner=$owner;shortcut=$ShortcutPath;originalHash=(Get-Hash $original);currentHash=(Get-Hash $ShortcutPath);installed=$false;release=$null}
-    Write-LayoutJSON $statePath $state
-}
 $stamp = (Get-Date -Format 'yyyyMMdd-HHmmss-fff')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8)
 $history = Join-Path $StateRoot ('history\'+$stamp)
 Assert-PlainPath $history
@@ -180,64 +133,11 @@ Copy-Item -LiteralPath $ShortcutPath -Destination (Join-Path $history 'TeamSpeak
 Copy-Item -LiteralPath $statePath -Destination (Join-Path $history 'state.json')
 Copy-Item -LiteralPath $original -Destination (Join-Path $history 'previous-original.lnk')
 $nextOriginal=Join-Path $history 'next-original.lnk'
-Copy-Item -LiteralPath $(if(!$state.installed -and $Action -eq 'Install'){$ShortcutPath}else{$original}) -Destination $nextOriginal
+Copy-Item -LiteralPath $original -Destination $nextOriginal
 $state.originalHash=Get-Hash $nextOriginal
-if ($Action -eq 'Install') {
-    # Immutable releases avoid in-place updates and leave each previous runtime
-    # available for recovery. Only this explicit source allowlist is copied.
-    $release = Join-Path $StateRoot ('releases\'+$stamp)
-    Assert-PlainPath $release
-    foreach ($file in $files) {
-        $destination = Join-Path $release $file
-        New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-        Copy-Item -LiteralPath (Join-Path $project $file) -Destination $destination
-        if ((Get-Hash $destination) -ne (Get-Hash (Join-Path $project $file))) { throw "Copied launcher failed verification: $file" }
-    }
-    # Each release owns its runtime, so updates cannot replace a running helper
-    # and an extracted setup folder can be deleted after installation.
-    if($bundledNode){$node=Join-Path $release 'runtime\node.exe'}
-    # Pin the built-in Windows host and resolved Node; neither needs PATH edits.
-    # An incomplete first activation must still retry setup when repaired.
-    $preserveAppearance=[bool]($state.installed -and $state.release -and (Test-Path -LiteralPath (Join-Path $state.release '.theme-ready') -PathType Leaf))
-    @{node=$node;preserveAppearance=$preserveAppearance} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $release 'runtime.json') -Encoding utf8
-    # Installed helpers need a permanent maintenance runtime even when setup was
-    # started from the source checkout rather than the EXE.
-    # Retain the receipt field name for compatibility with an older updater.
-    Write-LayoutJSON (Join-Path (Split-Path -Parent $StateRoot) 'install-runtime.json') @{node=$node;pwsh=$powershell}
-    $shell = New-Object -ComObject WScript.Shell
-    $launcher=Join-Path $StateRoot 'Start-Layout.ps1'
-    Assert-PlainPath $launcher
-    if(Test-Path -LiteralPath $launcher){Copy-Item -LiteralPath $launcher -Destination (Join-Path $history 'previous-launcher.ps1')}
-    Copy-Atomic (Join-Path $release 'scripts\Start-ManagedLayout.ps1') $launcher
-    if(!$bundledNode){& (Join-Path $project 'scripts\Build-Launcher.ps1') -OutputPath $launcherSource}
-    # Keep the worker immutable while a queued installer replaces the stable EXE.
-    $workerLauncher=Join-Path $release 'runtime\TS6-Enhanced.exe'
-    if(!$bundledNode){New-Item -ItemType Directory -Path (Split-Path -Parent $workerLauncher) -Force | Out-Null;Copy-Atomic $launcherSource $workerLauncher}
-    $nativeLauncher=Join-Path $StateRoot 'TS6-Enhanced.exe'
-    Assert-PlainPath $nativeLauncher
-    if(Test-Path -LiteralPath $nativeLauncher){Copy-Item -LiteralPath $nativeLauncher -Destination (Join-Path $history 'previous-launcher.exe')}
-    Copy-Atomic $launcherSource $nativeLauncher
-    $staged = Join-Path $history 'replacement.lnk'
-    # Keep the native AppUserModelID and other Shell properties. A new blank
-    # link loses that identity, leaving Windows Search's old app entry behind.
-    Copy-Item -LiteralPath $nextOriginal -Destination $staged
-    $link = $shell.CreateShortcut($staged)
-    $link.TargetPath = $nativeLauncher
-    $link.Arguments = ''
-    $link.WorkingDirectory = $StateRoot
-    $link.IconLocation = $nativeLauncher+',0'
-    $link.Description = 'TeamSpeak with automatic local layout enhancements'
-    $link.WindowStyle = 7
-    $link.Save()
-    $check = $shell.CreateShortcut($staged)
-    if ($check.TargetPath -ne $nativeLauncher -or $check.Arguments -ne '') { throw 'Shortcut verification failed; original remains unchanged.' }
-    $state.release = $release
-    $state.installed = $true
-} else {
-    $staged = Join-Path $history 'replacement.lnk'
-    Copy-Item -LiteralPath $original -Destination $staged
-    $state.installed = $false
-}
+$staged = Join-Path $history 'replacement.lnk'
+Copy-Item -LiteralPath $original -Destination $staged
+$state.installed = $false
 # Save the complete transaction before changing the live link or its baseline.
 if ((Get-Hash $ShortcutPath) -ne $state.currentHash) { throw 'Shortcut changed during setup; refusing replacement.' }
 $state.currentHash=Get-Hash $staged
@@ -246,34 +146,6 @@ $hashes=@{}
 foreach($name in @('TeamSpeak.lnk','replacement.lnk','previous-original.lnk','next-original.lnk','state.json','next-state.json')){$hashes[$name]=Get-Hash (Join-Path $history $name)}
 Write-LayoutJSON $pendingPath @{owner=$owner;shortcut=$ShortcutPath;history=$stamp;hashes=$hashes}
 Resolve-PendingShortcut | Out-Null
-if($Action -eq 'Install'){
-    # Windows can retain a launch command from an older registered app entry.
-    # Preserve those entry scripts, then forward them to the stable dispatcher.
-    # Helper payloads and their manifests remain available for recovery.
-    $forwarder=Join-Path $history 'legacy-launcher.ps1'
-    @'
-#requires -Version 5.1
-[CmdletBinding()]
-param([ValidateRange(1024,65535)][int]$Port=9988,[switch]$Quiet)
-$entry=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\Start-Layout.ps1'))
-$powershell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$launchArguments=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$entry,'-Port',"$Port")
-if($Quiet){$launchArguments+='-Quiet'}
-& $powershell @launchArguments
-if($LASTEXITCODE -ne 0){throw 'The managed TeamSpeak launcher failed. See the launcher log in LocalAppData\TS6-Layout.'}
-'@ | Set-Content -LiteralPath $forwarder -Encoding UTF8
-    foreach($previous in Get-ChildItem -LiteralPath (Join-Path $StateRoot 'releases') -Directory){
-        if($previous.FullName -eq $release -or $previous.Name -notmatch '^\d{8}-\d{6}-\d{3}-[a-f0-9]{8}$'){continue}
-        Assert-PlainPath $previous.FullName
-        $entry=Join-Path $previous.FullName 'scripts\Start-Layout.ps1'
-        $receipt=Join-Path $previous.FullName 'runtime.json'
-        Assert-PlainPath $entry;Assert-PlainPath $receipt
-        if(!(Test-Path -LiteralPath $entry -PathType Leaf) -or !(Test-Path -LiteralPath $receipt -PathType Leaf)){continue}
-        if((Get-Hash $entry) -eq (Get-Hash $forwarder)){continue}
-        Copy-Item -LiteralPath $entry -Destination (Join-Path $history ('launcher-before-'+$previous.Name+'.ps1'))
-        Copy-Atomic $forwarder $entry
-    }
-}
 Write-Output "$Action complete: $ShortcutPath"
 Write-Output "Original shortcut backup: $original"
 Write-Output 'No running client, native file, startup task, protocol handler or pinned taskbar shortcut was changed.'

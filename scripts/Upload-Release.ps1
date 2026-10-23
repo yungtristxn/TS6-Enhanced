@@ -1,6 +1,6 @@
 #requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
-param([string]$Directory)
+param([string]$Directory,[Parameter(Mandatory)][string]$NotesFile)
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
 if (!$Directory) {
@@ -8,6 +8,10 @@ if (!$Directory) {
     $Directory = Join-Path $project "dist/$version"
 }
 $Directory = [IO.Path]::GetFullPath($Directory)
+$NotesFile = [IO.Path]::GetFullPath($NotesFile)
+if (!(Test-Path -LiteralPath $NotesFile -PathType Leaf) -or ![IO.File]::ReadAllText($NotesFile).Trim()) {
+    throw 'Provide a nonempty release notes file.'
+}
 $release = Get-Content -LiteralPath (Join-Path $Directory 'release.json') -Raw | ConvertFrom-Json
 $repository = $release.updates.repository
 if (!$repository -or $repository -notmatch '^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$' -or $repository.Split('/')[1] -in @('.','..')) {
@@ -30,7 +34,7 @@ $assets | ForEach-Object { Write-Output ([IO.Path]::GetFileName($_)) }
 if (!$PSCmdlet.ShouldProcess("github.com/$repository / $tag",'Create a draft release and upload the release files')) { return }
 if (!(Get-Command gh -ErrorAction SilentlyContinue)) { throw 'Install GitHub CLI and run gh auth login first.' }
 $releaseArgs = @('release','create',$tag,'--repo',"github.com/$repository",'--verify-tag','--draft',
-    '--title',('TS6 Enhanced '+$displayVersion),'--generate-notes')
+    '--title',('TS6 Enhanced '+$displayVersion),'--notes-file',$NotesFile)
 if ($release.channel -eq 'preview') { $releaseArgs += @('--prerelease','--latest=false') }
 & gh @releaseArgs @assets
 if ($LASTEXITCODE -ne 0) { throw 'Draft upload failed. Inspect the GitHub release before retrying; existing releases and assets are not replaced.' }

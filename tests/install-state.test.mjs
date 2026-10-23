@@ -1,9 +1,16 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {mkdtemp,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {captureBaseline,validateBaseline,ownedPreferences} from '../tools/install-state.mjs';
+import {captureBaseline,validateBaseline,ownedPreferences,readJSON} from '../tools/install-state.mjs';
 import {restoreAppearance} from '../tools/appearance.mjs';
 import fs from 'node:fs/promises';import {syncBuiltinESMExports} from 'node:module';
 const original={appearance:{user_style:'example.theme//Original',tree_compact:false,chat_input_toolbar_visibility:'always'},storage:Object.fromEntries(ownedPreferences.map(k=>[k,null]))};
 const baseline={schema:1,owner:'tsix-install-baseline',legacy:false,...original};
+test('Windows PowerShell 5.1 receipts remain readable; malformed JSON fails',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'tsix-receipt-')),path=join(root,'state.json'),receipt={version:'2.0.0'};
+ try{
+  await fs.writeFile(path,'\uFEFF'+JSON.stringify(receipt));assert.deepEqual(await readJSON(path),receipt);
+  await fs.writeFile(path,'\uFEFF{');await assert.rejects(readJSON(path),SyntaxError);
+ }finally{await fs.rm(root,{recursive:true,force:true})}
+});
 test('first install snapshot survives subsequent updates unchanged',async()=>{
  const root=await mkdtemp(join(tmpdir(),'tsix-baseline-'));await captureBaseline({evaluate:async()=>structuredClone(original)},root);
  const again=await captureBaseline({evaluate:async()=>{throw Error('Must not recapture')}},root);assert.deepEqual(again.appearance,original.appearance);validateBaseline(JSON.parse(await readFile(join(root,'before-install.json'),'utf8')));

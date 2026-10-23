@@ -85,15 +85,7 @@
     }
   };
   const observer=new MutationObserver(mount);observer.observe(document.body,{childList:true,subtree:true});mount();
-  window.__tsixManager={setIcon(markup){
-    if(button.querySelector('svg'))return;
-    const svg=new DOMParser().parseFromString(markup,'image/svg+xml').documentElement;
-    if(svg.localName!=='svg'||svg.getAttribute('viewBox')!=='0 0 22 22')throw Error('Unexpected native settings icon');
-    const nodes=[svg,...svg.querySelectorAll('*')],tags=new Set(['svg','path','g','rect','circle']),attrs=new Set(['xmlns','width','height','viewBox','d','class','x','y','rx','ry','cx','cy','r']);
-    if(nodes.some(node=>!tags.has(node.localName)))throw Error('Unexpected native settings artwork');
-    for(const node of nodes)for(const attr of [...node.attributes])if(!attrs.has(attr.name))node.removeAttribute(attr.name);
-    svg.setAttribute('aria-hidden','true');svg.setAttribute('focusable','false');button.replaceChildren(document.importNode(svg,true));
-  },setState(next,token){
+  window.__tsixManager={setState(next,token){
     if(pending==='update'&&next.available!==state.available){reset();close.focus()}
     state=next;nonce=token;version.textContent=`v${state.version}`;status.textContent=state.message;
     check.hidden=!state.configured||!!state.available;check.disabled=!!state.busy;remove.disabled=!!state.busy;

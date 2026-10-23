@@ -1,6 +1,6 @@
 #requires -Version 7.0
 [CmdletBinding()]
-param([string]$OutputDirectory,[string]$Repository,[switch]$Installer,[string]$Compiler,[switch]$ForPublication)
+param([string]$OutputDirectory,[string]$Repository,[switch]$Installer,[string]$Compiler,[switch]$ForPublication,[string]$CefSdkDirectory)
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
 $release = Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw | ConvertFrom-Json
@@ -24,13 +24,17 @@ for ($cursor=$OutputDirectory; $cursor; $cursor=Split-Path -Parent $cursor) {
 }
 # Explicit allowlist: never archive the checkout, .local, installed client,
 # profile, screenshots, logs, runtime backups or personal launch shortcuts.
+if($release.nativeLoader.schema -ne 1){throw 'This build requires native loader metadata.'}
 $files = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE',
     'scripts\Bootstrap.ps1','scripts\Runtime.ps1','scripts\Complete-Setup.ps1','scripts\Maintenance.ps1',
-    'scripts\Setup.ps1','scripts\Start-Layout.ps1','scripts\Start-ManagedLayout.ps1','scripts\Start-Inspection.ps1',
-    'scripts\Install-Persistence.ps1','scripts\Theme.ps1',
-    'tools\cdp.mjs','tools\client.mjs','tools\session.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\live-update.mjs','tools\manager.mjs','tools\managed-session.mjs','tools\manager-lock.mjs','tools\manager-runtime.js',
-    'tools\streams-runtime.js','tools\workspace-runtime.js',
-    'theme\local.tsix.layout\package.json','theme\local.tsix.layout\layout.css','theme\local.tsix.layout\preview.svg')
+    'scripts\Setup.ps1','scripts\Native-Setup.ps1','scripts\Start-Inspection.ps1',
+    'scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1',
+    'tools\cdp.mjs','tools\client.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\native-manager.mjs',
+    'native\CEF-LICENSE.txt','theme\layout.css')
+foreach($dependency in $release.nativeLoader.dependencies){
+    if($dependency -notmatch '^node_modules/ws/(lib/[a-z-]+\.js|index\.js|wrapper\.mjs|package\.json|LICENSE)$'){throw 'Unexpected bundled dependency'}
+    $files+=$dependency
+}
 $zipPath = Join-Path $OutputDirectory ($packageName+'.zip')
 $hashPath = $zipPath+'.sha256'
 $metadataPath=Join-Path $OutputDirectory 'release.json'
@@ -50,10 +54,6 @@ foreach ($file in $files) {
 }
 Copy-Item -LiteralPath (Join-Path $project 'docs\release-readme.md') -Destination (Join-Path $stage 'README.md')
 $release | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stage 'release.json') -Encoding utf8
-$themeManifest=Join-Path $stage 'theme\local.tsix.layout\package.json'
-$theme=Get-Content -LiteralPath $themeManifest -Raw | ConvertFrom-Json
-if($theme.version -ne $release.themeVersion){throw 'Theme manifest version does not match release.json.'}
-if($Repository){$theme.repository='https://github.com/'+$Repository;$theme | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $themeManifest -Encoding utf8}
 # Download only on the build machine. Ship just Node and its license, without npm.
 $nodeSpec=(Get-Content -LiteralPath (Join-Path $project 'runtime-lock.json') -Raw | ConvertFrom-Json).node
 if($nodeSpec.version -notmatch '^\d+\.\d+\.\d+$' -or $nodeSpec.sha256 -notmatch '^[a-f0-9]{64}$'){throw 'Invalid Node runtime lock'}
@@ -85,15 +85,24 @@ try {
         [IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0],(Join-Path $runtimeDirectory $name))
     }
 }finally{$archive.Dispose()}
-& (Join-Path $PSScriptRoot 'Build-Launcher.ps1') -OutputPath (Join-Path $stage 'runtime\TS6-Enhanced.exe')
+$nativeBuild=Join-Path $project '.local\native-build'
+& (Join-Path $PSScriptRoot 'Build-Native.ps1') -OutputDirectory $nativeBuild -SdkDirectory $CefSdkDirectory
+Copy-Item -LiteralPath (Join-Path $nativeBuild 'version.dll') -Destination (Join-Path $stage 'runtime\version.dll')
 # Live CSS is eligible only when every nonvisual runtime input is identical.
 $runtimeInputs=@(Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName | ForEach-Object {
     $relative=$_.FullName.Substring($stage.Length+1).Replace('\','/')
-    if($relative -match '^(scripts/|tools/|runtime/|Install\.|Uninstall\.)'){
+    if($relative -ne 'runtime/version.dll' -and $relative -match '^(scripts/|tools/|runtime/|node_modules/ws/|Install\.|Uninstall\.)'){
         (Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant()+'  '+$relative
     }
 })
 $runtimeInputs+=((Get-FileHash -LiteralPath (Join-Path $project 'installer\Setup.iss')).Hash.ToLowerInvariant()+'  installer/Setup.iss')
+if($release.nativeLoader.schema -eq 1){
+    # The DLL embeds release metadata and CSS. Fingerprint its behavior inputs
+    # separately so a CSS-only release can still apply during an active call.
+    foreach($file in @('native/loader.cpp','native/runtime.cpp','native/runtime.h','native/version.def','native/cef.lock.json','tools/native-runtime.js','tools/workspace-runtime.js','tools/streams-runtime.js','tools/manager-runtime.js','tools/build-native.mjs')){
+        $runtimeInputs+=((Get-FileHash -LiteralPath (Join-Path $project $file)).Hash.ToLowerInvariant()+'  '+$file)
+    }
+}
 $hasher=[Security.Cryptography.SHA256]::Create()
 try{$runtimeHash=([BitConverter]::ToString($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes(($runtimeInputs -join "`n"))))).Replace('-','').ToLowerInvariant()}finally{$hasher.Dispose()}
 $release | Add-Member -NotePropertyName liveUpdate -NotePropertyValue @{schema=1;runtimeHash=$runtimeHash} -Force
@@ -103,7 +112,7 @@ $checksums = @(Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object Fu
 })
 $checksums | Set-Content -LiteralPath (Join-Path $stage 'SHA256SUMS.txt') -Encoding utf8
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $stage 'theme\local.tsix.layout\layout.css') -Destination $styleAsset
+Copy-Item -LiteralPath (Join-Path $stage 'theme\layout.css') -Destination $styleAsset
 Compress-Archive -LiteralPath $stage -DestinationPath $zipPath -CompressionLevel Optimal
 $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 ($zipHash+'  '+[IO.Path]::GetFileName($zipPath)) | Set-Content -LiteralPath $hashPath -Encoding utf8

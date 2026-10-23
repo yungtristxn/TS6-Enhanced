@@ -1,13 +1,14 @@
 {
   "name": "TS6 Enhanced",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "channel": "stable",
-  "themeVersion": "1.1.0",
+  "themeVersion": "2.0.0",
   "updates": {
     "repository": "yungtristxn/TS6-Enhanced",
     "channel": "stable",
     "checkIntervalHours": 6,
-    "deferredInstall": 1
+    "deferredInstall": 1,
+    "nativeInstall": 1
   },
   "supportedClient": {
     "version": "6.0.0-beta5",
@@ -17,6 +18,23 @@
     "resourceHashes": {
       "html/client_ui/main.js": "9D6BEA2EE5333086555C36584621C1B3462A83042CE746D3229D6766A9B82C39",
       "html/client_ui/main.css": "BC700401D04954D07F82570B060335E2278166DB4F618F6CF3DCF8FDE1834ADF"
+    },
+    "nativeImages": {
+      "TeamSpeak.exe": {
+        "timestamp": 1785797781,
+        "imageSize": 4370432,
+        "sha256": "268b7f95e30de1334ce391cc07b2432bbde90f24041649246a7598d157a6e103"
+      },
+      "TeamSpeak.dll": {
+        "timestamp": 1791902716,
+        "imageSize": 58236928,
+        "sha256": "b4888a71b8e7a029e7124950737874e124aff7404f126ed8140b55273113edcb"
+      },
+      "libcef.dll": {
+        "timestamp": 1785797781,
+        "imageSize": 286162944,
+        "sha256": "950da5a66b1cfb3432eac7a094fdd550c3d2de7f16e2bc72ee6df68468fc37aa"
+      }
     }
   },
   "requirements": {
@@ -24,5 +42,27 @@
     "powershellMinimumVersion": "5.1",
     "nodeMinimumMajor": 22,
     "nodeBundled": true
+  },
+  "nativeLoader": {
+    "schema": 1,
+    "dependencies": [
+      "node_modules/ws/index.js",
+      "node_modules/ws/wrapper.mjs",
+      "node_modules/ws/package.json",
+      "node_modules/ws/LICENSE",
+      "node_modules/ws/lib/buffer-util.js",
+      "node_modules/ws/lib/constants.js",
+      "node_modules/ws/lib/event-target.js",
+      "node_modules/ws/lib/extension.js",
+      "node_modules/ws/lib/limiter.js",
+      "node_modules/ws/lib/permessage-deflate.js",
+      "node_modules/ws/lib/receiver.js",
+      "node_modules/ws/lib/sender.js",
+      "node_modules/ws/lib/stream.js",
+      "node_modules/ws/lib/subprotocol.js",
+      "node_modules/ws/lib/validation.js",
+      "node_modules/ws/lib/websocket-server.js",
+      "node_modules/ws/lib/websocket.js"
+    ]
   }
 }

@@ -1,0 +1,20 @@
+LIBRARY VERSION
+EXPORTS
+  GetFileVersionInfoA=api-ms-win-core-version-l1-1-0.GetFileVersionInfoA @1
+  GetFileVersionInfoByHandle=api-ms-win-core-version-l1-1-0.GetFileVersionInfoByHandle @2
+  GetFileVersionInfoExA=api-ms-win-core-version-l1-1-0.GetFileVersionInfoExA @3
+  GetFileVersionInfoExW=api-ms-win-core-version-l1-1-0.GetFileVersionInfoExW @4
+  GetFileVersionInfoSizeA=api-ms-win-core-version-l1-1-0.GetFileVersionInfoSizeA @5
+  GetFileVersionInfoSizeExA=api-ms-win-core-version-l1-1-0.GetFileVersionInfoSizeExA @6
+  GetFileVersionInfoSizeExW=api-ms-win-core-version-l1-1-0.GetFileVersionInfoSizeExW @7
+  GetFileVersionInfoSizeW=api-ms-win-core-version-l1-1-0.GetFileVersionInfoSizeW @8
+  GetFileVersionInfoW=api-ms-win-core-version-l1-1-0.GetFileVersionInfoW @9
+  VerFindFileA=api-ms-win-core-version-l1-1-0.VerFindFileA @10
+  VerFindFileW=api-ms-win-core-version-l1-1-0.VerFindFileW @11
+  VerInstallFileA=ProxyVerInstallFileA @12
+  VerInstallFileW=ProxyVerInstallFileW @13
+  VerLanguageNameA=api-ms-win-core-version-l1-1-0.VerLanguageNameA @14
+  VerLanguageNameW=api-ms-win-core-version-l1-1-0.VerLanguageNameW @15
+  VerQueryValueA=api-ms-win-core-version-l1-1-0.VerQueryValueA @16
+  VerQueryValueW=api-ms-win-core-version-l1-1-0.VerQueryValueW @17
+  TSIX_NATIVE_STATUS @18 DATA

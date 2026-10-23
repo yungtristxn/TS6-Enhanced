@@ -1,5 +1,5 @@
 #requires -Version 7.0
-# Small entry point over the existing suites. Native/live checks are opt-in.
+# Local checks and isolated fixtures; Native reads the installed vendor resources.
 [CmdletBinding()]
 param([ValidateSet('Core','Browser','Native','Installer')][string]$Suite='Core')
 $ErrorActionPreference='Stop'
@@ -19,13 +19,13 @@ try {
                 [void][Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors)
                 if($errors.Count){throw ($errors -join [Environment]::NewLine)}
             }
-            Run node @('--test','tests/updates.test.mjs','tests/install-state.test.mjs','tests/manager-start.test.mjs')
-            foreach($file in @('maintenance','launcher','deferred-update')){Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"tests/$file.ps1")}
+            Run node @('--test','tests/updates.test.mjs','tests/install-state.test.mjs','tests/native-manager.test.mjs')
+            foreach($file in @('maintenance','legacy-removal','native-setup')){Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"tests/$file.ps1")}
             Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File','tests/bootstrap.ps1')
         }
         Browser {
             $env:TSIX_STREAM_MODEL='beta5'
-            foreach($file in @('native-shell','workspace-controls','stream-tray','stream-chat','stream-polish','stream-volume','broadcast')){Run node @("tests/$file.mjs")}
+            foreach($file in @('native-runtime','native-shell','workspace-controls','stream-tray','stream-chat','stream-polish','stream-volume','broadcast')){Run node @("tests/$file.mjs")}
         }
         Native {
             $themeArguments=@('-NoProfile','-File','scripts/Test-Theme.ps1')
@@ -34,8 +34,8 @@ try {
             foreach($file in @('manager','stream-volume-vue','stream-resize','stream-chat-refresh')){Run node @("tests/$file.mjs")}
         }
         Installer {
-            foreach($file in @('maintenance','persistence')){Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"tests/$file.ps1")}
-            foreach($file in @('installer-smoke','deployment')){Run pwsh @('-NoProfile','-File',"tests/$file.ps1")}
+            foreach($file in @('maintenance','legacy-removal','native-setup')){Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"tests/$file.ps1")}
+            Run pwsh @('-NoProfile','-File','tests/installer-smoke.ps1')
         }
     }
     Write-Output "PASS: $Suite suite. No live TeamSpeak interaction was invoked."

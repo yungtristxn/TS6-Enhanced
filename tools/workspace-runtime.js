@@ -1,4 +1,4 @@
-// Injected only into the verified beta5 main renderer by session.mjs.
+// Embedded in the native loader payload for the verified beta5 main renderer.
 // Preserve native navigation, panel ownership and normal document tab order.
 // Native pane APIs retain the user's tree width; no server or audio actions.
 (() => {

@@ -1,5 +1,5 @@
 #requires -Version 5.1
 [CmdletBinding(SupportsShouldProcess)]
-param([switch]$Update, [switch]$RepairShortcut)
+param([switch]$Update)
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'scripts\Setup.ps1') -Action $(if ($Update) {'Update'} else {'Install'}) -RepairShortcut:$RepairShortcut -WhatIf:$WhatIfPreference
+& (Join-Path $PSScriptRoot 'scripts\Setup.ps1') -Action $(if ($Update) {'Update'} else {'Install'}) -WhatIf:$WhatIfPreference

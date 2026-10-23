@@ -1,6 +1,6 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([switch]$Uninstall, [switch]$Prepare, [switch]$RestartClient, [switch]$DeferredUpdate, [string]$ErrorFile)
+param([switch]$Uninstall, [switch]$Prepare, [switch]$RestartClient, [switch]$DeferredUpdate, [switch]$NoLaunch, [string]$ErrorFile)
 # Inno/Node can pass PowerShell 7 module paths into Windows PowerShell 5.1.
 # Bootstrap only uses this host's built-ins; keep incompatible modules out.
 $env:PSModulePath = [IO.Path]::Combine($PSHOME,'Modules')
@@ -27,7 +27,7 @@ try {
         foreach ($p in $release.supportedClient.resourceHashes.PSObject.Properties) {
             $file=Join-Path $client $p.Name
             if (!(Test-Path -LiteralPath $file) -or (Get-FileHash -LiteralPath $file).Hash -ne $p.Value) {
-                throw "This package supports TS6 $($release.supportedClient.version), build $($release.supportedClient.build). Your client files do not match. No theme or shortcut was changed."
+                throw "This package supports TS6 $($release.supportedClient.version), build $($release.supportedClient.build). Your client files do not match. Nothing was installed."
             }
         }
         Write-Host '[2/3] Checking the bundled runtime...'
@@ -38,15 +38,18 @@ try {
         & (Get-LayoutPowerShell) -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Maintenance.ps1') -Action Remove -NodePath $saved.node -Restart
     } else {
         $powershell=Get-LayoutPowerShell
-        $node=Resolve-LayoutNode $project
+        Resolve-LayoutNode $project | Out-Null
         # Preparation must not replace the active installation's receipt.
-        # Persistence publishes it only after committing the managed shortcut.
-        if($Prepare){$result=0;return}
+        if($Prepare){
+            if($release.nativeLoader.schema -eq 1){& (Join-Path $PSScriptRoot 'Native-Setup.ps1') -WhatIf}
+            $result=0;return
+        }
         Write-Host '[3/3] Installing and activating the layout...'
         $extra=@();if($RestartClient){$extra+='-RestartClient'}
         if($DeferredUpdate){$extra+='-DeferredUpdate'}
+        if($NoLaunch){$extra+='-NoLaunch'}
         if($ErrorFile){$extra+=@('-ErrorFile',$ErrorFile)}
-        & $powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Complete-Setup.ps1') -NodePath $node @extra
+        & $powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Complete-Setup.ps1') @extra
     }
     if ($LASTEXITCODE -ne 0) { throw 'Setup did not finish. The message above explains the next step. Recovery files and logs were retained.' }
     Write-Host 'Done. You can close this window.' -ForegroundColor Green
