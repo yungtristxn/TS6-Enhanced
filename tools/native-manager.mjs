@@ -104,28 +104,45 @@ async function main(){
   const release=await readJSON(join(project,'release.json'));
   const client=resolve(project,'..'),token=process.env.TSIX_NATIVE_TOKEN;
   let status={schema:1,mode:'native',pid:process.pid,version:release.version,startedAt:new Date().toISOString(),uiReady:false,checkedAt:null};
+  let maintenance=null;
   const onStatus=async patch=>{status={...status,...patch};await atomicJSON(join(root,'native-session.json'),status)};
   // Children spawned for maintenance must not inherit a usable UI capability.
   const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['TSIX_NATIVE_TOKEN','TSIX_NATIVE_ENDPOINT','TSIX_OPERATION_TOKEN'].includes(key.toUpperCase())));
   const launch=async(file,args)=>{
     await plainPath(file);if(!(await stat(file)).isFile())throw Error('Maintenance executable is missing');
-    await new Promise((resolve,reject)=>{const child=spawn(file,args,{windowsHide:true,stdio:'ignore',cwd:root,env});child.once('error',reject);child.once('spawn',()=>{child.unref();resolve()})});
+    // A successful spawn is not a completed handoff. On Windows the worker can
+    // die with this host; keep its process referenced until maintenance ends.
+    await new Promise((resolve,reject)=>{
+      const child=spawn(file,args,{windowsHide:true,stdio:['ignore','ignore','pipe'],cwd:root,env});
+      let detail='';child.stderr.on('data',chunk=>{detail=(detail+chunk.toString()).slice(-8192)});
+      child.once('error',reject);
+      child.once('close',(code,signal)=>code===0?resolve():reject(Error(`Maintenance failed (${signal||code}). ${detail.trim()}`.trim())));
+    });
   };
   await onStatus({});
   const host=await createNativeManager({token,release,root,client,onStatus,applyMaintenance:async action=>{
-    if(action==='uninstall')await launch(join(root,'app','unins000.exe'),['/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART']);
+    if(action==='uninstall'){
+      const operation=launch(join(root,'app','unins000.exe'),['/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART']);
+      maintenance=operation;
+      try{await operation}finally{if(maintenance===operation)maintenance=null}
+    }
   }});
   process.stdout.write(`${host.port}\n`);
   process.stdin.resume();
   process.stdin.once('end',async()=>{
+    let pending=null;
     try{
       await host.close();
-      const pending=await readJSON(join(root,'pending-update.json')).catch(()=>null);
+      // Uninstall closes TeamSpeak itself. Let it finish rather than killing
+      // its worker or starting a queued update at the same time.
+      if(maintenance){await maintenance;return}
+      pending=await readJSON(join(root,'pending-update.json')).catch(()=>null);
       if(pending?.fromVersion===release.version){
         const powershell=join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe');
         await launch(powershell,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',join(project,'scripts/Native-Setup.ps1'),'-Action','ApplyPending']);
       }
-    }catch(e){await atomicJSON(join(root,'native-error.json'),{at:new Date().toISOString(),message:e.message}).catch(()=>{})}
+    }catch(e){await atomicJSON(join(root,'native-error.json'),{at:new Date().toISOString(),message:e.message,
+      ...(pending?.fromVersion===release.version?{update:{version:pending.version,sha256:pending.sha256}}:{})}).catch(()=>{})}
     finally{process.exit()}
   });
 }

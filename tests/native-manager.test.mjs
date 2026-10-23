@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,copyFile,mkdir,rm} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,resolve,sep} from 'node:path';
 import WebSocket from 'ws';
 import {createNativeManager} from '../tools/native-manager.mjs';
 
@@ -72,4 +75,34 @@ test('repeated renderer readiness waits for the active appearance restore',async
     assert.equal((await request('/style-result',{id:jobs[1].id,applied:true})).ok,true);
     assert.deepEqual(JSON.parse(await readFile(join(root,'before-install.json'),'utf8')),baseline);
   }finally{socket.terminate();await host.close();await rm(root,{recursive:true,force:true})}
+});
+
+test('Windows shutdown waits for maintenance and records a failed worker',{skip:process.platform!=='win32'},async()=>{
+  const base=resolve(fileURLToPath(new URL('../.local/native-manager-tests/',import.meta.url)));
+  await mkdir(base,{recursive:true});const root=await mkdtemp(join(base,'handoff-'));
+  const pkg=join(root,'package'),profile=join(root,'profile'),data=join(profile,'TS6-Layout'),children=[];
+  try{
+    await mkdir(join(pkg,'tools'),{recursive:true});await mkdir(join(pkg,'scripts'));await mkdir(data,{recursive:true});
+    for(const name of ['native-manager.mjs','updates.mjs','install-state.mjs'])await copyFile(new URL('../tools/'+name,import.meta.url),join(pkg,'tools',name));
+    await writeFile(join(pkg,'release.json'),JSON.stringify({version:'2.1.0',updates:{repository:''},nativeLoader:{schema:1}}));
+    await writeFile(join(data,'pending-update.json'),JSON.stringify({schema:2,mode:'next-launch',fromVersion:'2.1.0',version:'2.1.1',sha256:'a'.repeat(64)}));
+    const run=async body=>{
+      await writeFile(join(pkg,'scripts','Native-Setup.ps1'),'param([string]$Action)\n'+body);
+      const child=spawn(process.execPath,[join(pkg,'tools','native-manager.mjs')],{cwd:root,windowsHide:true,stdio:['pipe','pipe','pipe'],
+        env:{...process.env,LOCALAPPDATA:profile,TSIX_NATIVE_TOKEN:'d'.repeat(64),TSIX_HANDOFF_MARKER:join(root,'worker.txt')}});
+      children.push(child);let stderr='';child.stderr.on('data',chunk=>stderr+=chunk);
+      const ended=once(child,'exit',{signal:AbortSignal.timeout(10000)});
+      const [ready]=await once(child.stdout,'data',{signal:AbortSignal.timeout(5000)});assert.match(ready.toString(),/^\d+\n$/);
+      child.stdin.end();const [code]=await ended;assert.equal(code,0,stderr);
+    };
+    await run("Start-Sleep -Milliseconds 200\n[IO.File]::WriteAllText($env:TSIX_HANDOFF_MARKER,$Action)\n");
+    assert.equal(await readFile(join(root,'worker.txt'),'utf8'),'ApplyPending');
+    await run("Write-Error 'Fixture maintenance failure'\nexit 17\n");
+    const error=JSON.parse(await readFile(join(data,'native-error.json'),'utf8'));
+    assert.match(error.message,/17.*Fixture maintenance failure/s);
+    assert.deepEqual(error.update,{version:'2.1.1',sha256:'a'.repeat(64)});
+  }finally{
+    for(const child of children)if(child.exitCode===null){child.kill();await once(child,'exit').catch(()=>{})}
+    assert.ok(resolve(root).startsWith(base+sep));await rm(root,{recursive:true,force:true});
+  }
 });

@@ -130,7 +130,9 @@ export async function stageUpdate(update,root,options={}){
 // releases. Track what is active separately from the newest verified download.
 export async function createUpdateSession(release,client,root,{applyStyles,fetcher=fetch}){
   const receipt=join(root,'pending-update.json');
-  let queued=await readJSON(receipt).catch(()=>null),activeVersion=release.version;
+  let queued=await readJSON(receipt).catch(()=>null),activeVersion=release.version,applyError=null;
+  const readApplyError=async()=>{applyError=await readJSON(join(root,'native-error.json')).catch(()=>null)};
+  await readApplyError();
   try{
     if(queued?.schema!==2||queued.mode!=='next-launch'||queued.fromVersion!==release.version||compareVersions(queued.version,release.version)<=0)queued=null;
   }catch{queued=null}
@@ -139,10 +141,12 @@ export async function createUpdateSession(release,client,root,{applyStyles,fetch
     const waiting=compareVersions(newest(),activeVersion)>0;
     const live=waiting&&canApplyStyles(release,{manifest:queued,stylesheet:true});
     const pending=waiting&&!live?displayVersion(newest()):null,ready=live?displayVersion(newest()):null;
-    const message=pending?(release.nativeLoader?.schema===1?`Version ${pending} will apply after you close TeamSpeak.`:`Version ${pending} will apply next time you open TeamSpeak.`):ready?'Appearance update ready to apply.':activeVersion!==release.version?`Updated to version ${displayVersion(activeVersion)}.`:'You’re up to date.';
-    return {version:displayVersion(activeVersion),pending,ready,available:null,detail:null,message};
+    const failed=pending&&queued.sha256&&applyError?.update?.sha256===queued.sha256&&applyError.update.version===queued.version&&typeof applyError.message==='string';
+    const message=failed?'Update couldn’t finish. Close TeamSpeak to retry.':pending?(release.nativeLoader?.schema===1?`Version ${pending} will apply after you close TeamSpeak.`:`Version ${pending} will apply next time you open TeamSpeak.`):ready?'Appearance update ready to apply.':activeVersion!==release.version?`Updated to version ${displayVersion(activeVersion)}.`:'You’re up to date.';
+    return {version:displayVersion(activeVersion),pending,ready,available:null,detail:failed?applyError.message:null,message};
   };
   const restore=async({reset=false}={})=>{
+    await readApplyError();
     if(reset)activeVersion=release.version;
     const saved=queued?.liveStyles;
     if(!saved)return snapshot();
@@ -160,6 +164,7 @@ export async function createUpdateSession(release,client,root,{applyStyles,fetch
   return {
     snapshot,restore,
     async check(){
+      await readApplyError();
       if(snapshot().ready)await restore();
       const update=await checkUpdate(newest(),release.updates,{fetcher,fresh:true});
       if(update&&!await compatible(update,client))return {...snapshot(),message:'This update needs a different TeamSpeak version.'};

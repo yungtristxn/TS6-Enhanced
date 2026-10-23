@@ -10,6 +10,8 @@ Open TeamSpeak normally. Enhanced loads through the original application and its
 
 Open **TS6 Enhanced** in the toolbar. Updates are checked at startup and every six hours. **Download update** checks for the newest release and keeps TeamSpeak open. Compatible visual changes apply immediately; other updates install after you close TeamSpeak.
 
+If an update stays queued on versions 2.0–2.1.1, download and run the current installer once to repair automatic updates.
+
 Choose **Uninstall…**, or remove TS6 Enhanced through Windows Installed apps. TeamSpeak restarts, Enhanced is removed, and your accounts, bookmarks and chats are kept.
 
 ## Help

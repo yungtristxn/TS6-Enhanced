@@ -126,9 +126,13 @@ test('live updates finish without a pending notice and newer downloads replace t
  state=await session.download();assert.equal(state.version,'1.0.10');assert.equal(state.pending,null);
  let saved=JSON.parse(await readFile(receipt,'utf8'));assert.equal(saved.version,'1.0.10');assert.equal(saved.fromVersion,'1.0.8','The installer must still target the actual installed base');
  publish('1.0.11','d'.repeat(64));state=await session.download();assert.equal(state.version,'1.0.10');assert.equal(state.pending,'1.0.11');assert.match(state.message,/next time/);
+ saved=JSON.parse(await readFile(receipt));
+ await writeFile(join(root,'native-error.json'),JSON.stringify({message:'Fixture installer failure',update:{version:saved.version,sha256:saved.sha256}}));
+ state=await session.check();assert.match(state.message,/couldn’t finish/);assert.equal(state.detail,'Fixture installer failure');
  publish('1.0.12','d'.repeat(64));assert.equal((await session.check()).available,'1.0.12','A queued runtime update must not block checks');
  const previous=await readFile(receipt);failDownload=true;await assert.rejects(session.download(),/SHA-256/);assert.deepEqual(await readFile(receipt),previous);assert.equal(session.snapshot().pending,'1.0.11');
  failDownload=false;state=await session.download();assert.equal(state.pending,'1.0.12');assert.equal(JSON.parse(await readFile(receipt,'utf8')).version,'1.0.12');
+ assert.equal(state.detail,null,'A newer queued update must not inherit the previous installer failure');
  session=await start();state=await session.restore({reset:true});assert.equal(state.version,'1.0.10');assert.equal(state.pending,'1.0.12','Restore active CSS while a newer runtime waits');
  publish('1.0.13');allowStyles=false;state=await session.download();assert.equal(state.ready,'1.0.13');assert.equal(state.pending,null,'Temporarily blocked CSS does not require a restart');assert.doesNotMatch(state.message,/restart|next time/i);
  const withdrawn=published.pop(),savedReady=await readFile(receipt);await assert.rejects(session.download(),/no longer published/);assert.deepEqual(await readFile(receipt),savedReady,'Retry must not replace a withdrawn release with an older download');published.push(withdrawn);
