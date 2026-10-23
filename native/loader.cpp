@@ -101,16 +101,17 @@ static cef_dictionary_value_t* ConnectionInfo(cef_dictionary_value_t* original) 
 static cef_browser_view_t* BrowserView(cef_client_t* client,const cef_string_t* url,const cef_browser_settings_t* settings,cef_dictionary_value_t* info,cef_request_context_t* request,cef_browser_view_delegate_t* delegate) {
     InterlockedIncrement(&TSIX_NATIVE_STATUS.browserViews);
     const std::u16string_view target=url&&url->str?std::u16string_view(url->str,url->length):std::u16string_view();
-    constexpr std::u16string_view mainUrl=u"tsui://default/index.html";
-    bool main=target==mainUrl||(target.starts_with(mainUrl)&&target.size()>mainUrl.size()&&(target[mainUrl.size()]==u'?'||target[mainUrl.size()]==u'#'));
+    const bool main=IsMainBrowserUrl(target);
     // Start maintenance only when this process creates the actual main UI.
     // Duplicate launches that redirect to an existing client need no helper.
     if(main&&InterlockedCompareExchange(&hostStarted,1,0)==0){
         try{std::wstring directory(clientDllPath);directory.resize(directory.find_last_of(L"\\"));TSIX_NATIVE_STATUS.connectionReady=StartEnhancedHost(directory);}
         catch(...){TSIX_NATIVE_STATUS.protectError=ERROR_NOT_ENOUGH_MEMORY;}
     }
-    if(target==mainUrl)AttachEarlyCss(ownModule,client,request);
-    return originalBrowserView(client,url,settings,main?ConnectionInfo(info):info,request,delegate);
+    const bool early=main&&AttachEarlyCss(ownModule,client,request,delegate);
+    auto view=originalBrowserView(client,url,settings,main?ConnectionInfo(info):info,request,delegate);
+    if(early)BindEarlyCssView(view);
+    return view;
 }
 
 static void CEF_CALLBACK OnBrowserCreated(cef_render_process_handler_t* self,cef_browser_t* browser,cef_dictionary_value_t* info) {

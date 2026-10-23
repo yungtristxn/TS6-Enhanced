@@ -18,9 +18,15 @@ constexpr size_t maxCssBytes = 2 * 1024 * 1024;
 using Digest = std::array<BYTE, 32>;
 using ClientFactory = decltype(cef_client_t::get_request_handler);
 using ResourceFactory = decltype(cef_request_handler_t::get_resource_request_handler);
+using ViewCallback = decltype(cef_browser_view_delegate_t::on_browser_created);
 using FreeString = void(*)(cef_string_userfree_t);
 std::atomic<ClientFactory> originalFactory{nullptr};
 std::atomic<ResourceFactory> originalResource{nullptr};
+std::atomic<ViewCallback> originalViewCreated{nullptr}, originalViewDestroyed{nullptr};
+std::atomic<int> mainBrowserId{0};
+// View ownership and matching stay on CEF's UI thread. Only the browser ID is
+// shared with IO callbacks; browser/frame C wrapper addresses are not identities.
+cef_browser_view_t* pendingView = nullptr;
 FreeString freeString = nullptr;
 std::string enhancedCss;
 SRWLOCK patchLock = SRWLOCK_INIT;
@@ -56,10 +62,48 @@ bool MainCss(cef_request_t* request) {
     return request && request->base.size == sizeof(cef_request_t) &&
         request->get_resource_type && request->get_resource_type(request) == RT_STYLESHEET &&
         request->get_method && SameString(request->get_method(request), u"GET") &&
-        // The client/request-handler can be shared with popup views. Require
-        // the full main-document referrer; no referrer means JS fallback.
-        request->get_referrer_url && SameString(request->get_referrer_url(request), u"tsui://default/index.html") &&
         request->get_url && SameString(request->get_url(request), u"tsui://default/main.css", true);
+}
+
+int BrowserId(cef_browser_t* browser) {
+    return browser && browser->base.size == sizeof(cef_browser_t) && browser->get_identifier ?
+        browser->get_identifier(browser) : 0;
+}
+
+bool MainBrowser(cef_browser_t* browser) {
+    const int expected = mainBrowserId.load(std::memory_order_acquire);
+    return expected > 0 && BrowserId(browser) == expected;
+}
+
+bool PendingView(cef_browser_view_t* view) {
+    if (!pendingView || !view || view->base.base.size != sizeof(cef_browser_view_t) || !view->base.is_same) return false;
+    // is_same consumes its non-self argument across the C API boundary. Keep
+    // our retained reference and give the call its own additional reference.
+    pendingView->base.base.add_ref(&pendingView->base.base);
+    return view->base.is_same(&view->base, &pendingView->base) != 0;
+}
+
+void ReleasePendingView() {
+    auto view = pendingView;
+    pendingView = nullptr;
+    if (view) view->base.base.release(&view->base.base);
+}
+
+void CEF_CALLBACK ViewCreated(cef_browser_view_delegate_t* self, cef_browser_view_t* view, cef_browser_t* browser) {
+    if (PendingView(view)) {
+        const int identifier = BrowserId(browser);
+        if (identifier > 0) mainBrowserId.store(identifier, std::memory_order_release);
+        ReleasePendingView();
+    }
+    // The original callback consumes the incoming view and browser references.
+    originalViewCreated.load(std::memory_order_acquire)(self, view, browser);
+}
+
+void CEF_CALLBACK ViewDestroyed(cef_browser_view_delegate_t* self, cef_browser_view_t* view, cef_browser_t* browser) {
+    if (PendingView(view)) ReleasePendingView();
+    int identifier = BrowserId(browser);
+    if (identifier > 0) mainBrowserId.compare_exchange_strong(identifier, 0, std::memory_order_acq_rel);
+    originalViewDestroyed.load(std::memory_order_acquire)(self, view, browser);
 }
 
 bool CssResponse(cef_response_t* response) {
@@ -180,7 +224,7 @@ struct CssRequestHandler {
     template<class T> static void Consume(T* value) { if (value) value->base.release(&value->base); }
     static cef_response_filter_t* CEF_CALLBACK Filter(cef_resource_request_handler_t*,
         cef_browser_t* browser, cef_frame_t* frame, cef_request_t* request, cef_response_t* response) {
-        const bool target = MainCss(request) && CssResponse(response);
+        const bool target = MainBrowser(browser) && MainCss(request) && CssResponse(response);
         // Incoming CEF references would normally be consumed by CToCpp::Wrap.
         // This directly implemented C callback takes that ownership instead.
         Consume(browser); Consume(frame); Consume(request); Consume(response);
@@ -194,7 +238,7 @@ cef_resource_request_handler_t* CEF_CALLBACK Resource(cef_request_handler_t* sel
     cef_browser_t* browser, cef_frame_t* frame, cef_request_t* request,
     int navigation, int download, const cef_string_t* initiator, int* disable) {
     // Inspect before forwarding; the native callback consumes its arguments.
-    const bool target = !navigation && !download && MainCss(request);
+    const bool target = !navigation && !download && MainBrowser(browser) && MainCss(request);
     const int handling = disable ? *disable : 0;
     auto handler = originalResource.load(std::memory_order_acquire)(self, browser, frame, request, navigation, download, initiator, disable);
     // Custom schemes may initialize disable_default_handling=true even though
@@ -213,29 +257,50 @@ cef_request_handler_t* CEF_CALLBACK GetRequest(cef_client_t* self) {
 }
 } // namespace
 
-void AttachEarlyCss(HMODULE module, cef_client_t* client, cef_request_context_t* context) {
+bool IsMainBrowserUrl(std::u16string_view url) {
+    // The supported client's initial route is index.html#/loading. Query
+    // variants include popup views and are deliberately excluded.
+    return url.substr(0, url.find(u'#')) == u"tsui://default/index.html";
+}
+
+bool AttachEarlyCss(HMODULE module, cef_client_t* client, cef_request_context_t* context,
+    cef_browser_view_delegate_t* delegate) {
     // Do not override a request-context handler or a different ABI. The supported
     // client has no context handler; other layouts retain JS-delivered styling.
-    if (!client || client->base.size != sizeof(cef_client_t) || !client->get_request_handler ||
-        !context || context->base.base.size != sizeof(cef_request_context_t) || !context->get_handler) return;
+    if (pendingView || mainBrowserId.load(std::memory_order_acquire) ||
+        !client || client->base.size != sizeof(cef_client_t) || !client->get_request_handler ||
+        !context || context->base.base.size != sizeof(cef_request_context_t) || !context->get_handler ||
+        !delegate || delegate->base.base.size != sizeof(cef_browser_view_delegate_t) ||
+        !delegate->on_browser_created || !delegate->on_browser_destroyed) return false;
     auto contextHandler = context->get_handler(context);
-    if (contextHandler) { contextHandler->base.release(&contextHandler->base); return; }
+    if (contextHandler) { contextHandler->base.release(&contextHandler->base); return false; }
     if (!freeString) freeString = reinterpret_cast<FreeString>(GetProcAddress(GetModuleHandleW(L"libcef.dll"), "cef_string_userfree_utf16_free"));
-    if (!freeString) return;
+    if (!freeString) return false;
     try {
         // Immutable after the first main BrowserView; resource/filter callbacks
         // run on CEF's IO thread and never mutate this shared string.
         if (enhancedCss.empty()) {
             auto resource = FindResourceW(module, MAKEINTRESOURCEW(102), RT_RCDATA);
-            if (!resource) return;
+            if (!resource) return false;
             const DWORD size = SizeofResource(module, resource);
             auto raw = static_cast<const char*>(LockResource(LoadResource(module, resource)));
-            if (!raw || !size || size > maxCssBytes) return;
+            if (!raw || !size || size > maxCssBytes) return false;
             std::string complete = "\n@media all {\n:root{--tsix-css-delivery:resource-v1}\n";
             complete.append(raw, size);
             complete += "\n}\n";
             enhancedCss = std::move(complete);
         }
-        Patch(&client->get_request_handler, &GetRequest, originalFactory);
+        return Patch(&delegate->on_browser_created, &ViewCreated, originalViewCreated) &&
+            Patch(&delegate->on_browser_destroyed, &ViewDestroyed, originalViewDestroyed) &&
+            Patch(&client->get_request_handler, &GetRequest, originalFactory);
     } catch (...) { /* Styling is optional; native startup must remain usable. */ }
+    return false;
+}
+
+void BindEarlyCssView(cef_browser_view_t* view) {
+    if (pendingView || mainBrowserId.load(std::memory_order_acquire) || !view ||
+        view->base.base.size != sizeof(cef_browser_view_t) || !view->base.is_same ||
+        !view->base.base.add_ref || !view->base.base.release) return;
+    view->base.base.add_ref(&view->base.base);
+    pendingView = view;
 }
