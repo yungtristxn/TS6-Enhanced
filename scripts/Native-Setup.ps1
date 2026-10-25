@@ -22,12 +22,15 @@ try {
         $pendingPath=Join-Path $root 'pending-update.json'
         $pending=Get-Content -LiteralPath $pendingPath -Raw | ConvertFrom-Json
         $release=Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw | ConvertFrom-Json
-        if($pending.fromVersion -cne $release.version){throw 'Queued update belongs to another installation'}
+        # The retained installer package may already be the target version after
+        # an interrupted post-install phase. Both entry points use the same queue.
+        if($release.version -cne $pending.fromVersion -and $release.version -cne $pending.version){throw 'Queued update belongs to another installation'}
         $installer=& {param($pending,$dataRoot,$maintenance) . $maintenance -FunctionsOnly; Assert-UpdateInstaller $pending $dataRoot} $pending $root (Join-Path $PSScriptRoot 'Maintenance.ps1')
         if(!$PSCmdlet.ShouldProcess($installer,'Install the verified update after TeamSpeak closes')){return}
         $setup=Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TSIXDEFERRED=1','/TSIXNOOPEN=1' -WorkingDirectory $root -WindowStyle Hidden -PassThru
         $setup.WaitForExit()
         if($setup.ExitCode -ne 0){throw "Queued update failed ($($setup.ExitCode)); it remains available for retry"}
+        Assert-LayoutNativeInstall $root $client $pending.version
         # A newer download must never be removed by this operation.
         $current=Get-Content -LiteralPath $pendingPath -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
         if($current -and $current.sha256 -eq $pending.sha256){Remove-Item -LiteralPath $pendingPath}
@@ -58,7 +61,7 @@ try {
             if((Get-FileHash -LiteralPath (Join-Path $client $resource.Name)).Hash -ine $resource.Value){throw 'Unsupported or modified TS6 UI resources'}
         }
         $payload=@('release.json','native\CEF-LICENSE.txt','runtime\node.exe','runtime\LICENSE','tools\native-manager.mjs','tools\updates.mjs','tools\install-state.mjs',
-            'scripts\Native-Setup.ps1','scripts\Runtime.ps1','scripts\Maintenance.ps1','scripts\Start-Inspection.ps1','scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1',
+            'scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Runtime.ps1','scripts\Maintenance.ps1','scripts\Start-Inspection.ps1','scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1',
             'tools\restore.mjs','tools\appearance.mjs','tools\cdp.mjs','tools\client.mjs')
         foreach($dependency in $release.nativeLoader.dependencies){
             if($dependency -notmatch '^node_modules/ws/(lib/[a-z-]+\.js|index\.js|wrapper\.mjs|package\.json|LICENSE)$'){throw 'Unexpected bundled dependency'}

@@ -39,7 +39,7 @@ $commands=@(
     'if errorlevel 1 exit /b 1',
     'rc /nologo /fo payload.res payload.rc',
     'if errorlevel 1 exit /b 1',
-    ('cl /nologo /LD /MT /O2 /W4 /WX /EHsc /guard:cf /std:c++20 /DUNICODE /D_UNICODE /I"'+$SdkDirectory+'" /I"'+$OutputDirectory+'" "'+$project+'\native\loader.cpp" "'+$project+'\native\runtime.cpp" "'+$project+'\native\css_delivery.cpp" version.exp payload.res bcrypt.lib /link /OUT:version.dll /DYNAMICBASE /NXCOMPAT'),
+    ('cl /nologo /LD /MT /O2 /W4 /WX /EHsc /guard:cf /std:c++20 /DUNICODE /D_UNICODE /I"'+$SdkDirectory+'" /I"'+$OutputDirectory+'" "'+$project+'\native\loader.cpp" "'+$project+'\native\runtime.cpp" "'+$project+'\native\startup_update.cpp" "'+$project+'\native\css_delivery.cpp" version.exp payload.res bcrypt.lib crypt32.lib shell32.lib /link /OUT:version.dll /DYNAMICBASE /NXCOMPAT'),
     'if errorlevel 1 exit /b 1',
     'dumpbin /nologo /exports version.dll > exports.txt',
     'if errorlevel 1 exit /b 1'

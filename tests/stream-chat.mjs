@@ -44,6 +44,46 @@ try{
  for(let i=0;i<3;i++){await page.locator('[data-tsix-preview-join]').first().click();await settleLayout(page)}
  const players=await page.locator('.video-stream').evaluateAll(nodes=>nodes.map(e=>e.getBoundingClientRect().toJSON()));previews.forEach((b,i)=>same(b,players[i]));
  checks.push('opening multiple preview cards preserves native grid geometry');
+ // beta5 keeps the source catalogue and view menu when its last preview is
+ // hidden, but removes the screen-grid entirely. Preserve that exact boundary.
+ await page.goto(`http://127.0.0.1:${server.address().port}/?model=beta5&single=1&incoming=1`);await setChat(true);
+ await page.getByLabel('Chat draft').fill('Unsent while my preview is hidden');
+ await page.evaluate(()=>{
+  const wrapper=document.querySelector('.screen-grid-wrapper');
+  lab.hiddenGrid=wrapper.querySelector('.screen-grid');lab.hiddenGrid.remove();
+  lab.visibleSessions=lab.vm.allSessions;lab.hiddenStream=lab.vm.allSessions[0];lab.hiddenStream.isInbound=false;lab.hiddenStream.hidden=true;
+  lab.vm.allSessions=[];lab.vm.doUpdateGrid();
+  Object.defineProperty(document.querySelector('main').__vue__,'sortableStreamsContainer',{configurable:true,get:()=>({sortedStreams:lab.visibleSessions})});
+  wrapper.classList.add('is-empty');
+  const message=document.createElement('div');message.id='hidden-message';message.textContent='All streams are hidden! You can view hidden streams in the advanced options.';wrapper.append(message);
+  __tsixStreams.sync();
+ });
+ const empty=page.locator('[data-tsix-empty-stream-row]');await empty.waitFor();
+ assert.equal(await page.locator('[data-tsix-stream-footer],[data-tsix-view-action="expand"]').count(),0);
+ assert.equal(await empty.locator('[data-tsix-view-action="dots"]').count(),1);
+ assert.equal(await page.locator('[data-tsix-chat-toggle]').count(),0);
+ for(const [width,height]of [[1322,847],[640,480],[360,540]]){
+  await page.setViewportSize({width,height});await settleLayout(page);
+  const menu=empty.locator('[data-tsix-view-action="dots"]');
+  assert.ok(await menu.evaluate(button=>{const b=button.getBoundingClientRect(),r=button.closest('[data-tsix-empty-stream-row]').getBoundingClientRect();return r.height<100&&b.left>=r.left&&b.right<=r.right&&b.top>=r.top&&b.bottom<=r.bottom&&button.contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2))}));
+  await menu.press('Enter');
+  assert.ok(await page.locator('.ts-stream-view-settings .tsv-button').evaluate(button=>Number(button.dataset.activations)>0&&button.dataset.ownerVisible==='true'));
+  if(process.env.TSIX_SCREENSHOT_DIR&&width===1322)await page.screenshot({path:`${process.env.TSIX_SCREENSHOT_DIR}/all-streams-hidden.png`});
+ }
+ assert.ok(await page.evaluate(()=>lab.hiddenStream.hidden&&lab.report().identity));
+ assert.equal(await page.getByLabel('Chat draft').inputValue(),'Unsent while my preview is hidden');
+ await page.evaluate(()=>{
+  __tsixStreams.dispose();
+ });
+ assert.equal(await page.locator('[data-tsix-empty-stream-row],[data-tsix-source-actions]').count(),0);
+ await page.evaluate(await readFile(routes.get('/streams-runtime.js'),'utf8'));await empty.waitFor();
+ await page.evaluate(()=>{
+  const wrapper=document.querySelector('.screen-grid-wrapper');wrapper.querySelector('#hidden-message').remove();wrapper.classList.remove('is-empty');wrapper.append(lab.hiddenGrid);
+  lab.hiddenStream.hidden=false;lab.vm.allSessions=lab.visibleSessions;lab.vm.doUpdateGrid();__tsixStreams.sync();
+ });
+ await empty.waitFor({state:'detached'});await settleLayout(page);await checkDock();
+ assert.equal(await page.getByLabel('Chat draft').inputValue(),'Unsent while my preview is hidden');
+ checks.push('All-hidden state keeps one inline native restore menu without an empty toolbar or popout; hide/show, media, draft and cleanup remain intact');
  await page.goto(`http://127.0.0.1:${server.address().port}/?model=beta5&single=1&incoming=1`);await setChat(true);
  await page.evaluate(()=>{lab.vm.resizeVideoHeightOrigin=lab.vm.gridHeight;lab.vm.overrideSplitPercentage=.45;lab.vm.maximumVideoHeight=lab.vm.maximumHeight*.45;window.__tsixStreams.sync();lab.vm.resizeVideoHeightOrigin=-1;window.__tsixStreams.sync()});await setChat(false);await setChat(true);
  assert.ok(Math.abs(await page.evaluate(()=>lab.vm.overrideSplitPercentage)-.45)<.001);checks.push('manual divider preference survives chat toggles');

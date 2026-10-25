@@ -16,6 +16,15 @@ try{
  const url=`http://127.0.0.1:${server.address().port}/`;await page.goto(url,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>!!window.__tsixStreams);assert.equal(page.url(),url);assert.equal(await page.title(),'TS6 broadcast fixture');
  const bar=page.locator('[data-tsix-broadcast-bar]'),toggle=page.locator('[data-tsix-viewer-toggle]'),list=page.locator('[data-tsix-viewer-list]');
  const check=async(name,fn)=>{await fn();checks.push(name)};
+ const screenshot=async(locator,name)=>{
+  // Use the same CEF-compatible capture path as the full-window evidence;
+  // Playwright's element capture can hang awaiting platform fonts here.
+  const capture=await page.context().newCDPSession(page);
+  try{const bounds=await locator.boundingBox();assert.ok(bounds);
+   const shot=await capture.send('Page.captureScreenshot',{format:'png',clip:{...bounds,scale:1}});
+   await writeFile(`${process.env.TSIX_SCREENSHOT_DIR}/${name}.png`,Buffer.from(shot.data,'base64'));
+  }finally{await capture.detach()}
+ };
  const shell=()=>page.evaluate(()=>[...document.querySelectorAll('.tsv-activity,.sidebar-pane-layout,.main-pane-layout,.fixtureStage,.ts-tree,.ts-server-status-bar,.fixtureFooter,.ts-chat-input-container')].map(e=>{
   const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};
  }));
@@ -26,6 +35,46 @@ try{
   assert.equal(await toggle.getAttribute('aria-label'),'2 watching. Show viewer list');assert.match(await toggle.getAttribute('title'),/Alex Viewer\nSam Friend/);assert.equal(await page.locator('[data-tsix-viewer-icons] [data-tsix-viewer-icon]').count(),2);
   assert.deepEqual(await page.evaluate(()=>lab.report()),{actions:0,watchers:1,sameVideo:true,sameMedia:true,hidden:true,showOwn:false});
   assert.deepEqual(await shell(),idleShell,'Starting sharing must not resize or move native content');
+ });
+ await check('grouped controls retain readable labels, native glyphs and visible focus/press feedback',async()=>{
+  const action=kind=>bar.locator(`[data-tsix-share-action="${kind}"]`);
+  if(process.env.TSIX_SCREENSHOT_DIR)await screenshot(bar,'sharing-rest');
+  const contrast=await bar.locator('[data-tsix-share-actions]').evaluate(group=>{
+   const luminance=rgb=>rgb.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
+   const bg=luminance(getComputedStyle(group).backgroundColor);
+   return [...group.querySelectorAll('button')].map(button=>{
+    const fg=luminance(getComputedStyle(button).color);return(Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05);
+   });
+  });
+  assert.ok(contrast.every(ratio=>ratio>=4.5),'Action text must contrast with the grouped background');
+  assert.ok(await bar.locator('svg').evaluateAll(icons=>icons.every(icon=>icon.getAttribute('aria-hidden')==='true'&&icon.getAttribute('focusable')==='false'&&icon.childElementCount>0)));
+  assert.equal(await action('open').innerText(),'Chrome — Factorio');
+  for(const kind of ['pause','settings','stop']){
+   const metrics=await action(kind).evaluate(button=>{
+    const r=button.getBoundingClientRect(),label=button.querySelector('[data-tsix-share-label]');return {height:r.height,width:r.width,textWidth:label.scrollWidth,available:label.clientWidth};
+   });
+   assert.ok(metrics.height>=32&&metrics.width>=32&&metrics.textWidth<=metrics.available,`${kind}: ${JSON.stringify(metrics)}`);
+  }
+  await page.mouse.move(600,100);
+  if(process.env.TSIX_SCREENSHOT_DIR)await screenshot(bar,'sharing-rest');
+  const background=()=>action('settings').evaluate(button=>getComputedStyle(button).backgroundColor);
+  const rest=await background();await action('settings').hover();const hover=await background();assert.notEqual(hover,rest);
+  await page.mouse.down();const pressed=await background();assert.notEqual(pressed,hover);await page.mouse.move(600,100);await page.mouse.up();
+  await action('pause').focus();await page.keyboard.press('Tab');
+  assert.ok(await action('settings').evaluate(button=>button===document.activeElement&&getComputedStyle(button).outlineStyle==='solid'));
+  if(process.env.TSIX_SCREENSHOT_DIR)await screenshot(bar,'sharing-focus');
+  for(const kind of ['pause','stop']){
+   await page.evaluate(()=>{lab.pause(true);__tsixStreams.sync()});
+   await action(kind).hover();await page.mouse.down();
+   const ratio=await action(kind).evaluate(button=>{
+    const luminance=rgb=>rgb.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
+    const style=getComputedStyle(button),fg=luminance(style.color),bg=luminance(style.backgroundColor);
+    return(Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05);
+   });
+   assert.ok(ratio>=4.5,`${kind} pressed contrast: ${ratio}`);
+   await page.mouse.move(600,100);await page.mouse.up();
+  }
+  await page.evaluate(()=>{lab.pause(false);__tsixStreams.sync()});
  });
  await check('viewer list supports keyboard, Friends overlay, Escape and outside dismissal',async()=>{
   await toggle.focus();await toggle.press('Enter');await list.waitFor({state:'visible'});assert.match(await list.innerText(),/Sam Friend/);
@@ -101,7 +150,7 @@ try{
   await page.evaluate(()=>{lab.viewers([1,2]);lab.pause(true)});await page.waitForFunction(()=>document.querySelector('[data-tsix-broadcast-bar]').dataset.state==='paused');
   assert.deepEqual(await shell(),idleShell,'Pausing must not shift the layout');
   await page.evaluate(()=>lab.add([2,3]));await page.waitForFunction(()=>document.querySelector('[data-tsix-broadcast-bar]').dataset.state==='live');
-  assert.equal(await page.locator('[data-tsix-viewer-count]').innerText(),'3 watching');assert.match(await page.locator('[data-tsix-broadcast-state]').innerText(),/LIVE · 2/);
+  assert.equal(await page.locator('[data-tsix-viewer-count]').innerText(),'3 watching');assert.match(await page.locator('[data-tsix-broadcast-state]').innerText(),/Live · 2/);
  });
  await check('middle-column badge stays above Start Stream and preserves shell geometry at every size',async()=>{
   for(const [width,height,column] of [[1322,847,320],[820,600,320],[640,480,320]]){
@@ -110,7 +159,7 @@ try{
    await page.setViewportSize({width,height});await page.evaluate(column=>{lab.root.style.setProperty('--tsix-navigator-width',`${column}px`);const pane=document.querySelector('.main-pane-layout');pane.style.width=`${column}px`;pane.style.minWidth=`${column}px`},column);
    await page.evaluate(()=>lab.stop());await bar.waitFor({state:'detached'});const before=await shell();
    await page.evaluate(()=>lab.start([1,2,3,4,5,6]));await bar.waitFor();assert.deepEqual(await shell(),before);
-   assert.ok(await bar.evaluate(e=>{const r=e.getBoundingClientRect(),b=e.querySelector('button'),br=b.getBoundingClientRect(),pane=document.querySelector('.main-pane-layout'),pr=pane.getBoundingClientRect(),footer=pane.querySelector('.ts-server-status-bar').getBoundingClientRect(),start=document.querySelector('#startStream').getBoundingClientRect();return e.parentElement===pane&&r.width<=260&&r.height===32&&r.left===pr.left+12&&r.right<=pr.right-12&&r.left<=start.left+1&&r.right>=start.left&&r.bottom===footer.top-8&&br.left>=r.left&&br.right<=r.right&&b.contains(document.elementFromPoint(br.x+br.width/2,br.y+br.height/2))}));
+   assert.ok(await bar.evaluate(e=>{const r=e.getBoundingClientRect(),b=e.querySelector('button'),br=b.getBoundingClientRect(),pane=document.querySelector('.main-pane-layout'),pr=pane.getBoundingClientRect(),footer=pane.querySelector('.ts-server-status-bar').getBoundingClientRect(),start=document.querySelector('#startStream').getBoundingClientRect();return e.parentElement===pane&&r.width<=260&&r.height>=100&&r.height<=124&&r.left===pr.left+12&&r.right<=pr.right-12&&r.left<=start.left+1&&r.right>=start.left&&r.bottom===footer.top-8&&br.left>=r.left&&br.right<=r.right&&b.contains(document.elementFromPoint(br.x+br.width/2,br.y+br.height/2))}));
    await toggle.click();assert.ok(await list.evaluate(e=>{const r=e.getBoundingClientRect(),pane=document.querySelector('.main-pane-layout').getBoundingClientRect();return r.x>=pane.x&&r.y>=0&&r.right<=pane.right&&r.bottom<=document.querySelector('[data-tsix-broadcast-bar]').getBoundingClientRect().top}));await page.keyboard.press('Escape');
    await page.evaluate(()=>lab.pause(true));await page.waitForFunction(()=>document.querySelector('[data-tsix-broadcast-bar]').dataset.state==='paused');assert.deepEqual(await shell(),before);
    assert.ok((await bar.boundingBox()).width<=260);await page.evaluate(()=>lab.pause(false));
@@ -138,6 +187,10 @@ try{
   assert.deepEqual(await bar.boundingBox(),position);
   await page.evaluate(()=>{const pane=document.querySelector('.main-pane-layout');pane.style.width='220px';pane.style.minWidth='220px';document.querySelector('.sidebar-pane-layout').style.width='40px';document.querySelector('.ts-server-status-bar').style.height='80px'});
   await page.waitForFunction(()=>{const r=document.querySelector('[data-tsix-broadcast-bar]').getBoundingClientRect(),p=document.querySelector('.main-pane-layout').getBoundingClientRect(),f=document.querySelector('.ts-server-status-bar').getBoundingClientRect();return r.left===p.left+12&&r.right<=p.right-12&&r.bottom===f.top-8});
+  for(const paused of [true,false]){
+   await page.evaluate(paused=>{lab.pause(paused);__tsixStreams.sync()},paused);
+   assert.ok(await bar.locator('[data-tsix-share-actions] [data-tsix-share-label]').evaluateAll(labels=>labels.every(label=>label.scrollWidth<=label.clientWidth)),'Narrow actions must keep their complete labels');
+  }
   await toggle.click();assert.ok(await list.evaluate(e=>{const r=e.getBoundingClientRect(),p=document.querySelector('.main-pane-layout').getBoundingClientRect();return r.left>=p.left&&r.right<=p.right}));await page.keyboard.press('Escape');
   await page.locator('#startStream').click();
   if(process.env.TSIX_SCREENSHOT_DIR){
@@ -148,6 +201,7 @@ try{
     const shot=await capture.send('Page.captureScreenshot',{format:'png'});await writeFile(`${process.env.TSIX_SCREENSHOT_DIR}/${name}.png`,Buffer.from(shot.data,'base64'));
    }
    await capture.detach();await page.keyboard.press('Escape');
+   await screenshot(bar,'sharing-bar');
   }
  });
  await check('fullscreen keeps warning and viewer list within the fullscreen element',async()=>{
@@ -155,6 +209,80 @@ try{
   assert.ok(await bar.evaluate(e=>{const r=e.getBoundingClientRect();return document.fullscreenElement.contains(e)&&r.top===12&&r.right===innerWidth-12&&r.width<=260}));await toggle.click();await list.waitFor({state:'visible'});
   assert.ok(await list.evaluate(e=>{const r=e.getBoundingClientRect();return r.y>=0&&r.bottom<=innerHeight}));
   await page.evaluate(()=>document.exitFullscreen());await page.waitForFunction(()=>!document.querySelector('[data-tsix-broadcast-bar]').hasAttribute('data-fullscreen'));
+ });
+ await check('explicit actions target native sessions without touching hidden previews or media',async()=>{
+  const previous=await bar.locator('[data-tsix-share-stream]').elementHandle();
+  await page.evaluate(()=>{lab.start();lab.state.events=[]});
+  await page.waitForFunction(node=>!node.isConnected,previous);
+  const action=kind=>bar.locator(`[data-tsix-share-action="${kind}"]`);
+  await action('open').press('Enter');
+  await page.waitForFunction(()=>!document.querySelector('[data-tsix-share-action="settings"]').disabled);
+  await action('settings').press('Space');
+  await page.waitForFunction(()=>lab.state.events.length===2,{},{timeout:3000}).catch(async error=>{throw Error(error.message+' '+JSON.stringify(await page.evaluate(()=>({events:lab.state.events,error:document.querySelector('[data-tsix-share-error]').textContent,buttons:[...document.querySelectorAll('[data-tsix-share-action]')].map(b=>({action:b.dataset.tsixShareAction,disabled:b.disabled})),methods:Object.keys(lab.options.methods)}))))});
+  assert.deepEqual(await page.evaluate(()=>lab.state.events),[['open',1],['settings',1]]);
+  await action('pause').click();await page.waitForFunction(()=>document.querySelector('[data-tsix-share-action="pause"]').textContent==='Resume');
+  assert.equal(await action('pause').innerText(),'Resume');
+  assert.equal(await bar.locator('[data-tsix-share-stream]').getAttribute('data-paused'),'');
+  assert.equal(await page.locator('[data-tsix-broadcast-state]').innerText(),'Paused');
+  assert.deepEqual(await bar.locator('[data-tsix-share-actions] button').allTextContents(),['Resume','Settings','Stop']);
+  if(process.env.TSIX_SCREENSHOT_DIR)await screenshot(bar,'sharing-paused');
+  await action('pause').click();await page.waitForFunction(()=>document.querySelector('[data-tsix-share-action="pause"]').textContent==='Pause');
+  await page.evaluate(()=>{lab.streams[0].data.defer=true});
+  await action('pause').dblclick();await page.waitForFunction(()=>!!lab.streams[0].data.finish);
+  assert.equal((await page.evaluate(()=>lab.state.events)).filter(e=>e[0]==='pause').length,3,'Pending double clicks must reach native pause only once');
+  await page.waitForFunction(()=>document.querySelector('[data-tsix-share-action="pause"]').disabled);
+  assert.equal(await bar.locator('[data-tsix-share-stream]').getAttribute('aria-busy'),'true');
+  await page.evaluate(()=>{lab.streams[0].data.finish();lab.streams[0].data.defer=false});
+  await page.waitForFunction(()=>!document.querySelector('[data-tsix-share-action="pause"]').disabled);
+  await page.evaluate(()=>{lab.streams[0].data.fail=true});
+  await action('stop').click();await page.waitForFunction(()=>document.querySelector('[data-tsix-share-error]').textContent.includes('Try again'));
+  assert.ok(await action('stop').isEnabled());
+  await page.evaluate(()=>{lab.streams[0].data.fail=false});
+  assert.ok(await page.evaluate(()=>lab.report().sameMedia&&lab.report().sameVideo&&lab.report().hidden&&!lab.report().showOwn));
+  await action('stop').click();await bar.waitFor({state:'detached'});
+ });
+ await check('multiple streams keep independent actions and removed rows cannot act on stale sessions',async()=>{
+  await page.evaluate(()=>{lab.start();lab.add([2,3]);lab.state.events=[]});await bar.waitFor();
+  const picker=bar.locator('[data-tsix-share-picker]'),panel=bar.locator('[data-tsix-share-list]');
+  await picker.press('Enter');await panel.waitFor({state:'visible'});
+  assert.equal(await panel.locator('[data-tsix-share-stream]').count(),2);
+  assert.ok(await panel.locator('button').first().evaluate(node=>node===document.activeElement));
+  await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'});
+  assert.ok(await picker.evaluate(e=>e===document.activeElement));
+  await picker.press('Space');await panel.waitFor({state:'visible'});
+  await panel.locator('[data-tsix-share-stream]').nth(1).locator('[data-tsix-share-action="open"]').click();
+  assert.deepEqual(await page.evaluate(()=>lab.state.events),[['open',2]]);
+  await panel.waitFor({state:'hidden'});assert.ok(await picker.evaluate(e=>e===document.activeElement));
+  await picker.click();await panel.locator('[data-tsix-share-stream]').nth(1).locator('[data-tsix-share-action="pause"]').click();
+  await page.waitForFunction(()=>lab.streams[1].data.paused);assert.equal(await page.evaluate(()=>lab.streams[0].data.paused),false);
+  if(process.env.TSIX_SCREENSHOT_DIR)await screenshot(panel,'sharing-streams');
+  await page.evaluate(()=>{window.staleButton=document.querySelectorAll('[data-tsix-share-action="stop"]')[1]});
+  await panel.locator('[data-tsix-share-stream]').nth(1).locator('[data-tsix-share-action="stop"]').click();
+  await page.waitForFunction(()=>document.querySelectorAll('[data-tsix-share-stream]').length===1);
+  const before=await page.evaluate(()=>lab.state.events.length);await page.evaluate(()=>staleButton.click());assert.equal(await page.evaluate(()=>lab.state.events.length),before);
+  assert.ok(await bar.locator('[data-tsix-share-action="open"]').isVisible());
+  await page.evaluate(()=>{lab.options.methods={};__tsixStreams.sync()});
+  assert.ok(await bar.locator('[data-tsix-share-action="open"]').isDisabled());assert.ok(await bar.locator('[data-tsix-share-action="settings"]').isDisabled());
+ });
+ await check('stream-count changes preserve keyboard focus and long disclosures fit short windows',async()=>{
+  await page.evaluate(()=>{lab.options.methods.openSettings=()=>{};lab.options.methods.goToStream=()=>{};lab.start();__tsixStreams.sync()});
+  const picker=bar.locator('[data-tsix-share-picker]'),panel=bar.locator('[data-tsix-share-list]');
+  await bar.locator('[data-tsix-share-action="settings"]').focus();
+  await page.evaluate(()=>lab.add([]));await picker.waitFor({state:'visible'});
+  assert.ok(await picker.evaluate(node=>node===document.activeElement));
+  await picker.press('Enter');await panel.locator('[data-tsix-share-action="settings"]').first().focus();
+  await page.evaluate(()=>{lab.streams.pop();lab.state.sessions=lab.streams.map(s=>s.value);lab.tick()});
+  await picker.waitFor({state:'hidden'});
+  assert.ok(await bar.locator('[data-tsix-share-action="settings"]').evaluate(node=>node===document.activeElement));
+  await page.setViewportSize({width:640,height:480});
+  await page.evaluate(()=>{lab.viewers(Array.from({length:12},(_,i)=>i+1));for(let i=0;i<8;i++)lab.add([])});
+  await picker.waitFor({state:'visible'});await picker.click();
+  assert.ok(await panel.evaluate(node=>{const r=node.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&node.scrollHeight>node.clientHeight}));
+  const last=panel.locator('[data-tsix-share-action="stop"]').last();await last.focus();await last.scrollIntoViewIfNeeded();
+  assert.ok(await last.evaluate(node=>{const r=node.getBoundingClientRect(),p=node.closest('[data-tsix-share-list]').getBoundingClientRect();return r.top>=p.top&&r.bottom<=p.bottom}));
+  await page.keyboard.press('Escape');await toggle.click();
+  assert.ok(await list.evaluate(node=>{const r=node.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&node.scrollHeight>node.clientHeight}));
+  await page.keyboard.press('Escape');
  });
  await check('theme disable, reattach and stop restore owned DOM and watchers',async()=>{
   await page.addStyleTag({content:':root{--tsix-broadcast-api:0!important}',id:'unused'}).then(e=>e.evaluate(n=>n.id='disable-test'));

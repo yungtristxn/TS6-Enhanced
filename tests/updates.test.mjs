@@ -14,6 +14,17 @@ test('semantic versions order stable and numeric prereleases correctly',()=>{
  assert.ok(compareVersions('1.10.0','1.9.9')>0);assert.ok(compareVersions('1.0.0-preview.10','1.0.0-preview.2')>0);assert.ok(compareVersions('1.0.0','1.0.0-preview.10')>0);assert.equal(compareVersions('v1.0.0','1.0.0'),0);
  for(const bad of ['latest','../1.0.0','01.2.3','1.0.0;start'])assert.throws(()=>version(bad));
 });
+
+test('same-version repair queues remain visible until installed and verified',async t=>{
+ const {writeFile,rm}=await import('node:fs/promises');
+ const root=await mkdtemp(join(tmpdir(),'tsix-repair-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const queued={schema:2,mode:'next-launch',fromVersion:'2.1.3',version:'2.1.3',sha256:'a'.repeat(64)};
+ await writeFile(join(root,'pending-update.json'),JSON.stringify(queued));
+ await writeFile(join(root,'native-error.json'),JSON.stringify({message:'Interrupted install',update:{version:queued.version,sha256:queued.sha256}}));
+ const session=await createUpdateSession({version:'2.1.3',updates:{repository:''},nativeLoader:{schema:1}},root,root,{applyStyles:()=>{throw Error('Repairs require installation')}});
+ assert.equal(session.snapshot().pending,'2.1.3');assert.equal(session.snapshot().ready,null);
+ assert.match(session.snapshot().message,/retry when you next open/);assert.equal(session.snapshot().detail,'Interrupted install');
+});
 test('only newer published releases in the selected channel are offered',()=>{
  assert.equal(selectRelease([{...release,tag_name:'v1.0.0'}],'0.10.0-preview.10',{...config,channel:'preview'}).tag_name,'v1.0.0');
  const candidates=[{...release,draft:true,tag_name:'v9.0.0'},{...release,prerelease:true,tag_name:'v2.0.0-preview.1'},{...release,tag_name:'v3.0.0-dev.1'},release];

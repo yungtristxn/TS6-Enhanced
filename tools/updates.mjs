@@ -134,15 +134,16 @@ export async function createUpdateSession(release,client,root,{applyStyles,fetch
   const readApplyError=async()=>{applyError=await readJSON(join(root,'native-error.json')).catch(()=>null)};
   await readApplyError();
   try{
-    if(queued?.schema!==2||queued.mode!=='next-launch'||queued.fromVersion!==release.version||compareVersions(queued.version,release.version)<=0)queued=null;
+    if(queued?.schema!==2||queued.mode!=='next-launch'||queued.fromVersion!==release.version||compareVersions(queued.version,release.version)<0)queued=null;
   }catch{queued=null}
   const newest=()=>queued?.version||release.version;
   const snapshot=()=>{
-    const waiting=compareVersions(newest(),activeVersion)>0;
-    const live=waiting&&canApplyStyles(release,{manifest:queued,stylesheet:true});
+    const repair=queued?.version===release.version&&/^[a-f0-9]{64}$/i.test(queued.sha256||'');
+    const waiting=repair||compareVersions(newest(),activeVersion)>0;
+    const live=waiting&&!repair&&canApplyStyles(release,{manifest:queued,stylesheet:true});
     const pending=waiting&&!live?displayVersion(newest()):null,ready=live?displayVersion(newest()):null;
     const failed=pending&&queued.sha256&&applyError?.update?.sha256===queued.sha256&&applyError.update.version===queued.version&&typeof applyError.message==='string';
-    const message=failed?'Update couldn’t finish. Close TeamSpeak to retry.':pending?(release.nativeLoader?.schema===1?`Version ${pending} will apply after you close TeamSpeak.`:`Version ${pending} will apply next time you open TeamSpeak.`):ready?'Appearance update ready to apply.':activeVersion!==release.version?`Updated to version ${displayVersion(activeVersion)}.`:'You’re up to date.';
+    const message=failed?'Update couldn’t finish. It will retry when you next open TeamSpeak.':pending?(release.nativeLoader?.schema===1?`Version ${pending} will apply after you close TeamSpeak. An interrupted update will retry on the next launch.`:`Version ${pending} will apply next time you open TeamSpeak.`):ready?'Appearance update ready to apply.':activeVersion!==release.version?`Updated to version ${displayVersion(activeVersion)}.`:'You’re up to date.';
     return {version:displayVersion(activeVersion),pending,ready,available:null,detail:failed?applyError.message:null,message};
   };
   const restore=async({reset=false}={})=>{

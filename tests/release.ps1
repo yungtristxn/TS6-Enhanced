@@ -8,7 +8,7 @@ $manifest = Get-Content (Join-Path $project 'release.json') -Raw | ConvertFrom-J
 $prefix = 'TS6-Enhanced-'+$manifest.version+'-windows-x64/'
 $expectedFiles = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE','README.md','SHA256SUMS.txt','runtime/node.exe','runtime/LICENSE','runtime/version.dll',
     'scripts/Bootstrap.ps1','scripts/Runtime.ps1','scripts/Complete-Setup.ps1','scripts/Maintenance.ps1',
-    'scripts/Setup.ps1','scripts/Native-Setup.ps1','scripts/Start-Inspection.ps1',
+    'scripts/Setup.ps1','scripts/Native-Setup.ps1','scripts/Startup-Update.ps1','scripts/Start-Inspection.ps1',
     'scripts/Restore-LegacyShortcut.ps1','scripts/Remove-LegacyTheme.ps1',
     'tools/cdp.mjs','tools/client.mjs','tools/appearance.mjs','tools/install-state.mjs','tools/restore.mjs','tools/updates.mjs','tools/native-manager.mjs',
     'native/CEF-LICENSE.txt','theme/layout.css')+@($manifest.nativeLoader.dependencies)

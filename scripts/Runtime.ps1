@@ -65,6 +65,23 @@ function Write-LayoutFailure([string]$Path,[string]$Message) {
     }catch{Write-Warning 'Could not write the setup error summary; details remain in the setup log.'}
 }
 
+function Assert-LayoutNativeInstall([string]$Root,[string]$Client,[string]$Version) {
+    $receipt=Join-Path $Root 'native-install.json'
+    Assert-LayoutPlainPath $receipt
+    $state=Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+    $payload=Join-Path $Client 'TS6-Enhanced';$dll=Join-Path $Client 'version.dll'
+    if($state.owner -ne 'ts6-enhanced-native-v1' -or $state.version -cne $Version -or $state.directory -ine $payload -or $state.dll -ine $dll){throw 'Update did not produce the expected native installation receipt'}
+    Assert-LayoutPlainPath $dll;Assert-LayoutPlainPath $payload
+    if((Get-FileHash -LiteralPath $dll).Hash -ine $state.dllHash){throw 'Updated native DLL does not match its receipt'}
+    if(!@($state.files).Count){throw 'Updated payload inventory is empty'}
+    foreach($file in $state.files){
+        if($file.path -match '(^|[/\\])\.\.?([/\\]|$)|:|^[/\\]'){throw 'Invalid updated payload path'}
+        $path=Join-Path $payload $file.path;Assert-LayoutPlainPath $path
+        if((Get-FileHash -LiteralPath $path).Hash -ine $file.sha256){throw 'Updated payload does not match its receipt'}
+    }
+    if(@(Get-ChildItem -LiteralPath $payload -File -Recurse).Count -ne @($state.files).Count){throw 'Updated payload contains unowned files'}
+}
+
 function Notify-LayoutShortcutChanged([string]$Path,[string]$IconPath='') {
     if(!('TS6Enhanced.ShellChanges' -as [type])){
         Add-Type -TypeDefinition @'

@@ -7,6 +7,7 @@
 #include "include/capi/cef_app_capi.h"
 #include "include/capi/views/cef_browser_view_capi.h"
 #include "runtime.h"
+#include "startup_update.h"
 #include "css_delivery.h"
 #include "compatibility.h"
 static HMODULE ownModule=nullptr;
@@ -105,7 +106,9 @@ static cef_browser_view_t* BrowserView(cef_client_t* client,const cef_string_t* 
     // Start maintenance only when this process creates the actual main UI.
     // Duplicate launches that redirect to an existing client need no helper.
     if(main&&InterlockedCompareExchange(&hostStarted,1,0)==0){
-        try{std::wstring directory(clientDllPath);directory.resize(directory.find_last_of(L"\\"));TSIX_NATIVE_STATUS.connectionReady=StartEnhancedHost(directory);}
+        try{std::wstring directory(clientDllPath);directory.resize(directory.find_last_of(L"\\"));
+            if(RetryStartupUpdate(directory))ExitProcess(0);
+            TSIX_NATIVE_STATUS.connectionReady=StartEnhancedHost(directory);}
         catch(...){TSIX_NATIVE_STATUS.protectError=ERROR_NOT_ENOUGH_MEMORY;}
     }
     const bool early=main&&AttachEarlyCss(ownModule,client,request,delegate);

@@ -11,7 +11,7 @@ try{
     $env:LOCALAPPDATA=Join-Path $scratch 'profile'
     $client=Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak'
     $release=Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw | ConvertFrom-Json
-    $paths=@('release.json','native\CEF-LICENSE.txt','runtime\node.exe','runtime\LICENSE','runtime\version.dll','tools\native-manager.mjs','tools\updates.mjs','tools\install-state.mjs','scripts\Native-Setup.ps1','scripts\Runtime.ps1','scripts\Maintenance.ps1','scripts\Start-Inspection.ps1','scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1','tools\restore.mjs','tools\appearance.mjs','tools\cdp.mjs','tools\client.mjs')+@($release.nativeLoader.dependencies)
+    $paths=@('release.json','native\CEF-LICENSE.txt','runtime\node.exe','runtime\LICENSE','runtime\version.dll','tools\native-manager.mjs','tools\updates.mjs','tools\install-state.mjs','scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Runtime.ps1','scripts\Maintenance.ps1','scripts\Start-Inspection.ps1','scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1','tools\restore.mjs','tools\appearance.mjs','tools\cdp.mjs','tools\client.mjs')+@($release.nativeLoader.dependencies)
     foreach($file in $paths){$target=Join-Path $source $file;New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null;'fixture' | Set-Content -LiteralPath $target}
     foreach($file in @('Native-Setup.ps1','Runtime.ps1','Maintenance.ps1')){Copy-Item -LiteralPath (Join-Path $project ('scripts\'+$file)) -Destination (Join-Path $source ('scripts\'+$file)) -Force}
     foreach($property in $release.supportedClient.nativeImages.PSObject.Properties){$file=Join-Path $client $property.Name;New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force | Out-Null;'client-fixture' | Set-Content -LiteralPath $file;$property.Value.sha256=(Get-FileHash -LiteralPath $file).Hash}
@@ -26,7 +26,7 @@ try{
     & $setup
     $dataRoot=Join-Path $env:LOCALAPPDATA 'TS6-Layout'
     $updates=Join-Path $dataRoot 'updates';New-Item -ItemType Directory -Path $updates -Force | Out-Null
-    $stub=Join-Path $updates 'TS6-Enhanced-1.1.1-Setup.exe'
+    $stub=Join-Path $updates ('TS6-Enhanced-'+$release.version+'-Setup.exe')
     $stubSource=Join-Path $scratch 'installer.cs'
     $env:TSIX_NATIVE_FIXTURE_RECORD=Join-Path $scratch 'installer-result.txt'
     @'
@@ -35,7 +35,7 @@ class Fixture { static int Main(string[] args) { File.WriteAllLines(Environment.
 '@ | Set-Content -LiteralPath $stubSource
     & (Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') /nologo /target:exe ("/out:$stub") $stubSource
     if($LASTEXITCODE){throw 'Fixture installer compilation failed'}
-    @{schema=2;mode='next-launch';fromVersion=$release.version;version='1.1.1';path=$stub;sha256=(Get-FileHash -LiteralPath $stub).Hash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dataRoot 'pending-update.json')
+    @{schema=2;mode='next-launch';fromVersion=$release.version;version=$release.version;path=$stub;sha256=(Get-FileHash -LiteralPath $stub).Hash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dataRoot 'pending-update.json')
     & $setup -Action ApplyPending
     $arguments=Get-Content -LiteralPath $env:TSIX_NATIVE_FIXTURE_RECORD
     Check ($arguments[0] -eq $dataRoot -and '/TSIXDEFERRED=1' -in $arguments -and '/TSIXNOOPEN=1' -in $arguments) 'Deferred native installer did not leave the client closed or used its payload directory'

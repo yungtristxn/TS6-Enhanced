@@ -25,13 +25,20 @@
 <script>
 const root=document.querySelector('.tsv-window'), watchers=new Set(), state={sessions:[],showOwn:false,actions:0}, clients=new Map();
 const handler={id:1,FindClient:id=>clients.get(id)};
-const options={computed:{allSessions(){return state.sessions}}}, button={contextMenuData:{component:{options}}};
+state.events=[];
+const options={computed:{allSessions(){return state.sessions}},methods:{
+ goToStream(value){if(this.data!==null)throw Error('Expected native global navigation context');state.events.push(['open',value.id])},
+ openSettings(value){state.events.push(['settings',value.id])}
+}}, button={contextMenuData:{component:{options}}};
 document.querySelector('.tsv-central-toolbar').__vue__={screenshareButton:button};
 const native=document.getElementById('nativeShare');native.__vue__={button};native.onclick=()=>state.actions++;
 root.__vue__={$watch(get,callback){const w={get,callback,value:get()};watchers.add(w);return()=>watchers.delete(w)}};
 const tick=()=>{for(const w of watchers){const next=w.get();if(next!==w.value){w.value=next;w.callback()}}};
 const mutate=()=>{throw Error('Helper attempted to change native sharing state')};
-function session(id,ids,paused=false){const data={paused,hidden:true,viewers:ids.map(clientId=>({clientId,scHandlerId:1}))};const value={id,isInbound:false,client:{sc_handler:handler},get viewers(){return data.viewers},get paused(){return data.paused},set paused(v){mutate()},get hidden(){return data.hidden},set hidden(v){mutate()},leave:mutate,setPaused:mutate};return {value,data}}
+function session(id,ids,paused=false){const data={paused,hidden:true,viewers:ids.map(clientId=>({clientId,scHandlerId:1}))};const value={id,isInbound:false,sourceInfo:{name:id===1?'Chrome — Factorio':'Camera'},client:{sc_handler:handler},get viewers(){return data.viewers},get paused(){return data.paused},set paused(v){mutate()},get hidden(){return data.hidden},set hidden(v){mutate()},
+ leave(){state.events.push(['stop',id]);if(data.fail) return Promise.reject(Error('Native stop failed'));state.sessions=state.sessions.filter(s=>s!==value);tick();return Promise.resolve()},
+ setPaused(next){state.events.push(['pause',id,next]);return new Promise((resolve,reject)=>{const finish=()=>{if(data.fail){reject(Error('Native pause failed'));return}data.paused=next;tick();resolve()};if(data.defer)data.finish=finish;else finish()})}
+};return {value,data}}
 const originalVideo=document.querySelector('video');originalVideo.srcObject=new MediaStream();const originalMedia=originalVideo.srcObject;
 window.lab={state,clients,handler,watchers,streams:[],tick,
  start(ids=[1,2]){this.streams=[session(1,ids)];state.sessions=this.streams.map(s=>s.value);tick()},
@@ -40,7 +47,7 @@ window.lab={state,clients,handler,watchers,streams:[],tick,
  pause(value){for(const s of this.streams)s.data.paused=value;tick()},
  add(ids,paused=false){this.streams.push(session(this.streams.length+1,ids,paused));state.sessions=this.streams.map(s=>s.value);tick()},
  report(){return {actions:state.actions,watchers:watchers.size,sameVideo:document.querySelector('video')===originalVideo,sameMedia:originalVideo.srcObject===originalMedia,hidden:this.streams.every(s=>s.data.hidden),showOwn:state.showOwn}},
- native,root
+ native,root,options
 };
 for(let i=1;i<=12;i++)clients.set(i,{displayName:i===1?'Alex Viewer':i===2?'Sam Friend':`Viewer ${i}`,avatarImage:null});
 document.getElementById('fullscreen').onclick=()=>document.querySelector('.fixtureStage').requestFullscreen();
