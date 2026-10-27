@@ -1,0 +1,20 @@
+/* Regression excerpt: v2.1.2 theme/layout.css and the same bar layout in
+ * v1.0.9 theme/local.tsix.layout/layout.css. Loaded after the current theme,
+ * as TeamSpeak does for a previously selected official user theme.
+ * Keep these historical declarations: they reproduce the reported collapse. */
+:root { --tsix-layout-version: 2.1.2; --tsix-stream-stage-api: 1; --tsix-broadcast-api: 1; }
+[data-tsix-broadcast-bar] {
+  --tsix-live-color: #ff7a86;
+  position: absolute; left: 8px; bottom: var(--tsix-broadcast-bottom, 8px);
+  width: max-content; max-width: calc(100% - 16px); height: 32px;
+  box-sizing: border-box; z-index: 6; pointer-events: none;
+  display: flex; flex-direction: row; align-items: center; justify-content: flex-start;
+  gap: 8px; padding: 2px 6px 2px 8px;
+  color: var(--tsix-chrome-text); background: var(--tsix-chrome-bg);
+  border: 1px solid var(--tsix-chrome-border); border-left: 3px solid var(--tsix-live-color);
+  border-radius: var(--tsix-chrome-radius);
+}
+[data-tsix-broadcast-state] { font-size: 12px; font-weight: 600; line-height: 20px; }
+[data-tsix-broadcast-state]::before { content: '●'; margin-right: 5px; }
+[data-tsix-viewer-toggle] { height: 26px; padding: 0 4px; display: flex; align-items: center; gap: 8px; }
+[data-tsix-viewer-icons] { display: none; }

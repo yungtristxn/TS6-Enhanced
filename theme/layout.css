@@ -1,7 +1,7 @@
 /* TS6 beta5 / 1791901251. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 2.1.3;
+  --tsix-layout-version: 2.2.0;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
@@ -73,37 +73,25 @@
 
 /* Outbound state stays in the middle column above Start Stream, without
  * resizing native panes or covering the video and chat workspace. */
-[data-tsix-broadcast-bar] {
+[data-tsix-broadcast-bar][data-tsix-sharing-controls] {
   --tsix-live-color: #ff7a86;
-  position: absolute;
-  left: 8px;
-  bottom: var(--tsix-broadcast-bottom, 8px);
-  width: max-content;
-  max-width: calc(100% - 16px);
-  height: 32px;
-  box-sizing: border-box;
-  z-index: 6;
-  pointer-events: none;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  padding: 2px 6px 2px 8px;
-  color: var(--tsix-chrome-text);
-  background: var(--tsix-chrome-bg);
-  border: 1px solid var(--tsix-chrome-border);
-  border-left: 3px solid var(--tsix-live-color);
-  border-radius: var(--tsix-chrome-radius);
-  -webkit-app-region: no-drag;
+  position: absolute; left: 8px; bottom: var(--tsix-broadcast-bottom, 8px);
+  width: 260px; max-width: calc(100% - 16px); height: auto; box-sizing: border-box;
+  z-index: 6; pointer-events: auto; display: flex; flex-direction: column;
+  align-items: stretch; justify-content: flex-start; gap: 4px; padding: 8px;
+  container: tsix-sharing / inline-size;
+  color: var(--tsix-chrome-text); background: var(--tsix-chrome-bg);
+  border: 1px solid var(--tsix-chrome-border); border-radius: var(--tsix-surface-radius);
+  box-shadow: 0 4px 12px #0002; -webkit-app-region: no-drag;
 }
-[data-tsix-broadcast-bar][data-state="paused"] { --tsix-live-color: #efc575; }
+[data-tsix-broadcast-bar][data-tsix-sharing-controls][data-state="paused"] { --tsix-live-color: #efc575; }
+[data-tsix-sharing-controls] *, [data-tsix-sharing-controls] *::before, [data-tsix-sharing-controls] *::after { box-sizing: border-box; }
 [data-tsix-broadcast-control]:focus-visible,
 [data-tsix-broadcast-control] [role="button"]:focus-visible {
   outline: 2px solid var(--tsix-focus);
   outline-offset: -2px;
 }
-[data-tsix-broadcast-state] {
+[data-tsix-sharing-controls] [data-tsix-broadcast-state] {
   pointer-events: auto;
   flex: 0 0 auto;
   max-width: none;
@@ -111,10 +99,11 @@
   line-height: 20px;
   color: var(--tsix-live-color);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
+  display: inline-flex; align-items: center;
 }
-[data-tsix-broadcast-state]::before { content: '●'; margin-right: 5px; }
-[data-tsix-viewer-toggle] {
+[data-tsix-sharing-controls] [data-tsix-broadcast-state]::before { content: ''; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; }
+[data-tsix-sharing-controls] [data-tsix-viewer-toggle] {
   pointer-events: auto;
   min-width: 0;
   flex: 0 1 auto;
@@ -131,12 +120,12 @@
   background: transparent;
   cursor: pointer;
 }
-[data-tsix-viewer-toggle]:hover,[data-tsix-viewer-toggle][aria-expanded="true"] { background: var(--tsix-control-hover); }
-[data-tsix-viewer-toggle]:focus-visible { outline: 2px solid var(--tsix-focus); outline-offset: 1px; }
-[data-tsix-viewer-count] { font-size: 13px; line-height: 20px; color: var(--tsix-chrome-muted); white-space: nowrap; }
+[data-tsix-sharing-controls] [data-tsix-viewer-toggle]:hover,[data-tsix-sharing-controls] [data-tsix-viewer-toggle][aria-expanded="true"] { background: var(--tsix-control-hover); }
+[data-tsix-sharing-controls] [data-tsix-viewer-toggle]:focus-visible { outline: 2px solid var(--tsix-focus); outline-offset: 1px; }
+[data-tsix-sharing-controls] [data-tsix-viewer-count] { font-size: 13px; line-height: 20px; color: var(--tsix-chrome-muted); white-space: nowrap; }
 /* Names and avatars remain in the disclosure; the idle badge stays compact. */
-[data-tsix-viewer-icons] { display: none; }
-[data-tsix-viewer-icon] {
+[data-tsix-sharing-controls] [data-tsix-viewer-icons] { display: none; }
+[data-tsix-sharing-controls] [data-tsix-viewer-icon] {
   position: relative;
   flex: 0 0 22px;
   width: 22px;
@@ -152,8 +141,8 @@
   font-weight: 600;
   text-transform: uppercase;
 }
-[data-tsix-viewer-icon] img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-[data-tsix-viewer-list] {
+[data-tsix-sharing-controls] [data-tsix-viewer-icon] img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+[data-tsix-sharing-controls] [data-tsix-viewer-list] {
   pointer-events: auto;
   position: absolute;
   bottom: calc(100% + 6px);
@@ -169,60 +158,52 @@
   box-shadow: var(--tsix-surface-shadow);
   font-size: 14px;
 }
-[data-tsix-viewer-list][hidden] { display: none; }
-[data-tsix-viewer-list] ul { padding: 0; margin: 8px 0 0; list-style: none; }
-[data-tsix-viewer-list] li { display: flex; align-items: center; gap: 8px; min-height: 32px; }
-[data-tsix-viewer-list] li > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-[data-tsix-broadcast-bar][data-fullscreen] { position: fixed; top: 12px; bottom: auto; left: auto; right: 12px; max-width: calc(100% - 24px); }
-[data-tsix-broadcast-bar][data-fullscreen] [data-tsix-viewer-list] { top: calc(100% + 6px); bottom: auto; left: auto; right: -1px; width: min(360px, calc(100vw - 24px)); max-height: min(300px, calc(100vh - var(--tsix-broadcast-height, 120px) - 30px)); }
+[data-tsix-sharing-controls] [data-tsix-viewer-list][hidden] { display: none; }
+[data-tsix-sharing-controls] [data-tsix-viewer-list] ul { padding: 0; margin: 8px 0 0; list-style: none; }
+[data-tsix-sharing-controls] [data-tsix-viewer-list] li { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+[data-tsix-sharing-controls] [data-tsix-viewer-list] li > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-tsix-broadcast-bar][data-tsix-sharing-controls][data-fullscreen] { position: fixed; top: 12px; bottom: auto; left: auto; right: 12px; max-width: calc(100% - 24px); }
+[data-tsix-broadcast-bar][data-tsix-sharing-controls][data-fullscreen] [data-tsix-viewer-list] { top: calc(100% + 6px); bottom: auto; left: auto; right: -1px; width: min(360px, calc(100vw - 24px)); max-height: min(300px, calc(100vh - var(--tsix-broadcast-height, 120px) - 30px)); }
 
 /* Sharing follows the native toolbar's grouped actions and shared feedback. */
-[data-tsix-broadcast-bar] {
-  width: 260px; height: auto; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px;
-  pointer-events: auto; container: tsix-sharing / inline-size;
-  border: 1px solid var(--tsix-chrome-border); border-radius: var(--tsix-surface-radius);
-  box-shadow: 0 4px 12px #0002;
-}
-[data-tsix-share-status] { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 6px; min-height: 26px; padding: 0 4px; }
-[data-tsix-broadcast-state] { display: inline-flex; align-items: center; font-size: 12px; font-weight: 500; }
-[data-tsix-broadcast-state]::before { content: ''; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; }
-[data-tsix-viewer-toggle] { padding: 0 4px; }
-[data-tsix-viewer-toggle]::after { content: ''; width: 5px; height: 5px; margin: -3px 2px 0 0; border: solid currentColor; border-width: 0 1px 1px 0; transform: rotate(45deg); opacity: .8; }
-[data-tsix-viewer-toggle][aria-expanded="true"]::after { transform: rotate(225deg); margin-top: 3px; }
-[data-tsix-share-stream] { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-[data-tsix-share-actions] { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--tsix-chrome-border); border-radius: var(--tsix-chrome-radius); background: var(--tsix-control-bg); }
-[data-tsix-share-picker], [data-tsix-share-action] {
+
+[data-tsix-sharing-controls] [data-tsix-share-status] { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 6px; min-height: 26px; padding: 0 4px; }
+[data-tsix-sharing-controls] [data-tsix-viewer-toggle]::after { content: ''; width: 5px; height: 5px; margin: -3px 2px 0 0; border: solid currentColor; border-width: 0 1px 1px 0; transform: rotate(45deg); opacity: .8; }
+[data-tsix-sharing-controls] [data-tsix-viewer-toggle][aria-expanded="true"]::after { transform: rotate(225deg); margin-top: 3px; }
+[data-tsix-sharing-controls] [data-tsix-share-stream] { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+[data-tsix-sharing-controls] [data-tsix-share-actions] { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--tsix-chrome-border); border-radius: var(--tsix-chrome-radius); background: var(--tsix-control-bg); }
+[data-tsix-sharing-controls] [data-tsix-share-picker], [data-tsix-sharing-controls] [data-tsix-share-action] {
   display: flex; align-items: center; justify-content: center; gap: 4px;
   pointer-events: auto; min-height: 32px; padding: 4px; border: 1px solid transparent;
   border-radius: 3px; background: transparent; color: var(--tsix-chrome-text);
   font: inherit; font-size: 13px; line-height: 20px; cursor: pointer;
 }
-[data-tsix-share-picker][hidden] { display: none; }
-[data-tsix-share-picker] { justify-content: space-between; background: var(--tsix-control-bg); padding-inline: 8px; }
-[data-tsix-share-picker]::after { content: ''; width: 6px; height: 6px; margin-right: 2px; border: solid currentColor; border-width: 0 1px 1px 0; transform: rotate(-135deg); }
-[data-tsix-share-picker][aria-expanded="true"]::after { transform: rotate(45deg); }
-[data-tsix-share-action="open"] { width: 100%; justify-content: flex-start; gap: 6px; text-align: left; font-size: 14px; font-weight: 500; }
-[data-tsix-share-action="open"]::after { content: '↗'; margin-left: auto; color: var(--tsix-chrome-muted); font: 400 14px/20px sans-serif; }
-[data-tsix-share-label] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-[data-tsix-share-icon] { flex: 0 0 18px; width: 18px; height: 18px; pointer-events: none; }
-[data-tsix-share-action="open"] [data-tsix-share-icon] { color: var(--tsix-chrome-muted); }
-[data-tsix-share-stream]:not([data-paused]) [data-tsix-share-icon="resume"],
-[data-tsix-share-stream][data-paused] [data-tsix-share-icon="pause"] { display: none; }
-[data-tsix-share-actions] [data-tsix-share-action] { flex: 1 1 auto; min-width: 0; gap: 2px; padding-inline: 4px; }
-[data-tsix-share-action="stop"] { color: var(--tsix-danger-text); }
-[data-tsix-share-stream][data-paused] [data-tsix-share-action="pause"] { color: var(--tsix-chrome-accent); }
-:is([data-tsix-share-picker],[data-tsix-share-action]):hover:not(:disabled) { background: var(--tsix-control-hover); }
-:is([data-tsix-share-picker],[data-tsix-share-action]):active:not(:disabled) { color: var(--tsix-chrome-text); background: var(--tsix-control-pressed); }
-[data-tsix-share-action="stop"]:hover:not(:disabled) { background: var(--tsix-danger-bg); }
-[data-tsix-share-action="stop"]:active:not(:disabled) { background: var(--tsix-danger-hover); }
-:is([data-tsix-share-picker],[data-tsix-share-action]):focus-visible { outline: 2px solid var(--tsix-focus); outline-offset: -2px; }
-[data-tsix-share-action]:disabled { opacity: .5; cursor: default; }
+[data-tsix-sharing-controls] [data-tsix-share-picker][hidden] { display: none; }
+[data-tsix-sharing-controls] [data-tsix-share-picker] { justify-content: space-between; background: var(--tsix-control-bg); padding-inline: 8px; }
+[data-tsix-sharing-controls] [data-tsix-share-picker]::after { content: ''; width: 6px; height: 6px; margin-right: 2px; border: solid currentColor; border-width: 0 1px 1px 0; transform: rotate(-135deg); }
+[data-tsix-sharing-controls] [data-tsix-share-picker][aria-expanded="true"]::after { transform: rotate(45deg); }
+[data-tsix-sharing-controls] [data-tsix-share-action="open"] { width: 100%; justify-content: flex-start; gap: 6px; text-align: left; font-size: 14px; font-weight: 500; }
+[data-tsix-sharing-controls] [data-tsix-share-action="open"]::after { content: '↗'; margin-left: auto; color: var(--tsix-chrome-muted); font: 400 14px/20px sans-serif; }
+[data-tsix-sharing-controls] [data-tsix-share-label] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-tsix-sharing-controls] [data-tsix-share-icon] { flex: 0 0 18px; width: 18px; height: 18px; pointer-events: none; }
+[data-tsix-sharing-controls] [data-tsix-share-action="open"] [data-tsix-share-icon] { color: var(--tsix-chrome-muted); }
+[data-tsix-sharing-controls] [data-tsix-share-stream]:not([data-paused]) [data-tsix-share-icon="resume"],
+[data-tsix-sharing-controls] [data-tsix-share-stream][data-paused] [data-tsix-share-icon="pause"] { display: none; }
+[data-tsix-sharing-controls] [data-tsix-share-actions] [data-tsix-share-action] { flex: 1 1 auto; min-width: 0; gap: 2px; padding-inline: 4px; }
+[data-tsix-sharing-controls] [data-tsix-share-action="stop"] { color: var(--tsix-danger-text); }
+[data-tsix-sharing-controls] [data-tsix-share-stream][data-paused] [data-tsix-share-action="pause"] { color: var(--tsix-chrome-accent); }
+[data-tsix-sharing-controls] :is([data-tsix-share-picker],[data-tsix-share-action]):hover:not(:disabled) { background: var(--tsix-control-hover); }
+[data-tsix-sharing-controls] :is([data-tsix-share-picker],[data-tsix-share-action]):active:not(:disabled) { color: var(--tsix-chrome-text); background: var(--tsix-control-pressed); }
+[data-tsix-sharing-controls] [data-tsix-share-action="stop"]:hover:not(:disabled) { background: var(--tsix-danger-bg); }
+[data-tsix-sharing-controls] [data-tsix-share-action="stop"]:active:not(:disabled) { background: var(--tsix-danger-hover); }
+[data-tsix-sharing-controls] :is([data-tsix-share-picker],[data-tsix-share-action]):focus-visible { outline: 2px solid var(--tsix-focus); outline-offset: -2px; }
+[data-tsix-sharing-controls] [data-tsix-share-action]:disabled { opacity: .5; cursor: default; }
 /* Keep action names readable in the narrowest navigator; icons are decorative. */
 @container tsix-sharing (max-width: 239px) {
-  [data-tsix-share-actions] [data-tsix-share-icon] { display: none; }
-  [data-tsix-share-actions] [data-tsix-share-action] { padding-inline: 2px; }
+  [data-tsix-sharing-controls] [data-tsix-share-actions] [data-tsix-share-icon] { display: none; }
+  [data-tsix-sharing-controls] [data-tsix-share-actions] [data-tsix-share-action] { padding-inline: 2px; }
 }
-[data-tsix-share-list] {
+[data-tsix-sharing-controls] [data-tsix-share-list] {
   pointer-events: auto; position: absolute; bottom: calc(100% + 6px); left: -1px;
   width: min(360px, calc(var(--tsix-broadcast-column-width, 100vw) - 16px));
   max-height: min(360px, calc(100dvh - var(--tsix-broadcast-bottom, 8px) - var(--tsix-broadcast-height, 120px) - 14px));
@@ -230,15 +211,15 @@
   border: 1px solid var(--tsix-chrome-border); border-radius: var(--tsix-surface-radius);
   background: var(--tsix-chrome-bg); box-shadow: var(--tsix-surface-shadow);
 }
-[data-tsix-share-list][hidden] { display: none; }
-[data-tsix-share-list] [data-tsix-share-stream] + [data-tsix-share-stream] { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--tsix-chrome-border); }
-[data-tsix-share-error] { color: #ff9ca6; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
-[data-tsix-share-error]:empty { display: none; }
-[data-tsix-broadcast-bar][data-fullscreen] [data-tsix-share-list] { top: calc(100% + 6px); bottom: auto; left: auto; right: -1px; width: min(360px, calc(100vw - 24px)); max-height: calc(100dvh - var(--tsix-broadcast-height, 120px) - 30px); }
+[data-tsix-sharing-controls] [data-tsix-share-list][hidden] { display: none; }
+[data-tsix-sharing-controls] [data-tsix-share-list] [data-tsix-share-stream] + [data-tsix-share-stream] { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--tsix-chrome-border); }
+[data-tsix-sharing-controls] [data-tsix-share-error] { color: #ff9ca6; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+[data-tsix-sharing-controls] [data-tsix-share-error]:empty { display: none; }
+[data-tsix-broadcast-bar][data-tsix-sharing-controls][data-fullscreen] [data-tsix-share-list] { top: calc(100% + 6px); bottom: auto; left: auto; right: -1px; width: min(360px, calc(100vw - 24px)); max-height: calc(100dvh - var(--tsix-broadcast-height, 120px) - 30px); }
 @media (forced-colors: active) {
-  :is([data-tsix-share-picker],[data-tsix-share-action],[data-tsix-share-list]) { border: 1px solid ButtonText; }
-  [data-tsix-share-icon] { forced-color-adjust: auto; }
-  [data-tsix-share-action]:disabled { opacity: 1; color: GrayText; }
+  [data-tsix-sharing-controls] :is([data-tsix-share-picker],[data-tsix-share-action],[data-tsix-share-list]) { border: 1px solid ButtonText; }
+  [data-tsix-sharing-controls] [data-tsix-share-icon] { forced-color-adjust: auto; }
+  [data-tsix-sharing-controls] [data-tsix-share-action]:disabled { opacity: 1; color: GrayText; }
 }
 
 /* Let the native viewer measure the entire available pane. */
@@ -754,7 +735,7 @@
   outline: 2px solid var(--tsix-focus); outline-offset: -2px;
 }
 /* Shared compact controls, including the existing live status badge. */
-[data-tsix-broadcast-bar]:not([data-fullscreen]) {
+[data-tsix-broadcast-bar][data-tsix-sharing-controls]:not([data-fullscreen]) {
   left: 12px; max-width: calc(100% - 24px);
 }
 .tsv-screenshare .video-stream:not(:fullscreen) .screen-overlay__bottom { background: var(--tsix-chrome-bg); border-top-color: var(--tsix-chrome-border); }
@@ -786,7 +767,7 @@
 /* Hide the native pin indicator without changing the stream's focus state. */
 .tsv-screenshare .screen-host-indicators > svg[name="item-pin"] { display: none !important; }
 @media (forced-colors: active) {
-  :is([data-tsix-broadcast-bar],[data-tsix-viewer-list],[data-tsix-chat-toggle],[data-tsix-tray-toggle],[data-tsix-view-action],[data-tsix-preview-join]) { border: 1px solid ButtonText; }
+  :is([data-tsix-broadcast-bar][data-tsix-sharing-controls],[data-tsix-viewer-list],[data-tsix-chat-toggle],[data-tsix-tray-toggle],[data-tsix-view-action],[data-tsix-preview-join]) { border: 1px solid ButtonText; }
   .tsv-content-header-bar .tsv-segmented-button.active:not(:focus-visible) { outline: 1px solid Highlight; outline-offset: -4px; }
   :is([data-tsix-viewer-toggle],[data-tsix-chat-toggle],[data-tsix-tray-toggle],[data-tsix-view-action],[data-tsix-preview-join]):focus-visible,
   .sidebar-pane-layout :focus-visible { outline-color: Highlight; }

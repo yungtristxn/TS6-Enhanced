@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href:'playwright');
 const source=await readFile(new URL('../tools/native-runtime.js',import.meta.url),'utf8');
-const release={version:'2.0.0',themeVersion:'2.0.0',supportedClient:{build:1791901251}};
+const release={version:'2.0.0',supportedClient:{build:1791901251}};
 const connection={endpoint:'ws://127.0.0.1:12345/',token:'b'.repeat(64)};
 const nativeLocation={protocol:'tsui:',hostname:'default',pathname:'/index.html',search:''};
 const css=':root{--tsix-layout-version:2.0.0}';
@@ -14,7 +14,9 @@ try{
  const page=await browser.newPage();page.on('pageerror',error=>errors.push(error.message));
  let fixtureCss='';
  await page.route('http://tsix-native.test/**',route=>route.fulfill(route.request().url().endsWith('/main.css')?
-  {contentType:'text/css',body:fixtureCss}:
+  {contentType:'text/css',body:fixtureCss}:route.request().url().endsWith('/legacy.css')?
+  {contentType:'text/css',body:':root{--tsix-layout-version:1.0.9}#style-target{padding-left:77px;color:orange}'}:route.request().url().endsWith('/custom.css')?
+  {contentType:'text/css',body:'#style-target{color:purple}'}:
   {contentType:'text/html',body:'<head><link rel="stylesheet" href="/main.css"></head><body><main><div class="tsv-window"><video></video><span id="style-target">Style target</span></div></main></body>'}));
  const setup=async({build=1791901251,ready=true,dropFirst=false,early=false,custom=false,stale=false,storageBlocked=false}={})=>{
   fixtureCss='#style-target{padding-left:3px;color:blue}'+(early?`@media all{:root{--tsix-css-delivery:resource-v1}${stale?css.replace('2.0.0','1.0.0'):css}#style-target{padding-left:23px;color:red}}`:'');
@@ -26,13 +28,15 @@ try{
    if(custom){const style=document.createElement('style');style.id='user-style';style.textContent='#style-target{color:purple}';document.head.append(style)}
    if(storageBlocked)Object.defineProperty(window,'localStorage',{get(){throw new DOMException('Storage is unavailable','SecurityError')}});
    const fixture=window.fixture={requests:[],sockets:[],states:[],attaches:{workspace:0,streams:0,manager:0},refreshes:0,syncs:0,versionRequests:0};
-   document.querySelector('main').__vue__={appearanceSettings:{user_style:null,tree_compact:false,chat_input_toolbar_visibility:'always'}};
+   fixture.appearanceWatches=new Set();
+   document.querySelector('main').__vue__={appearanceSettings:{user_style:null,tree_compact:false,chat_input_toolbar_visibility:'always'},$watch(get,callback){fixture.appearanceWatches.add(callback);return()=>fixture.appearanceWatches.delete(callback)}};
+   fixture.selectTheme=selected=>{document.querySelector('main').__vue__.appearanceSettings.user_style=selected;for(const callback of fixture.appearanceWatches)callback()};
    document.querySelector('.tsv-window').__vue__={windowLayout:ready?{}:null};
    window.tsclient_internal={getClientLibVersion:callback=>{fixture.versionRequests++;if(dropFirst&&fixture.versionRequests===1)return;callback(null,build)}};
    window.WebSocket=class {
     static OPEN=1;
     constructor(endpoint,protocol){this.endpoint=endpoint;this.protocol=protocol;this.readyState=1;fixture.sockets.push(this);queueMicrotask(()=>this.onopen?.())}
-    send(raw){const request=JSON.parse(raw);fixture.requests.push(request);queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({reply:request.id,ok:true})}))}
+    send(raw){const request=JSON.parse(raw);fixture.requests.push(request);if(fixture.holdRecovery&&request.path==='/session-recovered')return;queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({reply:request.id,ok:true})}))}
     close(){if(this.readyState!==1)return;this.readyState=3;this.onclose?.()}
     deliver(value){this.onmessage?.({data:JSON.stringify(value)})}
    };
@@ -58,18 +62,10 @@ try{
  assert.deepEqual(await page.evaluate(()=>fixture.attaches),{workspace:1,streams:1,manager:1});
  assert.equal(await page.evaluate(()=>fixture.sockets.length),1);
  checks.push('Startup waits for the native window, captures existing preferences and attaches once per document');
- const send=async style=>{
-  await page.evaluate(style=>fixture.sockets.at(-1).deliver({state:{version:'2.0',configured:true},style}),style);
-  return page.evaluate(()=>fixture.requests.filter(r=>r.path==='/style-result').at(-1)?.data);
- };
- assert.deepEqual(await send({id:'style-1',css:':root{--tsix-layout-version:2.0.1}',themeVersion:'2.0.1'}),{id:'style-1',applied:true});
- assert.deepEqual(await send({id:'style-bad',css:':root{color:red}',themeVersion:'2.0.2'}),{id:'style-bad',applied:false});
- assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()),'2.0.1');
- await page.evaluate(()=>Object.defineProperty(document,'fullscreenElement',{configurable:true,value:document.querySelector('video')}));
- assert.deepEqual(await send({id:'style-fullscreen',css:':root{--tsix-layout-version:2.0.2}',themeVersion:'2.0.2'}),{id:'style-fullscreen',applied:false});
- await page.evaluate(()=>delete document.fullscreenElement);
- assert.equal(await page.evaluate(()=>original.workspace===__tsixWorkspace&&original.streams===__tsixStreams&&original.video===document.querySelector('video')),true);
- checks.push('Live styles preserve media and helpers, roll back invalid versions and defer during fullscreen');
+ await page.evaluate(()=>fixture.sockets[0].deliver({state:{version:'2.0',configured:true},style:{id:'retired-protocol',css:':root{--tsix-layout-version:9.0.0}',themeVersion:'9.0.0'}}));
+ assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()),'2.0.0');
+ assert.equal(await page.evaluate(()=>fixture.requests.some(request=>request.path==='/style-result')),false);
+ checks.push('Retired live-CSS transport cannot alter the installed stylesheet or schedule an appearance update');
  const requestCount=await page.evaluate(()=>fixture.requests.length);
  await page.evaluate(()=>{
   __tsixMaintenanceRequest('not json');
@@ -89,25 +85,43 @@ try{
  assert.equal(await page.evaluate(()=>__tsixNative.cssDelivery),'resource');
  assert.equal(await page.locator('#tsix-native-style').count(),0);
  assert.deepEqual(await page.locator('#style-target').evaluate(e=>({padding:getComputedStyle(e).paddingLeft,color:getComputedStyle(e).color})),{padding:'23px',color:'rgb(128, 0, 128)'});
- assert.deepEqual(await send({id:'early-invalid',css:':root{color:red}',themeVersion:'2.0.1'}),{id:'early-invalid',applied:false});
- assert.equal(await page.locator('#tsix-native-style').count(),0);
- assert.equal(await page.locator('#style-target').evaluate(e=>getComputedStyle(e).paddingLeft),'23px');
- assert.deepEqual(await send({id:'early-update',css:':root{--tsix-layout-version:2.0.1}#style-target{color:green}',themeVersion:'2.0.1'}),{id:'early-update',applied:true});
- assert.deepEqual(await page.locator('#style-target').evaluate(e=>({padding:getComputedStyle(e).paddingLeft,color:getComputedStyle(e).color})),{padding:'3px',color:'rgb(128, 0, 128)'});
- assert.deepEqual(await send({id:'early-invalid-again',css:':root{color:red}',themeVersion:'2.0.2'}),{id:'early-invalid-again',applied:false});
- assert.equal(await page.locator('#style-target').evaluate(e=>getComputedStyle(e).paddingLeft),'3px');
- assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()),'2.0.1');
- assert.deepEqual(await page.evaluate(()=>[...document.head.children].map(e=>e.id||e.tagName)),['LINK','tsix-native-style','user-style']);
- checks.push('Early CSS needs no duplicate style; live updates remove obsolete rules and preserve custom Appearance precedence; invalid updates restore the previous group/overlay');
+ checks.push('Early CSS needs no duplicate sheet and preserves custom Appearance precedence');
  await setup({custom:true});await start();await page.waitForFunction(()=>__tsixNative.status==='ready');
  assert.equal(await page.evaluate(()=>__tsixNative.cssDelivery),'javascript');
- assert.deepEqual(await send({id:'fallback-update',css:':root{--tsix-layout-version:2.0.1}#style-target{color:green}',themeVersion:'2.0.1'}),{id:'fallback-update',applied:true});
  assert.equal(await page.locator('#style-target').evaluate(e=>getComputedStyle(e).color),'rgb(128, 0, 128)');
  await setup({early:true,stale:true});await start();await page.waitForFunction(()=>__tsixNative.status==='ready');
  assert.equal(await page.evaluate(()=>__tsixNative.cssDelivery),'javascript');
  assert.equal(await page.locator('#style-target').evaluate(e=>getComputedStyle(e).paddingLeft),'3px');
  assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()),'2.0.0');
  checks.push('Fallback CSS uses the same cascade position and replaces a stale early stylesheet safely');
+ await setup({early:true});
+ await page.evaluate(()=>{
+  fixture.selectTheme('local.tsix.layout//Compact Layout');
+  const link=document.createElement('link');link.id='userStyle';link.rel='stylesheet';link.href='/legacy.css';link.media='screen';document.head.append(link);
+ });
+ await page.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()==='1.0.9');
+ await start();await page.waitForFunction(()=>__tsixNative.status==='ready');
+ assert.equal(await page.evaluate(()=>__tsixNative.cssDelivery),'resource');
+ assert.equal(await page.locator('#userStyle').getAttribute('media'),'not all');
+ assert.equal(await page.evaluate(()=>document.querySelector('main').__vue__.appearanceSettings.user_style),'local.tsix.layout//Compact Layout');
+ assert.equal(await page.evaluate(()=>fixture.requests.find(r=>r.data.action==='ready').data.baseline.appearance.user_style),'local.tsix.layout//Compact Layout');
+ assert.equal(await page.locator('#style-target').evaluate(node=>getComputedStyle(node).paddingLeft),'23px');
+ await page.evaluate(()=>{const link=document.getElementById('userStyle');link.href='/custom.css';fixture.selectTheme('someone.else//Custom')});
+ await page.waitForFunction(()=>getComputedStyle(document.getElementById('style-target')).color==='rgb(128, 0, 128)');
+ assert.equal(await page.locator('#userStyle').getAttribute('media'),'screen');
+ assert.equal(await page.evaluate(()=>__tsixNative.legacyThemeSuppressed),false);
+ await page.evaluate(()=>{
+  fixture.oldTheme=document.getElementById('userStyle');fixture.oldTheme.remove();
+  fixture.selectTheme({extensionIdentifier:'local.tsix.layout',name:'Compact Layout'});
+  const link=document.createElement('link');link.id='userStyle';link.rel='stylesheet';link.href='/legacy.css';document.head.append(link);
+ });
+ await page.waitForFunction(()=>document.getElementById('userStyle').getAttribute('media')==='not all');
+ assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()),'2.0.0');
+ await page.evaluate(()=>{__tsixLegacyStyle.dispose();__tsixLegacyStyle.dispose()});
+ assert.equal(await page.locator('#userStyle').getAttribute('media'),null);
+ assert.equal(await page.evaluate(()=>fixture.appearanceWatches.size),0);
+ await page.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim()==='1.0.9');
+ checks.push('Owned legacy theme is suspended before style validation, including late/replaced links; saved preference, custom themes, media attributes and cleanup are preserved');
  await setup({dropFirst:true});await start();
  assert.equal(await page.evaluate(()=>__tsixNative.status),'waiting');
  assert.equal(await page.locator('#tsix-native-style').count(),0);
@@ -132,5 +146,33 @@ try{
  assert.equal(await page.evaluate(()=>fixture.states.at(-1).state.message),'Update support couldn’t read saved preferences.');
  assert.equal(await page.evaluate(()=>__tsixNative.error),'Storage is unavailable');
  checks.push('Unavailable preference storage preserves working helpers and does not send an invented recovery baseline');
+ release.updates={sessionRestore:1};
+ await setup();
+ await page.evaluate(()=>{
+  fixture.sessionCaptures=0;fixture.guardDisposals=0;
+  window.attachSessionGuard=()=>{window.__tsixSessionGuard={active:true,supported:true,dispose(){this.active=false;fixture.guardDisposals++}}};
+  window.attachSession=()=>{window.__tsixUpdateSession={capture:async()=>{fixture.sessionCaptures++;return {saved:true}}}};
+ });
+ await start();await page.waitForFunction(()=>__tsixNative.status==='ready');
+ const deliver=()=>page.evaluate(()=>fixture.sockets.at(-1).deliver({state:{version:'2.0',configured:true},session:{id:'capture-fixture',stage:'capture',payload:null}}));
+ await deliver();await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/session-result'));
+ await deliver();assert.equal(await page.evaluate(()=>fixture.sessionCaptures),1);
+ await page.evaluate(()=>fixture.sockets.at(-1).close());await page.waitForFunction(()=>fixture.sockets.length===2);
+ await deliver();await page.waitForFunction(()=>fixture.requests.filter(r=>r.path==='/session-result').length>=2);
+ assert.equal(await page.evaluate(()=>fixture.sessionCaptures),1,'Transport retries must resend the result without replaying session actions');
+ await page.evaluate(()=>fixture.sockets.at(-1).deliver({state:{version:'2.0',configured:true,sessionRecoveryDone:true},session:null}));
+ assert.equal(await page.evaluate(()=>fixture.guardDisposals),1);
+ await page.evaluate(()=>{fixture.holdRecovery=true;__tsixSessionRecovered('draft-fixture',[0]);__tsixSessionRecovered('draft-fixture',[1])});
+ assert.deepEqual(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/session-recovered').map(r=>r.data)),[{id:'draft-fixture',indices:[0]}]);
+ await page.evaluate(()=>{const first=fixture.requests.find(r=>r.path==='/session-recovered');fixture.sockets.at(-1).deliver({reply:first.id,ok:true})});
+ await page.waitForFunction(()=>fixture.requests.filter(r=>r.path==='/session-recovered').length===2);
+ assert.deepEqual(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/session-recovered').at(-1).data),{id:'draft-fixture',indices:[1]});
+ await page.evaluate(()=>fixture.sockets.at(-1).close());await page.waitForFunction(()=>fixture.sockets.length===3);
+ await page.waitForFunction(()=>fixture.requests.filter(r=>r.path==='/session-recovered').length===3);
+ assert.deepEqual(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/session-recovered').at(-1).data),{id:'draft-fixture',indices:[1]});
+ await page.evaluate(()=>{fixture.holdRecovery=false;const last=fixture.requests.filter(r=>r.path==='/session-recovered').at(-1);fixture.sockets.at(-1).deliver({reply:last.id,ok:true})});
+ delete release.updates;
+ checks.push('Session jobs execute once across duplicate messages/reconnects; cached responses are retried and completed recovery releases the startup guard');
+ checks.push('Draft acknowledgements preserve newly recovered indices during an in-flight reply and resend unacknowledged progress after transport reconnect');
  assert.deepEqual(errors,[]);console.log(JSON.stringify({result:'PASS',checks,errors},null,2));
 }finally{await browser.close()}

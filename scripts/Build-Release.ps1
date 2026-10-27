@@ -27,10 +27,10 @@ for ($cursor=$OutputDirectory; $cursor; $cursor=Split-Path -Parent $cursor) {
 if($release.nativeLoader.schema -ne 1){throw 'This build requires native loader metadata.'}
 $files = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE',
     'scripts\Bootstrap.ps1','scripts\Runtime.ps1','scripts\Complete-Setup.ps1','scripts\Maintenance.ps1',
-    'scripts\Setup.ps1','scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Start-Inspection.ps1',
+    'scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Restart-Update.ps1','scripts\Session-State.ps1','scripts\Start-Inspection.ps1',
     'scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1',
-    'tools\cdp.mjs','tools\client.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\native-manager.mjs',
-    'native\CEF-LICENSE.txt','theme\layout.css')
+    'tools\cdp.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\native-manager.mjs','tools\session-state.mjs',
+    'native\CEF-LICENSE.txt')
 foreach($dependency in $release.nativeLoader.dependencies){
     if($dependency -notmatch '^node_modules/ws/(lib/[a-z-]+\.js|index\.js|wrapper\.mjs|package\.json|LICENSE)$'){throw 'Unexpected bundled dependency'}
     $files+=$dependency
@@ -39,8 +39,7 @@ $zipPath = Join-Path $OutputDirectory ($packageName+'.zip')
 $hashPath = $zipPath+'.sha256'
 $metadataPath=Join-Path $OutputDirectory 'release.json'
 $exe=Join-Path $OutputDirectory ('TS6-Enhanced-'+$release.version+'-Setup.exe')
-$styleAsset=Join-Path $OutputDirectory ('TS6-Enhanced-'+$release.version+'-layout.css')
-foreach($target in @($zipPath,$hashPath,$metadataPath,$styleAsset)+$(if($Installer){@($exe,($exe+'.sha256'))}else{@()})){
+foreach($target in @($zipPath,$hashPath,$metadataPath)+$(if($Installer){@($exe,($exe+'.sha256'))}else{@()})){
     if(Test-Path -LiteralPath $target){throw 'Release already exists. Use a new version or output directory; artifacts are never overwritten.'}
 }
 $stage = Join-Path $project ('.local\release-staging\'+[guid]::NewGuid().ToString('N')+'\'+$packageName)
@@ -85,34 +84,16 @@ try {
         [IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0],(Join-Path $runtimeDirectory $name))
     }
 }finally{$archive.Dispose()}
-$nativeBuild=Join-Path $project '.local\native-build'
+# Each release owns its build intermediates; earlier verification processes or
+# checkout permissions must not make a later release overwrite shared outputs.
+$nativeBuild=Join-Path (Split-Path -Parent $stage) 'native-build'
 & (Join-Path $PSScriptRoot 'Build-Native.ps1') -OutputDirectory $nativeBuild -SdkDirectory $CefSdkDirectory
 Copy-Item -LiteralPath (Join-Path $nativeBuild 'version.dll') -Destination (Join-Path $stage 'runtime\version.dll')
-# Live CSS is eligible only when every nonvisual runtime input is identical.
-$runtimeInputs=@(Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName | ForEach-Object {
-    $relative=$_.FullName.Substring($stage.Length+1).Replace('\','/')
-    if($relative -ne 'runtime/version.dll' -and $relative -match '^(scripts/|tools/|runtime/|node_modules/ws/|Install\.|Uninstall\.)'){
-        (Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant()+'  '+$relative
-    }
-})
-$runtimeInputs+=((Get-FileHash -LiteralPath (Join-Path $project 'installer\Setup.iss')).Hash.ToLowerInvariant()+'  installer/Setup.iss')
-if($release.nativeLoader.schema -eq 1){
-    # The DLL embeds release metadata and CSS. Fingerprint its behavior inputs
-    # separately so a CSS-only release can still apply during an active call.
-    foreach($file in @('native/loader.cpp','native/runtime.cpp','native/runtime.h','native/startup_update.cpp','native/startup_update.h','native/css_delivery.cpp','native/css_delivery.h','native/version.def','native/cef.lock.json','tools/native-runtime.js','tools/workspace-runtime.js','tools/streams-runtime.js','tools/manager-runtime.js','tools/build-native.mjs')){
-        $runtimeInputs+=((Get-FileHash -LiteralPath (Join-Path $project $file)).Hash.ToLowerInvariant()+'  '+$file)
-    }
-}
-$hasher=[Security.Cryptography.SHA256]::Create()
-try{$runtimeHash=([BitConverter]::ToString($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes(($runtimeInputs -join "`n"))))).Replace('-','').ToLowerInvariant()}finally{$hasher.Dispose()}
-$release | Add-Member -NotePropertyName liveUpdate -NotePropertyValue @{schema=1;runtimeHash=$runtimeHash} -Force
-$release | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stage 'release.json') -Encoding utf8
 $checksums = @(Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName | ForEach-Object {
     (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()+'  '+$_.FullName.Substring($stage.Length+1).Replace('\','/')
 })
 $checksums | Set-Content -LiteralPath (Join-Path $stage 'SHA256SUMS.txt') -Encoding utf8
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $stage 'theme\layout.css') -Destination $styleAsset
 Compress-Archive -LiteralPath $stage -DestinationPath $zipPath -CompressionLevel Optimal
 $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 ($zipHash+'  '+[IO.Path]::GetFileName($zipPath)) | Set-Content -LiteralPath $hashPath -Encoding utf8

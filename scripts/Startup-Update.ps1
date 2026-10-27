@@ -39,12 +39,7 @@ try {
     # On failure open the existing client once, without recursively retrying.
     # Preserve the original URI/options in memory; never persist them in a log.
     if($accepted -and $startup.HasExited){
-        $start=[Diagnostics.ProcessStartInfo]::new()
-        $start.FileName=$client;$start.Arguments=$arguments;$start.WorkingDirectory=Split-Path -Parent $client
-        $start.UseShellExecute=$false;$start.CreateNoWindow=$true
-        foreach($name in @('TSIX_NATIVE_TOKEN','TSIX_NATIVE_ENDPOINT','TSIX_OPERATION_TOKEN')){$start.EnvironmentVariables.Remove($name)}
-        $start.EnvironmentVariables['TSIX_SKIP_STARTUP_RETRY']='1'
-        try{$reopened=[Diagnostics.Process]::Start($start);$reopened.Dispose()}
+        try{Start-LayoutClient $client $arguments}
         catch{try{Write-LayoutJSON (Join-Path $root 'native-error.json') @{at=[datetime]::UtcNow.ToString('o');message='Update retry finished, but TeamSpeak could not reopen. Launch it normally.';phase='startup-reopen'}}catch{}}
     }
     if($startup){$startup.Dispose()}

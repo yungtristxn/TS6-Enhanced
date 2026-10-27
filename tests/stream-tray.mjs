@@ -24,8 +24,7 @@ try {
  browser=await chromium.launch({headless:true, ...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
  const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));
  page.on('console',m=>{if(m.type()==='error'||m.type()==='warning')errors.push(m.text())});
- const beta5=process.env.TSIX_STREAM_MODEL==='beta5';
- const url=`http://127.0.0.1:${server.address().port}/${beta5?'?model=beta5':''}`;
+ const url=`http://127.0.0.1:${server.address().port}/`;
  await page.goto(url);assert.equal(page.url(),url);assert.match(await page.title(),/stream tray fixture/);
  const toggle=page.locator('[data-tsix-tray-toggle]');
  const state=()=>page.evaluate(()=>lab.report());
@@ -112,7 +111,7 @@ try {
   await toggle.waitFor({state:'detached'});assert.equal(await page.locator('[inert]:not(.ts-chat-container)').count(),0);
   await page.evaluate(()=>{lab.vm.inDragStream=null;window.__tsixStreams.sync()});await toggle.waitFor();assert.equal((await state()).tray,'collapsed');
  });
- if(beta5)await check('beta5 call participants and picture-in-picture retain native geometry',async()=>{
+ await check('beta5 call participants and picture-in-picture retain native geometry',async()=>{
   for(const tile of [{tile:{id:'participant',payload:{kind:'participant'}}},{tile:{id:'pip',payload:{kind:'video',session:{}}},pip:{corner:'top-left'}}]) {
    await page.evaluate(tile=>{lab.extraTiles=[tile];window.__tsixStreams.sync()},tile);
    await toggle.waitFor({state:'detached'});assert.equal(await page.locator('[inert]:not(.ts-chat-container)').count(),0);
@@ -141,7 +140,7 @@ try {
   assert.ok((await state()).identity);
  });
  await check('incoming mute, volume drag and labels stay separate from controls in focus, grid and single views',async()=>{
-  await page.goto(url+(beta5?'&':'?')+'incoming=1');await toggle.waitFor();
+  await page.goto(url+'?incoming=1');await toggle.waitFor();
   const settle=async()=>{
    await page.waitForFunction(()=>lab.vm.maximumWidth===document.querySelector('main').clientWidth&&lab.vm.maximumHeight===lab.vm.$refs.fullArea.clientHeight);
    await settleLayout(page);

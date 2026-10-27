@@ -152,6 +152,44 @@ function Exit-LayoutOperation($Operation) {
     if($Operation){$Operation.Lease.Dispose();$env:TSIX_OPERATION_TOKEN=$Operation.Previous}
 }
 
+# Relaunch without inheriting the maintenance worker's standard handles. In
+# particular, a GUI child must not retain Node's stderr pipe for its lifetime.
+function Start-LayoutClient([string]$ClientPath,[string]$Arguments='') {
+    Assert-LayoutPlainPath $ClientPath
+    if(!('TS6Enhanced.ClientLauncher' -as [type])){
+        Add-Type -TypeDefinition @'
+using System;using System.ComponentModel;using System.Runtime.InteropServices;
+namespace TS6Enhanced {
+ public static class ClientLauncher {
+  [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct Startup {
+   public int cb;public string reserved,desktop,title;public int x,y,cx,cy,charsX,charsY,fill,flags;
+   public short show,reservedSize;public IntPtr reservedPtr,input,output,error;
+  }
+  [StructLayout(LayoutKind.Sequential)] struct ProcessInfo {public IntPtr process,thread;public int pid,tid;}
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
+  static extern bool CreateProcess(string app,System.Text.StringBuilder command,IntPtr pa,IntPtr ta,bool inherit,int flags,IntPtr environment,string directory,ref Startup startup,out ProcessInfo info);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  public static int Start(string app,string arguments,string directory,string environment){
+   var startup=new Startup();startup.cb=Marshal.SizeOf(startup);ProcessInfo info;
+   IntPtr block=Marshal.StringToHGlobalUni(environment);
+   try{
+    if(!CreateProcess(app,new System.Text.StringBuilder("\""+app+"\" "+arguments),IntPtr.Zero,IntPtr.Zero,false,0x08000400,block,directory,ref startup,out info))throw new Win32Exception(Marshal.GetLastWin32Error());
+    CloseHandle(info.thread);CloseHandle(info.process);return info.pid;
+   }finally{Marshal.FreeHGlobal(block);}
+  }
+ }
+}
+'@
+    }
+    $variables=[Collections.Generic.SortedDictionary[string,string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($entry in [Environment]::GetEnvironmentVariables().GetEnumerator()){
+        if($entry.Key -notin @('TSIX_NATIVE_TOKEN','TSIX_NATIVE_ENDPOINT','TSIX_OPERATION_TOKEN','TSIX_SESSION_RESUME')){$variables[$entry.Key]=[string]$entry.Value}
+    }
+    $variables['TSIX_SKIP_STARTUP_RETRY']='1'
+    $block=(@($variables.GetEnumerator()|ForEach-Object {$_.Key+'='+$_.Value}) -join [char]0)+[char]0+[char]0
+    [void][TS6Enhanced.ClientLauncher]::Start($ClientPath,$Arguments,(Split-Path -Parent $ClientPath),$block)
+}
+
 function Stop-LayoutClient([string]$ClientPath) {
     $running=@(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ClientPath })
     $windows=@($running | Where-Object { [long]$_.MainWindowHandle -ne 0 })

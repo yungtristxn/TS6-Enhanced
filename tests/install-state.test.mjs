@@ -35,7 +35,7 @@ test('failed temporary write never publishes a partial baseline; invalid origina
  assert.equal(await readFile(path,'utf8'),'{');
 });
 test('older installations explicitly record an unavailable original baseline',async()=>{
- for(const theme of ['local.tsix.layout//Compact Stream Layout','local.tsix.layout//TS6 Enhanced']){
+ for(const theme of ['local.tsix.layout//Compact Stream Layout','local.tsix.layout//TS6 Enhanced','local.tsix.layout//Compact Layout']){
   const root=await mkdtemp(join(tmpdir(),'tsix-legacy-'));const value=structuredClone(original);value.appearance.user_style=theme;
   const saved=await captureBaseline({evaluate:async()=>value},root);assert.equal(saved.legacy,true);assert.deepEqual(saved.appearance,{user_style:null});
  }
@@ -47,10 +47,8 @@ function mockClient(themeExists=true){
  const app={appearanceSettings:{user_style:'local.tsix.layout//TS6 Enhanced',tree_compact:true,chat_input_toolbar_visibility:'dynamic',chat_compact:true},refreshAvailableUserStyles(){this._userStylesUpdated=Date.now()},getThemeForIdentifier:()=>themeExists?{}:null,applyUserStyle(theme){this.appearanceSettings.user_style=theme},disableUserStyle(){this.appearanceSettings.user_style=null},applyAppearanceSettings(fields){Object.assign(this.appearanceSettings,fields)}};
  let detached=false;
  return {app,get detached(){return detached},async evaluate(expression){if(expression.includes('getClientLibVersion'))return 1791901251;if(expression.includes('dispose()'))detached=true;if(expression==='document.querySelector("main").__vue__.appearanceSettings')return app.appearanceSettings},async send(method,args){
-  if(method==='Runtime.evaluate')return {result:{type:'function',objectId:'getter'}};
-  if(method==='Runtime.getProperties')return args.objectId==='getter'?{internalProperties:[{name:'[[Scopes]]',value:{objectId:'scopes'}}]}:args.objectId==='scopes'?{result:[{name:'0',value:{description:'Closure',objectId:'closure'}}]}:{result:[{name:'Q',value:{objectId:'module'}}]};
+  if(method==='Runtime.evaluate')return {result:{type:'object',objectId:'app'}};
   if(method==='Runtime.callFunctionOn'){
-   if(args.objectId==='module')return {result:{objectId:'app'}};
    const value=new Function(`return (${args.functionDeclaration})`)().apply(app,args.arguments?.map(a=>a.value)||[]);return {result:{value}};
   }return {};
  }};

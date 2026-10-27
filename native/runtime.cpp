@@ -5,11 +5,13 @@
 #include <vector>
 #include "runtime.h"
 static wchar_t rendererEndpoint[96]{},rendererToken[65]{};
+static bool rendererResumeSession=false;
 
-void SetEnhancedConnection(const char16_t* endpoint,size_t endpointLength,const char16_t* token,size_t tokenLength) {
+void SetEnhancedConnection(const char16_t* endpoint,size_t endpointLength,const char16_t* token,size_t tokenLength,bool resumeSession) {
     if(!endpoint||!token||endpointLength>=96||tokenLength!=64)return;
     wmemcpy(rendererEndpoint,reinterpret_cast<const wchar_t*>(endpoint),endpointLength);rendererEndpoint[endpointLength]=0;
     wmemcpy(rendererToken,reinterpret_cast<const wchar_t*>(token),tokenLength);rendererToken[tokenLength]=0;
+    rendererResumeSession=resumeSession;
 }
 
 bool SupportedImage(HMODULE module, DWORD stamp, DWORD size) {
@@ -27,6 +29,10 @@ bool StartEnhancedHost(const std::wstring& directory) {
     // Never reuse a caller's endpoint.
     SetEnvironmentVariableW(L"TSIX_NATIVE_ENDPOINT", nullptr);
     SetEnvironmentVariableW(L"TSIX_NATIVE_TOKEN", nullptr);
+    wchar_t local[32768]{};
+    const DWORD localLength=GetEnvironmentVariableW(L"LOCALAPPDATA",local,ARRAYSIZE(local));
+    const bool resume=localLength&&localLength<ARRAYSIZE(local)&&GetFileAttributesW((std::wstring(local)+L"\\TS6-Layout\\update-session.json").c_str())!=INVALID_FILE_ATTRIBUTES;
+    SetEnvironmentVariableW(L"TSIX_SESSION_RESUME",resume?L"1":L"0");
     BYTE bytes[32];
     if (BCryptGenRandom(nullptr, bytes, sizeof(bytes), BCRYPT_USE_SYSTEM_PREFERRED_RNG) < 0) return false;
     constexpr wchar_t hex[] = L"0123456789abcdef";
@@ -121,7 +127,7 @@ std::u16string EnhancedScript(HMODULE module) {
     for(size_t i=15;valid&&i<address.size();++i)valid=address[i]>=L'0'&&address[i]<=L'9';
     for(unsigned i=0;valid&&i<64;++i)valid=(token[i]>=L'0'&&token[i]<=L'9')||(token[i]>=L'a'&&token[i]<=L'f');
     std::u16string result=u"(()=>{const connection=";
-    if(valid){result+=u"{endpoint:'";result.append(reinterpret_cast<char16_t*>(endpoint));result+=u"',token:'";result.append(reinterpret_cast<char16_t*>(token));result+=u"'};";}
+    if(valid){result+=u"{endpoint:'";result.append(reinterpret_cast<char16_t*>(endpoint));result+=u"',token:'";result.append(reinterpret_cast<char16_t*>(token));result+=rendererResumeSession?u"',resumeSession:true};":u"',resumeSession:false};";}
     else result+=u"null;";
     // A single raw CSS resource serves early loading and the JS fallback.
     // Escape as JSON here instead of shipping another copy inside payload.js.

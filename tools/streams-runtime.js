@@ -48,13 +48,8 @@
   const playerActive = (node, session) => !!node?.querySelector('video') || !!session?.isJoining ||
     (session?.isInbound===true && session.status===4) ||
     (session?.isInbound===false && [3,4].includes(session.captureStatus));
-  // beta5 replaced layoutStreams/streamRefs with payload tiles. Read either
-  // model without installing aliases or replacing native sessions/components.
+  // Read the supported beta5 tile model without replacing native sessions.
   function layoutState(vm) {
-    if (Array.isArray(vm.layoutStreams) && Array.isArray(vm.allSessions)) return {
-      sessions:vm.allSessions, viewers:vm.layoutViewers,
-      tiles:vm.layoutStreams.map(t=>{const session=t.item.item,node=vm.streamRefs?.[session.uniqueIdentifier];return{id:t.item.uniqueIdentifier,session,active:playerActive(node,session),focused:!!t.focused,x:t.x,w:t.w,y:t.y,h:t.h,node}}), drag:!!vm.inDragStream
-    };
     if (!Array.isArray(vm.flatTiles) || !Array.isArray(vm.sortableStreamsContainer?.sortedStreams) ||
         typeof vm.refForTile !== 'function' || typeof vm.isFocused !== 'function' ||
         typeof vm.isStreamVisible !== 'function') return null;
@@ -1028,6 +1023,7 @@
     }
     function mount() {
       host = document.createElement('section'); host.setAttribute('data-tsix-broadcast-bar', '');
+      host.setAttribute('data-tsix-sharing-controls','');
       host.setAttribute('aria-label', 'Your screen sharing');
       const state = document.createElement('span'); state.setAttribute('data-tsix-broadcast-state', '');
       state.setAttribute('role', 'status'); state.setAttribute('aria-live', 'polite');
@@ -1120,7 +1116,16 @@
   document.addEventListener('loadeddata',schedule,true);
   document.addEventListener('fullscreenchange',onFullscreenChange);
   window.__tsixStreams = {
-    version:'1.0.10', sync,
+    version:'1.0.12', sync,
+    volumeForSession:session=>volumeHandoffs.get(session)??session.volume,
+    restoreVolume(session,value){
+      if(disposed||!Number.isFinite(value)||value<0||value>3)throw Error('Invalid stream volume');
+      if(value>1&&![...volumes.values()].some(control=>control.session===session)){
+        // Keep the first native HTML-media ref legal. createVolume applies the
+        // requested native gain once its capped ref adapter is attached.
+        volumeHandoffs.set(session,value);session.volume=1;schedule();
+      }else{volumeHandoffs.delete(session);session.volume=value}
+    },
     status: () => ({trayCollapsed,chatVisible,viewers:[...records.values()].map(r=>({stage:r.element.getAttribute(marker),savedSplit:r.savedSplit,tray:r.element.getAttribute(trayMarker)})),keyboardControls:buttons.size}),
     dispose() {
       if (document.fullscreenElement) throw Error('Exit fullscreen before removing or replacing the stream helper');

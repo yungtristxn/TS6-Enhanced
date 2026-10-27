@@ -8,7 +8,6 @@ function Run([string]$Program,[string[]]$Arguments){
     & $Program @Arguments
     if($LASTEXITCODE -ne 0){throw "$Program failed: $($Arguments -join ' ')"}
 }
-$previousModel=$env:TSIX_STREAM_MODEL
 Push-Location $project
 try {
     switch($Suite){
@@ -19,20 +18,20 @@ try {
                 [void][Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors)
                 if($errors.Count){throw ($errors -join [Environment]::NewLine)}
             }
-            Run node @('--test','tests/updates.test.mjs','tests/install-state.test.mjs','tests/native-manager.test.mjs')
+            Run node @('--test','tests/updates.test.mjs','tests/install-state.test.mjs','tests/native-manager.test.mjs','tests/session-state.test.mjs','tests/session-update.test.mjs')
             foreach($file in @('maintenance','legacy-removal','native-setup')){Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"tests/$file.ps1")}
             Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File','tests/bootstrap.ps1')
         }
         Browser {
-            $env:TSIX_STREAM_MODEL='beta5'
             foreach($file in @('native-runtime','native-shell','workspace-controls','stream-tray','stream-chat','stream-polish','stream-volume','broadcast')){Run node @("tests/$file.mjs")}
         }
         Native {
             $themeArguments=@('-NoProfile','-File','scripts/Test-Theme.ps1')
             if($env:TSIX_CLIENT_PATH){$themeArguments+=@('-ClientPath',$env:TSIX_CLIENT_PATH)}
             Run pwsh $themeArguments
-            foreach($file in @('manager','stream-launch','stream-volume-vue','stream-resize','stream-chat-refresh')){Run node @("tests/$file.mjs")}
+            foreach($file in @('manager','session-guard','session-runtime','broadcast-css','stream-launch','stream-volume-vue','stream-resize','stream-chat-refresh')){Run node @("tests/$file.mjs")}
             Run pwsh @('-NoProfile','-File','tests/startup-update.ps1')
+            Run pwsh @('-NoProfile','-File','tests/restart-update.ps1')
         }
         Installer {
             foreach($file in @('maintenance','legacy-removal','native-setup')){Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File',"tests/$file.ps1")}
@@ -41,6 +40,5 @@ try {
     }
     Write-Output "PASS: $Suite suite. No live TeamSpeak interaction was invoked."
 } finally {
-    if($null -eq $previousModel){Remove-Item Env:TSIX_STREAM_MODEL -ErrorAction SilentlyContinue}else{$env:TSIX_STREAM_MODEL=$previousModel}
     Pop-Location
 }

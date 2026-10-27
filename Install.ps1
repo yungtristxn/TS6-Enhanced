@@ -1,5 +1,5 @@
 #requires -Version 5.1
 [CmdletBinding(SupportsShouldProcess)]
-param([switch]$Update)
+param()
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'scripts\Setup.ps1') -Action $(if ($Update) {'Update'} else {'Install'}) -WhatIf:$WhatIfPreference
+& (Join-Path $PSScriptRoot 'scripts\Native-Setup.ps1') -Action Install -WhatIf:$WhatIfPreference

@@ -1,6 +1,6 @@
 # TS6 Enhanced
 
-More room for streams in TeamSpeak 6, with collapsible previews, chat that keeps updating while hidden, and stream volume up to 300%.
+More room for streams in TeamSpeak 6, with collapsible previews, chat that keeps updating while hidden, stream volume up to 300%, and confirmed updates that restore your server/channel, shared stream and audio state.
 
 For Windows x64 with TeamSpeak 6.0.0-beta5 installed for your Windows account.
 

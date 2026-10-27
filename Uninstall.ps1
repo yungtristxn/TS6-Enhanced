@@ -2,4 +2,4 @@
 [CmdletBinding(SupportsShouldProcess)]
 param()
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'scripts\Setup.ps1') -Action Uninstall -WhatIf:$WhatIfPreference
+& (Join-Path $PSScriptRoot 'scripts\Native-Setup.ps1') -Action Uninstall -Restart -WhatIf:$WhatIfPreference

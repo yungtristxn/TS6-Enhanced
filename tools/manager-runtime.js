@@ -73,12 +73,12 @@
   const ask=action=>{
     pending=action;initiator=action==='update'?update:remove;overview.hidden=true;version.hidden=true;confirm.hidden=false;
     title.textContent=action==='update'?'Update TS6 Enhanced?':'Uninstall TS6 Enhanced?';
-    warning.textContent=action==='update'?'TeamSpeak stays open. Your calls and streams continue.':'TeamSpeak will restart and end any calls or streams.';
+    warning.textContent=action==='update'?'TeamSpeak will briefly disconnect and restart after the download is verified.':'TeamSpeak will restart and end any calls or streams.';
     dialog.setAttribute('aria-describedby',`${warning.id} ${consequence.id}`);
-    consequence.textContent=action==='update'?'Download and apply the latest release.':state.legacy?'Removes the theme. Other settings and personal data stay.':'Restores your previous appearance. Your accounts and chats stay.';
-    accept.textContent=action==='update'?'Download update':'Uninstall';accept.toggleAttribute('data-primary',action==='update');accept.toggleAttribute('data-destructive',action==='uninstall');cancel.focus();
+    consequence.textContent=action==='update'?'Reconnect to your servers and channels, restore mute state, and resume your shared streams. Watched streams may need to be rejoined.':'Restores your previous appearance. Your accounts and chats stay.';
+    accept.textContent=action==='update'?'Restart and update':'Uninstall';accept.toggleAttribute('data-primary',action==='update');accept.toggleAttribute('data-destructive',action==='uninstall');cancel.focus();
   };
-  update.onclick=e=>{if(e.isTrusted&&!state.busy){if(state.available)ask('update');else if(state.ready)send('update')}};remove.onclick=e=>{if(e.isTrusted&&!state.busy)ask('uninstall')};cancel.onclick=back;
+  update.onclick=e=>{if(e.isTrusted&&!state.busy&&(state.available||state.pending))ask('update')};remove.onclick=e=>{if(e.isTrusted&&!state.busy)ask('uninstall')};cancel.onclick=back;
   accept.onclick=e=>{if(e.isTrusted&&pending&&!state.busy){send(pending);reset();close.focus()}};
   dialog.addEventListener('cancel',e=>{if(pending){e.preventDefault();back()}});
   dialog.addEventListener('close',()=>{if(dialog.open)return;reset();button.setAttribute('aria-expanded','false');button.focus()});
@@ -99,11 +99,12 @@
   window.__tsixManager={setState(next,token){
     // Polls may refresh transport metadata without changing anything visible.
     // Avoid rewriting live status text or waking our own mount observer then.
-    if(['version','configured','legacy','busy','available','ready','detail','message'].every(key=>next[key]===state[key])){state=next;nonce=token;return}
+    if(['version','configured','busy','available','pending','detail','message'].every(key=>next[key]===state[key])){state=next;nonce=token;return}
     if(pending==='update'&&next.available!==state.available){reset();close.focus()}
     state=next;nonce=token;version.textContent=`v${state.version}`;status.textContent=state.message;
     check.hidden=!state.configured||!!state.available;check.disabled=!!state.busy;remove.disabled=!!state.busy;
-    update.textContent=state.available?'Update…':'Apply update';update.disabled=!!state.busy||!(state.available||state.ready);update.hidden=!(state.available||state.ready);updateActions.hidden=check.hidden&&update.hidden;accept.disabled=!!state.busy;
+    const canUpdate=state.available||state.pending;
+    update.textContent=state.available?'Update…':'Restart and update…';update.disabled=!!state.busy||!canUpdate;update.hidden=!canUpdate;updateActions.hidden=check.hidden&&update.hidden;accept.disabled=!!state.busy;
     details.hidden=!state.detail;errorText.textContent=state.detail||'';if(!state.detail)details.open=false;
     button.toggleAttribute('data-update',!!state.available);button.title=state.available?'TS6 Enhanced — update available':'TS6 Enhanced';button.setAttribute('aria-label',button.title);
     if(!state.available)toast.hidden=true;

@@ -75,7 +75,7 @@ static bool Import(HMODULE image,const char* library,const char* name,void* repl
 }
 
 static const char16_t scriptUrl[]=u"ts6-enhanced://native/runtime";
-static char16_t endpointKey[]=u"tsix.native.endpoint",tokenKey[]=u"tsix.native.token";
+static char16_t endpointKey[]=u"tsix.native.endpoint",tokenKey[]=u"tsix.native.token",resumeKey[]=u"tsix.native.resume";
 
 static cef_dictionary_value_t* ConnectionInfo(cef_dictionary_value_t* original) {
     wchar_t endpoint[96]{},token[65]{};
@@ -90,7 +90,9 @@ static cef_dictionary_value_t* ConnectionInfo(cef_dictionary_value_t* original) 
     TSIX_NATIVE_STATUS.extraInfoSize=static_cast<LONG>(copy->base.size);
     cef_string_t endpointName{endpointKey,ARRAYSIZE(endpointKey)-1,nullptr},tokenName{tokenKey,ARRAYSIZE(tokenKey)-1,nullptr};
     cef_string_t endpointValue{reinterpret_cast<char16_t*>(endpoint),endpointLength,nullptr},tokenValue{reinterpret_cast<char16_t*>(token),tokenLength,nullptr};
-    if(copy->base.size!=sizeof(cef_dictionary_value_t)||!copy->set_string||!copy->set_string(copy,&endpointName,&endpointValue)||!copy->set_string(copy,&tokenName,&tokenValue)){
+    wchar_t resume[2]{};GetEnvironmentVariableW(L"TSIX_SESSION_RESUME",resume,2);
+    cef_string_t resumeName{resumeKey,ARRAYSIZE(resumeKey)-1,nullptr};
+    if(copy->base.size!=sizeof(cef_dictionary_value_t)||!copy->set_string||!copy->set_bool||!copy->set_string(copy,&endpointName,&endpointValue)||!copy->set_string(copy,&tokenName,&tokenValue)||!copy->set_bool(copy,&resumeName,resume[0]==L'1')){
         copy->base.release(&copy->base);return original;
     }
     // The C API takes an incoming reference. Transfer the copied dictionary
@@ -123,7 +125,8 @@ static void CEF_CALLBACK OnBrowserCreated(cef_render_process_handler_t* self,cef
     if(info&&info->base.size==sizeof(cef_dictionary_value_t)&&info->get_string&&freeString){
         cef_string_t endpointName{endpointKey,ARRAYSIZE(endpointKey)-1,nullptr},tokenName{tokenKey,ARRAYSIZE(tokenKey)-1,nullptr};
         auto endpoint=info->get_string(info,&endpointName);auto token=info->get_string(info,&tokenName);
-        if(endpoint&&token){SetEnhancedConnection(endpoint->str,endpoint->length,token->str,token->length);TSIX_NATIVE_STATUS.connectionReady=token->length==64;}
+        cef_string_t resumeName{resumeKey,ARRAYSIZE(resumeKey)-1,nullptr};
+        if(endpoint&&token){SetEnhancedConnection(endpoint->str,endpoint->length,token->str,token->length,info->get_bool&&info->get_bool(info,&resumeName));TSIX_NATIVE_STATUS.connectionReady=token->length==64;}
         if(endpoint)freeString(endpoint);if(token)freeString(token);
     }
     // Inspect before forwarding: the native callback consumes its arguments.

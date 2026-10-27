@@ -33,7 +33,7 @@ export async function captureBaseline(c,root=stateRoot()){
   const path=join(root,'before-install.json');await plainPath(path);
   try{return validateBaseline(JSON.parse(await readFile(path,'utf8')))}catch(e){if(e.code!=='ENOENT')throw e}
   const saved=await c.evaluate(`(()=>{const a=document.querySelector('main').__vue__.appearanceSettings;return {appearance:{user_style:a.user_style??null,tree_compact:a.tree_compact,chat_input_toolbar_visibility:a.chat_input_toolbar_visibility},storage:Object.fromEntries(${JSON.stringify(ownedPreferences)}.map(k=>[k,localStorage.getItem(k)]))}})()`);
-  const legacy=['local.tsix.layout//Compact Stream Layout','local.tsix.layout//TS6 Enhanced'].includes(saved.appearance.user_style);
+  const legacy=typeof saved.appearance.user_style==='string'&&saved.appearance.user_style.startsWith('local.tsix.layout//');
   // An older install never recorded its original settings. Do not invent them.
   if(legacy){saved.appearance={user_style:null};saved.storage=Object.fromEntries(ownedPreferences.map(k=>[k,null]))}
   const baseline=validateBaseline({schema:1,owner:'tsix-install-baseline',capturedAt:new Date().toISOString(),legacy,...saved});

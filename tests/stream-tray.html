@@ -178,7 +178,7 @@ if(new URLSearchParams(location.search).has('preview')){
 }
 // Exercise beta5's public tile model without exposing legacy fields to the
 // helper. The fixture's lab retains its own generator for the same scenarios.
-if(new URLSearchParams(location.search).get('model')==='beta5') {
+{
  // Native beta5 has both a portal host and a display:contents context. The
  // original fixture omitted these and missed the single-preview overflow.
  const row=grid.parentElement.parentElement,portal=document.createElement('div'),context=document.createElement('div');

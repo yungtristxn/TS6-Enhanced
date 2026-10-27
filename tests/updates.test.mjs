@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';import {mkdtemp,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,stageLatestUpdate,compatible,canApplyStyles,downloadStyles,createUpdateSession} from '../tools/updates.mjs';
+import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,stageLatestUpdate,compatible,createUpdateSession} from '../tools/updates.mjs';
 const repo='example/layout',config={repository:repo,channel:'stable'};
 const body=Buffer.alloc(128);body.write('MZ');body.writeUInt32LE(64,60);body.writeUInt32LE(0x4550,64);body.writeUInt16LE(0x14c,68);
 const digest=b=>'sha256:'+createHash('sha256').update(b).digest('hex');
@@ -21,8 +21,8 @@ test('same-version repair queues remain visible until installed and verified',as
  const queued={schema:2,mode:'next-launch',fromVersion:'2.1.3',version:'2.1.3',sha256:'a'.repeat(64)};
  await writeFile(join(root,'pending-update.json'),JSON.stringify(queued));
  await writeFile(join(root,'native-error.json'),JSON.stringify({message:'Interrupted install',update:{version:queued.version,sha256:queued.sha256}}));
- const session=await createUpdateSession({version:'2.1.3',updates:{repository:''},nativeLoader:{schema:1}},root,root,{applyStyles:()=>{throw Error('Repairs require installation')}});
- assert.equal(session.snapshot().pending,'2.1.3');assert.equal(session.snapshot().ready,null);
+ const session=await createUpdateSession({version:'2.1.3',updates:{repository:''},nativeLoader:{schema:1}},root,root);
+ assert.equal(session.snapshot().pending,'2.1.3');assert.equal(session.snapshot().restartReady,undefined);
  assert.match(session.snapshot().message,/retry when you next open/);assert.equal(session.snapshot().detail,'Interrupted install');
 });
 test('only newer published releases in the selected channel are offered',()=>{
@@ -63,7 +63,7 @@ test('download rechecks the latest release and never falls back to a stale offer
  const hashes={};for(const name of ['main.js','main.css']){const bytes=Buffer.from(name);await writeFile(join(client,'html/client_ui',name),bytes);hashes['html/client_ui/'+name]=digest(bytes).slice(7)}
  const responses=new Map(),downloads=[];
  const candidate=(v,resourceHashes=hashes)=>{
-  const metadata=Buffer.from(JSON.stringify({version:v,updates:{deferredInstall:1},supportedClient:{resourceHashes}}));
+  const metadata=Buffer.from(JSON.stringify({version:v,updates:{deferredInstall:1,sessionRestore:1},supportedClient:{resourceHashes}}));
   const bytes=Buffer.from(body);bytes.write(v,80);
   const assets=[['release.json',metadata],[`TS6-Enhanced-${v}-Setup.exe`,bytes]].map(([name,data])=>{const a={...asset(name,data),browser_download_url:`https://github.com/${repo}/releases/download/v${v}/${name}`};responses.set(a.browser_download_url,data);return a});
   return {...release,tag_name:'v'+v,assets};
@@ -94,61 +94,34 @@ test('installer format and installed TeamSpeak resources are checked before rest
  await assert.rejects(compatible({manifest:{supportedClient:{resourceHashes:{'../outside':'a'.repeat(64)}}}},root),/Unexpected/);
 });
 
-test('live styles require the same runtime and verified self-contained CSS',async()=>{
- const bytes=Buffer.from(':root { --tsix-layout-version: 1.1.0; }');
- const liveUpdate={schema:1,runtimeHash:'c'.repeat(64)};
- const metadata=Buffer.from(JSON.stringify({...manifest,liveUpdate}));
- const cssAsset=asset('TS6-Enhanced-1.1.0-layout.css',bytes);
- const candidate={...release,assets:[asset('release.json',metadata),release.assets[1],cssAsset]};
- const fetcher=async url=>new Response(url.includes('api.github.com')?JSON.stringify([candidate]):url.endsWith('release.json')?metadata:bytes);
- const update=await checkUpdate('1.0.0',config,{fetcher});
- assert.equal(canApplyStyles({liveUpdate},update),true);
- assert.equal(canApplyStyles({liveUpdate:{...liveUpdate,runtimeHash:'d'.repeat(64)}},update),false);
- assert.equal(canApplyStyles({},update),false);
- assert.equal(await downloadStyles(update,{fetcher}),bytes.toString());
- await assert.rejects(downloadStyles(update,{fetcher:async()=>new Response('tampered')}),/SHA-256/);
- const external=Buffer.from('@import "https://example.com/style.css";');
- const remote={...update,stylesheet:{size:external.length,sha256:digest(external).slice(7),browser_download_url:cssAsset.browser_download_url}};
- await assert.rejects(downloadStyles(remote,{fetcher:async()=>new Response(external)}),/external content/);
-});
-
-test('live updates finish without a pending notice and newer downloads replace the queue safely',async t=>{
+test('full-package updates retain the installed version and replace only verified queues',async t=>{
  const {mkdir,writeFile,rm}=await import('node:fs/promises');
- const root=await mkdtemp(join(tmpdir(),'tsix-update-session-')),client=join(root,'client');
- t.after(()=>rm(root,{recursive:true,force:true}));
+ const root=await mkdtemp(join(tmpdir(),'tsix-update-session-')),client=join(root,'client');t.after(()=>rm(root,{recursive:true,force:true}));
  await mkdir(join(client,'html/client_ui'),{recursive:true});
  const hashes={};for(const name of ['main.js','main.css']){await writeFile(join(client,'html/client_ui',name),name);hashes['html/client_ui/'+name]=digest(Buffer.from(name)).slice(7)}
- const installed={version:'1.0.8',updates:config,liveUpdate:{schema:1,runtimeHash:'c'.repeat(64)}};
- const responses=new Map();let published=[],failDownload=false,allowStyles=true,applied;
- const publish=(v,runtimeHash=installed.liveUpdate.runtimeHash)=>{
-  const css=Buffer.from(`:root{--tsix-layout-version:${v}}`),metadata=Buffer.from(JSON.stringify({version:v,themeVersion:v,updates:{deferredInstall:1},supportedClient:{resourceHashes:hashes},liveUpdate:{schema:1,runtimeHash}}));
-  const assets=[['release.json',metadata],[`TS6-Enhanced-${v}-Setup.exe`,body],[`TS6-Enhanced-${v}-layout.css`,css]].map(([name,data])=>{
+ const installed={version:'1.0.8',updates:config},responses=new Map();let published=[],failDownload=false,downloads=0;
+ const publish=(v,sessionRestore=1)=>{
+  const metadata=Buffer.from(JSON.stringify({version:v,updates:{deferredInstall:1,sessionRestore},supportedClient:{resourceHashes:hashes}}));
+  const installer=Buffer.from(body);installer.write(v,80);
+  const assets=[['release.json',metadata],[`TS6-Enhanced-${v}-Setup.exe`,installer]].map(([name,data])=>{
    const a={...asset(name,data),browser_download_url:`https://github.com/${repo}/releases/download/v${v}/${name}`};responses.set(a.browser_download_url,data);return a;
-  });
-  published.push({...release,tag_name:'v'+v,assets});
+  });published.push({...release,tag_name:'v'+v,assets});
  };
- const options={fetcher:async url=>new Response(url.includes('api.github.com')?JSON.stringify(published):failDownload&&url.endsWith('.exe')?'bad download':responses.get(url)),applyStyles:async(css,v)=>{if(!allowStyles)return false;applied=v;return true}};
- const start=()=>createUpdateSession(installed,client,root,options),receipt=join(root,'pending-update.json');
- let session=await start();publish('1.0.9');
- let state=await session.download();assert.equal(state.version,'1.0.9');assert.equal(state.pending,null);assert.equal(applied,'1.0.9');assert.doesNotMatch(state.message,/restart|launch|install/i);
- assert.equal((await session.check()).available,null,'Do not offer the already applied release again');
- session=await start();state=await session.restore({reset:true});assert.equal(state.version,'1.0.9');assert.equal(state.pending,null,'Reattachment restores the verified live appearance');
- publish('1.0.10');assert.equal((await session.check()).available,'1.0.10');
- state=await session.download();assert.equal(state.version,'1.0.10');assert.equal(state.pending,null);
- let saved=JSON.parse(await readFile(receipt,'utf8'));assert.equal(saved.version,'1.0.10');assert.equal(saved.fromVersion,'1.0.8','The installer must still target the actual installed base');
- publish('1.0.11','d'.repeat(64));state=await session.download();assert.equal(state.version,'1.0.10');assert.equal(state.pending,'1.0.11');assert.match(state.message,/next time/);
- saved=JSON.parse(await readFile(receipt));
- await writeFile(join(root,'native-error.json'),JSON.stringify({message:'Fixture installer failure',update:{version:saved.version,sha256:saved.sha256}}));
- state=await session.check();assert.match(state.message,/couldn’t finish/);assert.equal(state.detail,'Fixture installer failure');
- publish('1.0.12','d'.repeat(64));assert.equal((await session.check()).available,'1.0.12','A queued runtime update must not block checks');
- const previous=await readFile(receipt);failDownload=true;await assert.rejects(session.download(),/SHA-256/);assert.deepEqual(await readFile(receipt),previous);assert.equal(session.snapshot().pending,'1.0.11');
- failDownload=false;state=await session.download();assert.equal(state.pending,'1.0.12');assert.equal(JSON.parse(await readFile(receipt,'utf8')).version,'1.0.12');
- assert.equal(state.detail,null,'A newer queued update must not inherit the previous installer failure');
- session=await start();state=await session.restore({reset:true});assert.equal(state.version,'1.0.10');assert.equal(state.pending,'1.0.12','Restore active CSS while a newer runtime waits');
- publish('1.0.13');allowStyles=false;state=await session.download();assert.equal(state.ready,'1.0.13');assert.equal(state.pending,null,'Temporarily blocked CSS does not require a restart');assert.doesNotMatch(state.message,/restart|next time/i);
- const withdrawn=published.pop(),savedReady=await readFile(receipt);await assert.rejects(session.download(),/no longer published/);assert.deepEqual(await readFile(receipt),savedReady,'Retry must not replace a withdrawn release with an older download');published.push(withdrawn);
- const publishedBefore=published;published=[];assert.match((await session.download()).message,/no longer published/);assert.deepEqual(await readFile(receipt),savedReady);published=publishedBefore;
- allowStyles=true;state=await session.download();assert.equal(state.version,'1.0.13');assert.equal(state.ready,null);assert.equal(state.pending,null);
- saved=JSON.parse(await readFile(receipt,'utf8'));saved.liveStyles.css+='tampered';await writeFile(receipt,JSON.stringify(saved));
- session=await start();state=await session.restore({reset:true});assert.equal(state.version,'1.0.8');assert.equal(state.ready,'1.0.13');assert.equal(state.pending,null);assert.match(state.detail,/SHA-256/);
+ const fetcher=async url=>{if(url.endsWith('.exe'))downloads++;return new Response(url.includes('api.github.com')?JSON.stringify(published):failDownload&&url.endsWith('.exe')?'corrupt':responses.get(url))};
+ const start=()=>createUpdateSession(installed,client,root,{fetcher}),receipt=join(root,'pending-update.json');
+ let session=await start();publish('1.0.9');let state=await session.download();
+ assert.equal(state.version,'1.0.8');assert.equal(state.pending,'1.0.9');assert.equal(state.restartReady,true);assert.match(state.message,/Restart and restore/);
+ assert.equal((await session.check()).available,null);
+ let saved=JSON.parse(await readFile(receipt,'utf8'));
+ saved.liveStyles={css:'obsolete or corrupt stylesheet'};saved.liveUpdate={schema:1,runtimeHash:'a'.repeat(64)};await writeFile(receipt,JSON.stringify(saved));
+ session=await start();assert.equal(session.snapshot().pending,'1.0.9');assert.equal(session.snapshot().version,'1.0.8');
+ await writeFile(join(root,'native-error.json'),JSON.stringify({message:'Fixture install failure',update:{version:saved.version,sha256:saved.sha256}}));
+ assert.equal((await session.check()).detail,'Fixture install failure');
+ publish('1.0.10');assert.equal((await session.check()).available,'1.0.10');const previous=await readFile(receipt);
+ failDownload=true;await assert.rejects(session.download(),/SHA-256/);assert.deepEqual(await readFile(receipt),previous);
+ failDownload=false;state=await session.download();assert.equal(state.pending,'1.0.10');assert.equal(state.detail,null);
+ saved=JSON.parse(await readFile(receipt,'utf8'));assert.equal(saved.fromVersion,'1.0.8');assert.equal(saved.liveStyles,undefined);assert.equal(saved.liveUpdate,undefined);
+ const current=await readFile(receipt),withdrawn=published.pop();await assert.rejects(session.download(),/no longer published/);assert.deepEqual(await readFile(receipt),current);published.push(withdrawn);
+ const previousReleases=published;published=[];assert.match((await session.download()).message,/no longer published/);assert.deepEqual(await readFile(receipt),current);published=previousReleases;
+ publish('1.0.11',0);const before=downloads;await assert.rejects(session.download(),/does not support session restoration/);assert.equal(downloads,before);assert.deepEqual(await readFile(receipt),current);
 });
