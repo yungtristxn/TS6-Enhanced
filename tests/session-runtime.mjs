@@ -31,7 +31,7 @@ try{
      const handler={id:restarted?17:8,identifier:restarted?'new-handler':'old-handler',connectInfo:{...info},properties:{uniqueIdentifier:wrongServer?'wrong-server':'server-fixture'},isEstablished:established,isActivelyConnecting:false,isReconnecting:false,isConnecting:!established,
      ownClient:{channel:{id:wrongChannel?'9':'7',properties:{flagPassword:false}},properties:{uniqueIdentifier:wrongSelf?'different-self':'own-user',inputMuted:!established,outputMuted:!established,inputDeactivated:false,away:false,awayMessage:''}},
      outboundStreams:established?[stream]:[],joinedStreams:{inbound:established?[remote]:[]},
-     Connect(value){events.push(['connect',value.default_channel_id,api.defaultClientSelfProperties.inputMuted,api.defaultClientSelfProperties.outputMuted]);this.connectInfo=value;this.isEstablished=true;this.isActivelyConnecting=false},
+     Connect(value){events.push(['connect',value.default_channel_id,api.defaultClientSelfProperties.inputMuted,api.defaultClientSelfProperties.outputMuted]);this.connectInfo=value;const done=()=>{this.isEstablished=true;this.isActivelyConnecting=false};if(window.lab?.holdConnect){this.isActivelyConnecting=true;lab.finishConnect=done}else done()},
      FindChannel:id=>wrongChannel?null:{id,properties:{}},RequestMoveClientsToChannel(clients,channel){this.ownClient.channel=channel;return Promise.resolve()},
      GetInboundSession(value){events.push(['lookup']);return value.serverSessionId==='remote-session'&&!lab.missingInbound?remote:null},
      SetClientSelfProperties(value){if(this.ownClient.channel.id!=='7')throw Error('Unmute before channel restoration');events.push(['voice',value.inputMuted,value.outputMuted]);if(lab.delayVoiceEvent)setTimeout(()=>Object.assign(this.ownClient.properties,value),50);else Object.assign(this.ownClient.properties,value);return Promise.resolve()},
@@ -40,7 +40,8 @@ try{
    };
    const app={workflowSettings:workflow,connections:[],applyWorkflowSettings(value){Object.assign(this.workflowSettings,value);events.push(['preferences',value.restoreOpenedActivities,value.autoConnectSkipActivityCheck])},
     openConnection(value){const handler=makeHandler(false);api.serverConnectionHandlers.push(handler);const activity={serverConnectionHandler:handler};this.connections.push(activity);return activity},
-    restoreOpenedActivities(){events.push(['tabs']);if(restarted&&!this.connections.length){this.connections.push({connectInfo:{...info},suspended:true,serverConnectionHandler:null,async spawnServerConnectionHandler(){this.suspended=false;this.serverConnectionHandler=makeHandler(false);api.serverConnectionHandlers.push(this.serverConnectionHandler);this.serverConnectionHandler.Connect(this.connectInfo)}})}},
+    updateActivityEntries(){lab.tabSaves=(lab.tabSaves||0)+1},
+    restoreOpenedActivities(){events.push(['tabs']);if(restarted&&!this.connections.length){this.connections.push({connectInfo:lab.originalTabInfo={...info},suspended:true,serverConnectionHandler:null,async spawnServerConnectionHandler(){this.suspended=false;this.serverConnectionHandler=makeHandler(false);api.serverConnectionHandlers.push(this.serverConnectionHandler);this.serverConnectionHandler.Connect(this.connectInfo)}})}},
     showItem(channel,mode){events.push(['view',channel.id,mode]);if(failedView)return Promise.reject(Error('navigation failed'));mountView(channel.sc_handler,restarted?'':'Unsent Grüße 🎮')}};
    const drafts=new Map();api.chatInputCache={mappedInputs:drafts,getCachedInputForIdentifier:key=>drafts.get(key),setCachedInputForIdentifier:(key,value)=>drafts.set(key,value),clearCachedInputForIdentifier:key=>drafts.delete(key)};
    function mountView(handler,text){
@@ -99,7 +100,9 @@ try{
  assert.equal(await page.evaluate(()=>document.querySelector('.ts-chat-input-container').__vue__.chatInputField.underlyingContent),'Unsent Grüße 🎮');
  assert.equal(await page.evaluate(()=>document.querySelector('.tsv-screenshare').__vue__.item.layoutMode.tileId),'new-remote');
  assert.deepEqual(await page.evaluate(()=>lab.app.workflowSettings),snapshot.workflow);
- checks.push('Reconnects muted, validates the original identity/channel, restores voice immediately, then recovers the original shared and watched streams');
+ assert.ok(await page.evaluate(()=>lab.app.connections[0].connectInfo===lab.originalTabInfo&&lab.tabSaves>0),'The saved tab must get its own connect info back, not the forced muted/channel replay values');
+ assert.equal(await page.evaluate(()=>lab.app.connections[0].serverConnectionHandler.connectInfo.connect_muted),true,'The live connection keeps the replay values it connected with');
+ checks.push('Reconnects muted, validates the original identity/channel, restores voice immediately, then recovers the original shared and watched streams; the saved tab keeps its own connect info');
  await setup({restarted:true});
  await page.evaluate(snapshot=>{lab.holdSources=true;lab.delayVoiceEvent=true;lab.restorePromise=__tsixUpdateSession.restore({snapshot,restoreSession:true}).then(result=>lab.restoreResult=result)},snapshot);
  await page.waitForFunction(()=>typeof lab.finishSources==='function');
@@ -186,6 +189,24 @@ try{
   if(action==='new-call')assert.deepEqual(await page.evaluate(()=>({call:lab.api.activeCallSessions[0].id,owner:lab.api.currentCaptureOwner.id,target:lab.api.activeAudioTarget.id})),{call:'new-call',owner:'new-call',target:'new-call'});
  }
  checks.push('Real Vue sync watchers, trusted keyboard input and newly started calls cancel later capture/voice writes and preserve newer mute/target choices');
+ // Clicking around while TeamSpeak reconnects stops replay. It must not leave
+ // the temporary muted defaults behind for every later join, or the server muted.
+ await setup({restarted:true});
+ await page.evaluate(snapshot=>{lab.holdConnect=true;lab.restorePromise=__tsixUpdateSession.restore({snapshot,restoreSession:true}).then(result=>lab.restoreResult=result)},snapshot);
+ await page.waitForFunction(()=>typeof lab.finishConnect==='function');
+ assert.deepEqual(await page.evaluate(()=>lab.api.defaultClientSelfProperties),{inputMuted:true,outputMuted:true});
+ await page.evaluate(()=>lab.intentBoundary=lab.events.length);
+ await page.keyboard.press('m');
+ await page.evaluate(()=>{const props={inputMuted:lab.api.defaultClientSelfProperties.inputMuted,outputMuted:lab.api.defaultClientSelfProperties.outputMuted};
+  lab.manual={id:99,isEstablished:true,ownClient:{properties:props},SetClientSelfProperties(value){Object.assign(this.ownClient.properties,value);lab.events.push(['manual-voice',value.inputMuted,value.outputMuted]);return Promise.resolve()}};
+  lab.api.serverConnectionHandlers.push(lab.manual);lab.finishConnect()});
+ await page.waitForFunction(()=>!!lab.restoreResult);
+ assert.match((await page.evaluate(()=>lab.restoreResult.warnings)).join(' '),/session changed/);
+ assert.deepEqual(await page.evaluate(()=>lab.api.defaultClientSelfProperties),snapshot.defaults,'Later joins must not inherit the temporary muted defaults');
+ assert.deepEqual(await page.evaluate(()=>{const p=lab.api.serverConnectionHandlers[0].ownClient.properties;return [p.inputMuted,p.outputMuted]}),[false,false],'The reconnected server must not stay muted');
+ assert.deepEqual(await page.evaluate(()=>[lab.manual.ownClient.properties.inputMuted,lab.manual.ownClient.properties.outputMuted]),[false,false],'A connection opened during restoration keeps the pre-update defaults');
+ assert.equal(await page.evaluate(()=>lab.events.slice(lab.intentBoundary).some(event=>['capture','active','sources','createOutboundSession','join','view'].includes(event[0]))),false,'Input still stops capture, media and view replay');
+ checks.push('Input during reconnection stops replay without leaving later joins, the reconnected server or a manual connection muted');
  await setup({restarted:true});
  await page.evaluate(snapshot=>{lab.holdCapture=true;lab.acceptedAudioKeys=0;document.addEventListener('keydown',()=>lab.acceptedAudioKeys++);lab.restorePromise=__tsixUpdateSession.restore({snapshot,restoreSession:true}).then(result=>lab.restoreResult=result)},snapshot);
  await page.waitForFunction(()=>typeof lab.finishCapture==='function');await page.keyboard.press('m');

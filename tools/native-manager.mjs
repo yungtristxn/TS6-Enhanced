@@ -15,7 +15,11 @@ import { createSessionJournal, validateSessionSnapshot } from './session-state.m
 export async function runRestartWorker({ project, root, env = process.env, sessionId, beforeClose }) {
   if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(sessionId) || typeof beforeClose !== 'function')
     throw Error('Invalid restart handoff');
-  const powershell = join(env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
+  // A copied environment object loses Windows' case-insensitive lookup; some
+  // launchers (for example MSYS shells) also upper-case the variable name.
+  const systemRoot =
+    Object.entries(env).find(([key]) => key.toLowerCase() === 'systemroot')?.[1] || process.env.SystemRoot;
+  const powershell = join(systemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
   const script = join(project, 'scripts/Restart-Update.ps1');
   await plainPath(script);
   return new Promise((resolve, reject) => {
@@ -305,10 +309,10 @@ export async function createNativeManager({
             });
           } catch (error) {
             if (!closing) {
-              try {
-                await sessionRequest('cancel', saved);
-                await journal.clear(id);
-              } catch {}
+              // The client kept running. A stale armed journal would replay this
+              // session on the next normal launch, so always drop it.
+              await sessionRequest('cancel', saved).catch(() => {});
+              await journal.clear(id).catch(() => {});
             }
             throw error;
           }

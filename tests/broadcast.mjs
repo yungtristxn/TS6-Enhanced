@@ -36,6 +36,15 @@ try{
   assert.deepEqual(await page.evaluate(()=>lab.report()),{actions:0,watchers:1,sameVideo:true,sameMedia:true,hidden:true,showOwn:false});
   assert.deepEqual(await shell(),idleShell,'Starting sharing must not resize or move native content');
  });
+ await check('the last channel rows scroll clear of the sharing card and the reserve is removed afterwards',async()=>{
+  const clearance=()=>page.evaluate(()=>{const scroller=document.getElementById('treeScroller');scroller.scrollTop=scroller.scrollHeight;
+   const canvas=document.getElementById('treeCanvas').getBoundingClientRect(),card=document.querySelector('[data-tsix-broadcast-bar]')?.getBoundingClientRect();
+   return {gap:card?card.top-canvas.bottom:null,margin:parseFloat(getComputedStyle(document.getElementById('treeCanvas')).marginBottom)}});
+  const live=await clearance();assert.ok(live.gap>=0,`Last row ends ${-live.gap}px under the sharing card`);
+  await page.evaluate(()=>lab.stop());await bar.waitFor({state:'detached'});
+  assert.equal((await clearance()).margin,0,'Stopping sharing must remove the tree reserve');
+  await page.evaluate(()=>lab.start());await bar.waitFor();
+ });
  await check('grouped controls retain readable labels, native glyphs and visible focus/press feedback',async()=>{
   const action=kind=>bar.locator(`[data-tsix-share-action="${kind}"]`);
   if(process.env.TSIX_SCREENSHOT_DIR)await screenshot(bar,'sharing-rest');
@@ -85,6 +94,10 @@ try{
   await page.keyboard.press('Escape');await list.waitFor({state:'hidden'});assert.ok(await toggle.evaluate(e=>e===document.activeElement));
   assert.equal(await toggle.getAttribute('aria-label'),'2 watching. Show viewer list');
   await toggle.click();await page.locator('.fixtureStage p').click();await list.waitFor({state:'hidden'});
+  // Stream controls stop pointerdown so tiles do not start a drag; that must not keep the list open.
+  await page.evaluate(()=>{const b=document.createElement('button');b.id='stops-pointer';b.textContent='Chat';b.addEventListener('pointerdown',e=>e.stopPropagation());document.querySelector('.fixtureStage').prepend(b)});
+  await toggle.click();await page.locator('#stops-pointer').click();await list.waitFor({state:'hidden'});
+  await page.evaluate(()=>document.getElementById('stops-pointer').remove());
  });
  await check('sharing controls expose disabled state, reject pending key input and settle without idle writes',async()=>{
   const native=page.locator('#nativeShare');

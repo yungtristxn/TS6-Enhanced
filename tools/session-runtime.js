@@ -155,7 +155,8 @@
       blocking = mode === 'shutdown',
       writingDefaults = false;
     const watches = [],
-      voiceWatches = new Map();
+      voiceWatches = new Map(),
+      voiceChanges = new Set();
     const showStatus = text => {
       if (banner) return;
       banner = document.createElement('div');
@@ -223,11 +224,15 @@
           () =>
             String(handler.ownClient?.properties.inputMuted) + ':' + String(handler.ownClient?.properties.outputMuted),
           () => {
+            voiceChanges.add(handler);
             cancelled = true;
           },
           { sync: true }
         );
         if (stop) voiceWatches.set(handler, stop);
+      },
+      voiceChanged(handler) {
+        return voiceChanges.has(handler);
       },
       releaseVoice(handler) {
         voiceWatches.get(handler)?.();
@@ -474,6 +479,41 @@
     String(handler.properties?.uniqueIdentifier) === saved.serverUid &&
     String(handler.ownClient?.properties?.uniqueIdentifier) === saved.selfUid &&
     String(handler.connectInfo?.identity || '') === String(saved.connectInfo.identity || '');
+  // Replay stopped before voice restoration finished. Undo only the mute this
+  // adapter imposed: reconnected servers get their saved state when identity
+  // and channel still match (otherwise speakers only), and connections opened
+  // meanwhile get the pre-update defaults. Explicit mute changes are kept.
+  async function settleInterruptedVoice(
+    api,
+    snapshot,
+    { opened, connected, voiceRestored, userVoice, preexisting, warnings }
+  ) {
+    const apply = async (handler, value) => {
+      try {
+        await bounded(handler.SetClientSelfProperties(value, true, false), 'Audio state did not settle', 5000);
+      } catch {
+        warnings.push('Audio state could not be fully restored');
+      }
+    };
+    for (const [handler, saved] of connected) {
+      if (voiceRestored.has(handler) || userVoice.has(handler) || !sameIdentity(handler, saved)) continue;
+      if (String(handler.ownClient?.channel?.id) === saved.channelId) await apply(handler, { ...saved.voice });
+      else {
+        await apply(handler, { outputMuted: saved.voice.outputMuted });
+        warnings.push('Channel changed during restoration; microphone remains muted');
+      }
+    }
+    for (const handler of api.serverConnectionHandlers) {
+      // Servers this adapter reconnected stay muted unless verified above.
+      if (preexisting.has(handler) || opened.has(handler) || !handler.isEstablished) continue;
+      const own = handler.ownClient?.properties,
+        value = {};
+      if (!own) continue;
+      if (own.inputMuted && !snapshot.defaults.inputMuted) value.inputMuted = false;
+      if (own.outputMuted && !snapshot.defaults.outputMuted) value.outputMuted = false;
+      if (Object.keys(value).length) await apply(handler, value);
+    }
+  }
   function draftRecovery(job, api) {
     const { snapshot } = job,
       recovered = new Set(),
@@ -570,6 +610,10 @@
     );
     const warnings = [],
       restored = new Map(),
+      opened = new Set(),
+      tabs = [],
+      connected = new Map(),
+      voiceRestored = new Set(),
       resumedVolumes = [],
       drafts = draftRecovery(job, api);
     if (job.draftOnly) {
@@ -597,7 +641,8 @@
     };
     let preferencesRestored = false,
       defaultsGuarded = false,
-      closeRestored = false;
+      closeRestored = false,
+      preexisting = new Set();
     try {
       await restoreClosePolicy(api, snapshot);
       closeRestored = true;
@@ -611,6 +656,7 @@
         (api.allOutboundStreams?.() || []).length
       )
         throw Error('The session has already changed; automatic restoration was stopped');
+      preexisting = new Set(api.serverConnectionHandlers);
       defaultsGuarded = true;
       api.defaultClientSelfProperties.inputMuted = true;
       api.defaultClientSelfProperties.outputMuted = true;
@@ -637,20 +683,28 @@
                 current.identity === info.identity
               );
             }) || app.openConnection(info, true);
+          // TeamSpeak saves a tab's connect info for its next launch. The forced
+          // channel, password and muted connect belong to this replay only.
+          if (activity.connectInfo === info) tabs.push({ activity, ours: info, original: clone(saved.connectInfo) });
           if (
             !activity.serverConnectionHandler &&
             activity.suspended &&
             typeof activity.spawnServerConnectionHandler === 'function'
           ) {
+            const original = activity.connectInfo;
             const copy = activity.connectInfo?.getAsNewConnectInfoBase?.() || {};
             activity.connectInfo = Object.assign(copy, info);
+            tabs.push({ activity, ours: copy, original });
             await step(activity.spawnServerConnectionHandler(true, true), 'The saved server tab could not reconnect');
           }
           const handler = await until(() => activity.serverConnectionHandler, 'Server connection could not be created');
+          opened.add(handler);
           checkpoint();
           if (!handler.isEstablished && !handler.isActivelyConnecting && !handler.isReconnecting)
             handler.Connect(info, true);
           await until(() => handler.isEstablished && handler.ownClient?.channel, 'Server did not reconnect', 30000);
+          // Connected muted on our behalf; an interrupted restore must not leave it so.
+          connected.set(handler, saved);
           checkpoint();
           if (String(handler.properties.uniqueIdentifier) !== saved.serverUid)
             throw Error('The server identity changed');
@@ -709,6 +763,7 @@
               'Audio state did not settle',
               5000
             );
+            voiceRestored.add(handler);
           } catch {
             warnings.push('Audio state could not be fully restored');
           } finally {
@@ -882,11 +937,31 @@
     } catch (error) {
       warnings.push(error.message);
     } finally {
-      const preserveChoices = fence.cancelled || fence.defaultsChanged;
+      // Any click or key stops further replay, but only an explicit global
+      // mute change is a newer choice about the temporary muted defaults.
+      // Otherwise every later connection would inherit them and join muted.
+      // The live connection keeps its own copy; only the saved tab reverts.
+      const reverted = tabs.filter(tab => tab.activity.connectInfo === tab.ours);
+      for (const tab of reverted) tab.activity.connectInfo = tab.original;
+      if (reverted.length)
+        try {
+          app.updateActivityEntries?.();
+        } catch {}
+      const userDefaults = fence.defaultsChanged;
+      const userVoice = new Set([...connected.keys()].filter(handler => fence.voiceChanged(handler)));
       fence.dispose();
-      if (defaultsGuarded && !preserveChoices) {
+      if (defaultsGuarded && !userDefaults) {
         api.defaultClientSelfProperties.inputMuted = snapshot.defaults.inputMuted;
         api.defaultClientSelfProperties.outputMuted = snapshot.defaults.outputMuted;
+        if (!api.activeCallSessions?.length)
+          await settleInterruptedVoice(api, snapshot, {
+            opened,
+            connected,
+            voiceRestored,
+            userVoice,
+            preexisting,
+            warnings
+          });
       }
       try {
         drafts.recover();

@@ -205,9 +205,10 @@
     const side = previews.some(t => t.x >= focused.x + focused.w - 2);
     setAttr(record.toggle, 'data-tsix-tray-axis', side ? 'horizontal' : 'vertical');
     const height = vm.gridHeight ?? vm.maximumVideoHeight;
-    const center = collapsed
-      ? height / 2
-      : (Math.min(...previews.map(t => t.y)) + Math.max(...previews.map(t => t.y + t.h))) / 2;
+    const center =
+      collapsed || !previews.length
+        ? height / 2
+        : (Math.min(...previews.map(t => t.y)) + Math.max(...previews.map(t => t.y + t.h))) / 2;
     const offset = `${Math.round((center / Math.max(1, height)) * 10000) / 100}%`;
     if (record.toggle.style.getPropertyValue('--tsix-tray-position') !== offset)
       record.toggle.style.setProperty('--tsix-tray-position', offset);
@@ -638,7 +639,7 @@
             moved = false,
             armed = false,
             previousMode,
-            hasPreviousMode = false;
+            previousAt = -Infinity;
           const down = e => {
             origin = [e.clientX, e.clientY];
             moved = false;
@@ -663,10 +664,8 @@
               vm._dblClickTimeout = null;
             }
             previousMode = record.vm.item?.layoutMode;
-            hasPreviousMode = true;
-            const keepFocused =
-              e?.type === 'click' && !!layoutState(record.vm)?.tiles.some(t => t.focused && t.node?.contains(node));
-            // An immediate focus move can put a different tile under the second
+            previousAt = performance.now();
+            // An immediate focus change can put a different tile under the second
             // click. Remember the originating player, not the later hit target.
             record.focusClick =
               e?.isTrusted && e.type === 'click' && e.detail === 1
@@ -678,23 +677,26 @@
                     session: vm.session,
                     vm,
                     mode: previousMode,
-                    fullscreen: originalFullscreen,
-                    stationary: keepFocused
+                    fullscreen: originalFullscreen
                   }
                 : null;
-            // A focused surface stays focused. Only an explicit keyboard action
-            // returns to the grid; native auto layout can promote our own stream.
-            // Keep the first-click record so a double-click still enters fullscreen.
-            if (keepFocused) return;
+            // Same as native and the keyboard: a preview gains focus, and the
+            // focused stream returns to the grid.
             vm.$emit('enter-focus-mode', vm.session);
             // Commit destination geometry in the click turn, before Vue paints
             // the native layout, rather than correcting it a frame afterward.
             update(record, true);
           };
           const fullscreen = e => {
-            if (themeActive() && (node.closest('[inert]') || streamControl(e?.target))) return;
-            if (e?.type === 'dblclick' && hasPreviousMode && record.vm.item) record.vm.item.layoutMode = previousMode;
-            hasPreviousMode = false;
+            // The player's own fullscreen/exit buttons and menu item call this
+            // with their click event. Only a double-click on the video surface is
+            // a gesture to filter; a double-click on a control is not fullscreen.
+            if (e?.type === 'dblclick') {
+              if (themeActive() && (node.closest('[inert]') || streamControl(e.target))) return;
+              // Undo the immediate focus from this gesture's first click only.
+              if (record.vm.item && performance.now() - previousAt < 600) record.vm.item.layoutMode = previousMode;
+            }
+            previousAt = -Infinity;
             previousMode = undefined;
             return originalFullscreen.call(vm, e);
           };
@@ -776,8 +778,8 @@
       record.focusClick = null;
       if (
         !e.isTrusted ||
-        e.detail === 0 ||
-        (first?.stationary && e.detail < 2) ||
+        // Two separate single clicks are not a double-click, however close.
+        e.detail < 2 ||
         !nearby(first, e) ||
         !record.element.contains(e.target) ||
         !themeActive() ||
@@ -788,7 +790,7 @@
         first.node.closest('[inert]') ||
         record.vm.inDragTile ||
         record.vm.inDragStream ||
-        (!e.target.closest('.video-stream') && (first.stationary || !e.target.closest('.screen-grid-wrapper'))) ||
+        (!e.target.closest('.video-stream') && !e.target.closest('.screen-grid-wrapper')) ||
         streamControl(e.target)
       )
         return;
@@ -1324,19 +1326,31 @@
       }
     };
     vm.$on?.('hook:beforeDestroy', beforeDestroy);
-    if (nativeAudio && handoffs.has(session)) {
-      const gain = handoffs.get(session);
-      handoffs.delete(session);
-      if (session.status === 4 && session.volume === 1) {
+    // Apply a restored gain without touching mute state. Above 100%, standard
+    // audio tracks go through the same Web Audio path as the range input.
+    const setVolume = gain => {
+      if (dead) return;
+      if (nativeAudio) {
         session.volume = gain;
         percent = Math.round(gain * 100);
         vm.internalVolume = Math.min(percent, 100);
         vm.videoRef.volume = session.muted ? 0 : Math.min(1, gain);
+        paint();
+        return;
       }
+      input.value = String(Math.round(gain * 100));
+      void change();
+    };
+    if (handoffs.has(session)) {
+      const gain = handoffs.get(session);
+      handoffs.delete(session);
+      if (session.status === 4 && session.volume === 1) setVolume(gain);
     }
     paint();
     return {
       session,
+      gain: () => percent / 100,
+      setVolume,
       dispose() {
         dead = true;
         ++epoch;
@@ -1382,7 +1396,8 @@
       host = null,
       signature = '',
       control = null,
-      controlBefore = null;
+      controlBefore = null,
+      reservePane = null;
     const streamKeys = new WeakMap(),
       streamRows = new Map(),
       pending = new WeakSet();
@@ -1420,6 +1435,14 @@
         const pixels = `${value}px`;
         if (host.style.getPropertyValue(key) !== pixels) host.style.setProperty(key, pixels);
       }
+      // The card floats over the end of the channel tree. Let the tree scroll
+      // its last rows clear of it instead of hiding them underneath.
+      const reserve = pane === document.fullscreenElement ? null : pane;
+      if (reservePane && reservePane !== reserve) reservePane.style.removeProperty('--tsix-broadcast-reserve');
+      reservePane = reserve;
+      const pixels = `${Math.ceil(host.getBoundingClientRect().height) + 16}px`;
+      if (reserve && reserve.style.getPropertyValue('--tsix-broadcast-reserve') !== pixels)
+        reserve.style.setProperty('--tsix-broadcast-reserve', pixels);
     }
     function snapshot() {
       const sessions = outbound();
@@ -1534,6 +1557,8 @@
       streamRows.clear();
       host?.remove();
       host = null;
+      reservePane?.style.removeProperty('--tsix-broadcast-reserve');
+      reservePane = null;
       signature = '';
       releaseControl();
       if (before === null) root.removeAttribute('data-tsix-broadcast');
@@ -1873,7 +1898,7 @@
       root.append(host);
     }
     document.addEventListener('keydown', dismiss, true);
-    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('pointerdown', dismiss, true);
     return {
       sync(enabled) {
         const active =
@@ -1986,7 +2011,7 @@
         unwatch?.();
         clear();
         document.removeEventListener('keydown', dismiss, true);
-        document.removeEventListener('pointerdown', dismiss);
+        document.removeEventListener('pointerdown', dismiss, true);
       }
     };
   }
@@ -2024,12 +2049,19 @@
   window.__tsixStreams = {
     version: '1.0.12',
     sync,
-    volumeForSession: session => volumeHandoffs.get(session) ?? session.volume,
+    volumeForSession: session =>
+      volumeHandoffs.get(session) ??
+      [...volumes.values()].find(control => control.session === session)?.gain() ??
+      session.volume,
     restoreVolume(session, value) {
       if (disposed || !Number.isFinite(value) || value < 0 || value > 3) throw Error('Invalid stream volume');
-      if (value > 1 && ![...volumes.values()].some(control => control.session === session)) {
+      const control = [...volumes.values()].find(control => control.session === session);
+      if (value > 1 && control) {
+        volumeHandoffs.delete(session);
+        control.setVolume(value);
+      } else if (value > 1) {
         // Keep the first native HTML-media ref legal. createVolume applies the
-        // requested native gain once its capped ref adapter is attached.
+        // requested gain once its capped ref adapter or Web Audio path is ready.
         volumeHandoffs.set(session, value);
         session.volume = 1;
         schedule();

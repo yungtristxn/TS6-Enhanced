@@ -27,7 +27,8 @@ try{
  await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=false;const old=document.createElement('style');old.id='previous-theme';old.textContent='.tsv-screenshare[data-tsix-stream-tray="collapsed"] .screen-grid > :is(.screen-video-wrapper,.screen-tile-wrapper){width:100%;height:100%;transform:none}';document.head.insertBefore(old,document.getElementById('theme'))});
  const focusedBefore=await p.evaluate(()=>lab.focused.uniqueIdentifier);
  await player.click({position:{x:160,y:120}});
- assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier),focusedBefore,'A click on the collapsed focused surface must not reveal or focus the hidden own stream');
+ assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier??null),null,'A click on the collapsed focused surface returns to the grid and never focuses the hidden own stream');
+ await p.evaluate(()=>lab.focus(lab.vm.allSessions[0]));await settleLayout(p);
  const surface=await p.evaluate(()=>{
   const hero=lab.refs.a.getBoundingClientRect(),hidden=lab.refs.b.getBoundingClientRect();
   const hits=[.1,.5,.9].flatMap(x=>[.1,.5,.8].map(y=>document.elementFromPoint(hero.x+hero.width*x,hero.y+hero.height*y)?.closest('[data-tsix-tray-tile]')===lab.refs.a));
@@ -41,11 +42,12 @@ try{
  await p.evaluate(()=>document.exitFullscreen());await settleLayout(p);
  assert.equal(await p.evaluate(()=>lab.focused.uniqueIdentifier),focusedBefore);
  await toggle.click();await settleLayout(p);await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=true;document.getElementById('previous-theme').remove()});
- checks.push('Collapsed incoming focus survives single click, ignores hidden own-stream events and keeps double-click fullscreen on the watched stream');
+ checks.push('A click on collapsed focus returns to the grid without focusing hidden previews; stale preview events are ignored and double-click fullscreen stays on the watched stream');
  await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=false;lab.vm.allSessions[1].captureStatus=4;lab.focus(lab.vm.allSessions[1])});await settleLayout(p);
  const own=p.locator('.video-stream').nth(1);
  await own.click({position:{x:160,y:120}});
- assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier),'b','Clicking the focused own stream must not switch to automatic layout');
+ assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier??null),null,'Clicking the focused stream returns to the grid, like the native client and Enter');
+ await p.evaluate(()=>lab.focus(lab.vm.allSessions[1]));await settleLayout(p);
  // A control can appear under the pointer between clicks (for example on hover).
  await p.evaluate(()=>{const n=document.createElement('button');n.id='appearing-control';n.textContent='Pause';n.style.cssText='position:absolute;left:148px;top:108px;width:24px;height:24px;z-index:100';n.onclick=e=>{e.stopPropagation();window.controlClicks=(window.controlClicks||0)+1};lab.refs.b.querySelector('.video-stream').append(n)});
  const controlBox=await p.locator('#appearing-control').boundingBox();await p.mouse.move(controlBox.x+12,controlBox.y+12);await p.mouse.down({clickCount:2});await p.mouse.up({clickCount:2});
@@ -57,7 +59,15 @@ try{
  await p.evaluate(()=>document.exitFullscreen());await settleLayout(p);
  assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier),'b');
  await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=true;lab.focus(lab.vm.allSessions[0])});await settleLayout(p);
- checks.push('Own-stream focus stays stable with previews expanded; controls remain clickable and fullscreen returns to the same stream');
+ checks.push('A focused own stream returns to the grid on click; controls remain clickable and double-click fullscreen returns to the same focused stream');
+ // beta5's player fullscreen button calls toggleFullscreen with its own click event.
+ await p.evaluate(()=>{const n=lab.refs.a.querySelector('.video-stream'),b=document.createElement('div');b.className='tsv-button';b.id='native-fullscreen';b.setAttribute('aria-label','Fixture fullscreen');b.style.cssText='position:absolute;right:4px;bottom:4px;width:28px;height:28px;z-index:100;background:#345';b.addEventListener('click',e=>{e.stopPropagation();e.preventDefault();n.__vue__.toggleFullscreen(e)});n.append(b)});
+ await p.locator('#native-fullscreen').click();await p.waitForFunction(()=>!!document.fullscreenElement,{},{timeout:2000});
+ assert.ok(await p.evaluate(()=>document.fullscreenElement===lab.refs.a.querySelector('.video-stream')));
+ await p.evaluate(()=>document.exitFullscreen());await settleLayout(p);
+ assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier),'a','A fullscreen button must not change the focused stream');
+ await p.evaluate(()=>document.getElementById('native-fullscreen').remove());
+ checks.push('The player fullscreen button passes its click event through and enters fullscreen');
  for(const [id,fromFocus,delay]of [['a',false,0],['a',false,90],['b',true,90],['c',false,40]]){
   await p.evaluate(fromFocus=>lab.focus(fromFocus?lab.vm.allSessions[0]:null),fromFocus);await settleLayout(p);
   const target=p.locator('.video-stream').nth(['a','b','c'].indexOf(id));
@@ -67,6 +77,11 @@ try{
   await p.evaluate(()=>document.exitFullscreen());await settleLayout(p);
  }
  checks.push('Four double-click timings/targets enter the intended stream and preserve grid/focus return state');
+ await p.evaluate(()=>lab.focus(null));await settleLayout(p);
+ const spot=await p.locator('.video-stream').nth(2).boundingBox();
+ await p.mouse.click(spot.x+20,spot.y+15);await p.mouse.click(spot.x+20,spot.y+15);await settleLayout(p);
+ assert.equal(await p.evaluate(()=>!!document.fullscreenElement),false,'Two separate single clicks must not enter fullscreen');
+ checks.push('Two quick separate single clicks change focus but never enter fullscreen');
  await p.evaluate(()=>lab.focus(lab.vm.allSessions[0]));await toggle.waitFor();
  for(const [width,height]of [[1322,847],[900,650],[640,480],[360,540]]){
   await p.setViewportSize({width,height});await settleLayout(p);

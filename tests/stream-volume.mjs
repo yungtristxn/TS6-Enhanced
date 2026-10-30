@@ -74,6 +74,11 @@ try {
  await page.evaluate(()=>{const v=lab.refs.a.querySelector('video');v.srcObject=v.srcObject.clone();for(const w of lab.watchers){const n=w.get();if(n!==w.value){w.value=n;w.cb()}}});
  await page.waitForFunction(()=>audioGraphs.at(-1).context.state==='closed');assert.equal((await info()).percent,100);assert.equal((await info()).video,1);
  checks.push('returning below 100% and replacing media close the graph and restore native playback');
+ // Update session recovery reads and restores boosted gain through the helper API.
+ await page.evaluate(()=>window.__tsixStreams.restoreVolume(lab.refs.a.querySelector('.video-stream').__vue__.session,2));
+ await page.waitForFunction(()=>audioGraphs.at(-1)?.context.testGain.gain.value===2);assert.equal((await info()).percent,200);
+ assert.equal(await page.evaluate(()=>window.__tsixStreams.volumeForSession(lab.refs.a.querySelector('.video-stream').__vue__.session)),2);
+ checks.push('restoring a boosted Web Audio volume re-applies its gain and reports it for the next capture');
  await set(300);await set(25);await page.waitForFunction(()=>audioGraphs.at(-1).context.state==='closed');assert.equal((await info()).video,.25);
  await page.evaluate(()=>{const v=lab.refs.a.querySelector('video');for(const t of v.srcObject.getAudioTracks())v.srcObject.removeTrack(t)});
  await input.fill('300');await page.waitForFunction(()=>document.querySelector('[data-tsix-tray-tile="focused"] input[type="range"]').value==='100');

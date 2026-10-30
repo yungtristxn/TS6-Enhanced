@@ -5,7 +5,7 @@ import {createNativeManager} from '../tools/native-manager.mjs';
 import {createSessionJournal} from '../tools/session-state.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const snapshot=()=>({schema:1,build:1791901251,capturedAt:Date.now(),workflow:{restoreOpenedActivities:true,autoConnectSkipActivityCheck:1},defaults:{inputMuted:false,outputMuted:false},activeServer:'',captureServer:'',connections:[],drafts:[]});
-async function fixture({prepareFails=false,protectFails=false,restore=null,sameVersion=false,targetAlreadyInstalled=false,withdrawn=false,corruptInstaller=false,retainedDrafts=false,changedDuringWorker=false}={}){
+async function fixture({prepareFails=false,protectFails=false,restore=null,sameVersion=false,targetAlreadyInstalled=false,withdrawn=false,corruptInstaller=false,retainedDrafts=false,changedDuringWorker=false,cancelFails=false}={}){
  const base=resolve(import.meta.dirname,'../.local/session-update-tests');await mkdir(base,{recursive:true});const root=await mkdtemp(join(base,'flow-')),client=join(root,'client');
  await mkdir(join(client,'html/client_ui'),{recursive:true});const resource=Buffer.from('fixture resource'),resourceHashes={};
  for(const name of ['html/client_ui/main.js','html/client_ui/main.css']){await writeFile(join(client,name),resource);resourceHashes[name]=digest(resource)}
@@ -43,7 +43,8 @@ async function fixture({prepareFails=false,protectFails=false,restore=null,sameV
   if(value.session&&!seen.has(value.session.id)){
    const job=value.session;seen.add(job.id);jobs.push(job);events.push(job.stage);
    const result=job.stage==='capture'?snapshot():job.stage==='restore'?{preferencesRestored:true,draftsRestored:!retainedDrafts,recoveredDrafts:[],warnings:[]}:{ok:true};
-   await request('/session-result',{id:job.id,...((prepareFails||changedDuringWorker)&&job.stage==='prepare'?{error:'Session changed'}:{result})});
+   const failed=(prepareFails||changedDuringWorker)&&job.stage==='prepare'?'Session changed':cancelFails&&job.stage==='cancel'?'Close preference could not be restored':null;
+   await request('/session-result',{id:job.id,...(failed?{error:failed}:{result})});
   }
  });
  await new Promise((resolve,reject)=>{socket.once('open',resolve);socket.once('error',reject)});
@@ -102,6 +103,12 @@ test('failed preparation cancels the startup guard and never closes the client',
  }finally{await f.close()}
 });
 
+test('an armed session is cleared even when the renderer cannot cancel, so a normal relaunch never replays it',async()=>{
+ const f=await fixture({prepareFails:true,cancelFails:true});try{
+  await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('clear')&&f.states.at(-1)?.busy===false);
+  assert.deepEqual(f.events,['capture','save','worker-ready','prepare','cancel','clear']);
+ }finally{await f.close()}
+});
 test('final preparation happens after worker verification and refuses a newly changed session',async()=>{
  const f=await fixture({changedDuringWorker:true});try{
   await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('clear')&&f.states.at(-1)?.busy===false);

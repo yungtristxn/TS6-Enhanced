@@ -55,6 +55,10 @@ try{
  await page.evaluate(()=>app.checkAutoConnect());assert.deepEqual(await page.evaluate(()=>events),[]);
  await page.evaluate(()=>tsclient_internal.saveJsonBlob('another_blob',JSON.stringify({unrelated:true})));
  assert.deepEqual(await page.evaluate(()=>events),[{key:'another_blob',payload:'{"unrelated":true}'}]);
+ // An unreadable settings blob is the vendor's to handle; the guard passes it through unchanged.
+ assert.equal(await page.evaluate(()=>{const saved=disk,observers=listeners.get('jsonBlobSaved');listeners.delete('jsonBlobSaved');
+  try{tsclient_internal.saveJsonBlob('general_settings','null');return disk===null}catch(error){return error.message}finally{disk=saved;listeners.set('jsonBlobSaved',observers)}}),true);
+ checks.push('A non-object settings save reaches the vendor unchanged instead of throwing inside the guard');
  assert.deepEqual(await page.evaluate(()=>__tsixSessionGuard.release()),{restoreOpenedActivities:true,autoConnectSkipActivityCheck:2});
  assert.ok(await page.evaluate(()=>tsclient_internal.getJsonBlob===originalGet&&tsclient_internal.saveJsonBlob===originalSave&&tsclient_internal.on===originalOn));
  await page.evaluate(()=>tsclient_internal.saveJsonBlob('general_settings',JSON.stringify({workflow:{restoreOpenedActivities:true,autoConnectSkipActivityCheck:2}})));

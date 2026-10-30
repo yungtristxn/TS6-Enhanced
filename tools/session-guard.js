@@ -62,18 +62,24 @@
   };
   const write = (name, raw, ...args) => {
     if (name === 'general_settings' && active && originalWorkflow) {
-      const value = JSON.parse(raw),
-        workflow = value.workflow || {};
-      for (const [key, guard] of [
-        ['restoreOpenedActivities', false],
-        ['autoConnectSkipActivityCheck', 0]
-      ]) {
-        if (workflow[key] !== guard && workflow[key] !== undefined) originalWorkflow[key] = workflow[key];
-        if (Object.hasOwn(originalWorkflow, key)) workflow[key] = originalWorkflow[key];
-        else delete workflow[key];
+      // Never break the vendor's own save: an unreadable blob is not ours to fix.
+      let value = null;
+      try {
+        value = JSON.parse(raw);
+      } catch {}
+      if (value && typeof value === 'object') {
+        const workflow = value.workflow || {};
+        for (const [key, guard] of [
+          ['restoreOpenedActivities', false],
+          ['autoConnectSkipActivityCheck', 0]
+        ]) {
+          if (workflow[key] !== guard && workflow[key] !== undefined) originalWorkflow[key] = workflow[key];
+          if (Object.hasOwn(originalWorkflow, key)) workflow[key] = originalWorkflow[key];
+          else delete workflow[key];
+        }
+        value.workflow = workflow;
+        raw = JSON.stringify(value);
       }
-      value.workflow = workflow;
-      raw = JSON.stringify(value);
     }
     return originalSave.call(bridge, name, raw, ...args);
   };
