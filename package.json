@@ -11,10 +11,13 @@
     "test": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Core",
     "test:browser": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Browser",
     "test:native": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Native",
-    "test:installer": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Installer"
+    "test:installer": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Installer",
+    "format": "prettier --write tools",
+    "format:check": "prettier --check tools"
   },
   "devDependencies": {
-    "playwright": "1.60.0"
+    "playwright": "1.60.0",
+    "prettier": "3.9.10"
   },
   "dependencies": {
     "ws": "8.22.0"

@@ -2,9 +2,13 @@
 // Downloads and native actions remain in the authenticated local manager.
 (() => {
   window.__tsixManager?.dispose();
-  let root=document.querySelector('.tsv-window'),toolbar=null;if(!root)throw Error('No TeamSpeak main window');
-  const host=document.createElement('div');host.id='tsix-manager';
-  const style=document.createElement('style');style.textContent=`
+  let root = document.querySelector('.tsv-window'),
+    toolbar = null;
+  if (!root) throw Error('No TeamSpeak main window');
+  const host = document.createElement('div');
+  host.id = 'tsix-manager';
+  const style = document.createElement('style');
+  style.textContent = `
     #tsix-manager{font:400 14px/20px var(--tsv-font-family,"Segoe UI",sans-serif);color:var(--tsix-chrome-text,#edf2f7);--tsix-muted:var(--tsix-chrome-muted,#b6c5d8)}
     [data-tsix-manager-open]{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:0 0 32px;width:32px;height:32px;box-sizing:border-box;margin:0 0 0 8px;padding:4px;border:1px solid transparent;border-radius:var(--tsix-chrome-radius,4px);background:transparent;color:var(--tsix-chrome-muted,#b6c5d8);font:inherit;font-size:12px;cursor:pointer;-webkit-app-region:no-drag}
     [data-tsix-manager-open]:not(:has(svg)){width:auto;flex-basis:auto;padding:4px 8px}
@@ -47,68 +51,231 @@
     @media(max-width:420px){#tsix-manager dialog{padding:20px}}
     @media(forced-colors:active){#tsix-manager dialog,#tsix-manager [data-toast]{border-color:CanvasText}#tsix-manager button,[data-tsix-manager-open]{border:1px solid ButtonText}#tsix-manager [data-remove]{color:ButtonText}#tsix-manager button:disabled{opacity:1;color:GrayText;border-color:GrayText}#tsix-manager button:focus-visible,#tsix-manager summary:focus-visible,[data-tsix-manager-open]:focus-visible{outline-color:Highlight}#tsix-manager [data-status],#tsix-manager [data-version],#tsix-manager [data-consequence]{color:CanvasText}[data-tsix-manager-open][data-update]::after{background:Highlight}}
   `;
-  const make=(tag,attribute,text)=>{const node=document.createElement(tag);if(attribute)node.setAttribute(attribute,'');if(text)node.textContent=text;return node};
-  const action=(text,attribute)=>{const node=make('button',attribute,text);node.type='button';return node};
-  const button=action('TS6 Enhanced','data-tsix-manager-open');button.title='TS6 Enhanced';button.setAttribute('aria-label','TS6 Enhanced');button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls','tsix-manager-dialog');
-  const dialog=make('dialog');dialog.id='tsix-manager-dialog';dialog.setAttribute('aria-labelledby','tsix-manager-title');
-  const title=make('h2',null,'TS6 Enhanced');title.id='tsix-manager-title';
-  const version=make('span','data-version'),overview=make('div','data-overview'),status=make('p','data-status');status.id='tsix-manager-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');dialog.setAttribute('aria-describedby',status.id);
-  const updateActions=make('div','data-update-action'),check=action('Check for updates'),update=action('Update…','data-primary');updateActions.append(check,update);
-  const details=make('details'),summary=make('summary',null,'Details'),errorText=make('p');details.append(summary,errorText);details.hidden=true;
-  const footer=make('div','data-footer'),remove=action('Uninstall…','data-remove'),close=action('Close');footer.append(remove,close);
-  overview.append(status,updateActions,details,footer);
-  const confirm=make('div','data-confirm');confirm.hidden=true;const warning=make('p',null,'TeamSpeak will restart and end any calls or streams.'),consequence=make('p','data-consequence');
-  warning.id='tsix-manager-warning';consequence.id='tsix-manager-consequence';
-  const confirmActions=make('div','data-confirm-actions'),accept=action(''),cancel=action('Cancel');confirmActions.append(cancel,accept);confirm.append(warning,consequence,confirmActions);
-  const toast=make('div','data-toast');toast.setAttribute('role','status');toast.hidden=true;
-  const toastTitle=make('strong',null,'Update available'),message=make('p'),toastActions=make('div','data-toast-actions'),review=action('View update','data-primary'),dismiss=action('Later');toastActions.append(review,dismiss);toast.append(toastTitle,message,toastActions);
-  dialog.append(title,version,overview,confirm);host.append(style,dialog,toast);root.append(host);
-  let state={},nonce='',pending=null,notified='',initiator=null;
-  const send=action=>{if(typeof window.__tsixMaintenanceRequest==='function'&&nonce)window.__tsixMaintenanceRequest(JSON.stringify({action,nonce}))};
-  const reset=()=>{pending=null;confirm.hidden=true;overview.hidden=false;version.hidden=false;title.textContent='TS6 Enhanced';dialog.setAttribute('aria-describedby',status.id)};
-  const open=()=>{toast.hidden=true;reset();if(!dialog.open)dialog.showModal();button.setAttribute('aria-expanded','true');close.focus()};
-  const back=()=>{reset();initiator?.focus()};
-  button.onclick=open;review.onclick=open;dismiss.onclick=()=>toast.hidden=true;close.onclick=()=>dialog.close();
-  check.onclick=e=>{if(e.isTrusted&&!state.busy&&state.configured)send('check')};
-  const ask=action=>{
-    pending=action;initiator=action==='update'?update:remove;overview.hidden=true;version.hidden=true;confirm.hidden=false;
-    title.textContent=action==='update'?'Update TS6 Enhanced?':'Uninstall TS6 Enhanced?';
-    warning.textContent=action==='update'?'TeamSpeak will briefly disconnect and restart after the download is verified.':'TeamSpeak will restart and end any calls or streams.';
-    dialog.setAttribute('aria-describedby',`${warning.id} ${consequence.id}`);
-    consequence.textContent=action==='update'?'Reconnect to your servers and channels, restore mute state, and resume your shared streams. Watched streams may need to be rejoined.':'Restores your previous appearance. Your accounts and chats stay.';
-    accept.textContent=action==='update'?'Restart and update':'Uninstall';accept.toggleAttribute('data-primary',action==='update');accept.toggleAttribute('data-destructive',action==='uninstall');cancel.focus();
+  const make = (tag, attribute, text) => {
+    const node = document.createElement(tag);
+    if (attribute) node.setAttribute(attribute, '');
+    if (text) node.textContent = text;
+    return node;
   };
-  update.onclick=e=>{if(e.isTrusted&&!state.busy&&(state.available||state.pending))ask('update')};remove.onclick=e=>{if(e.isTrusted&&!state.busy)ask('uninstall')};cancel.onclick=back;
-  accept.onclick=e=>{if(e.isTrusted&&pending&&!state.busy){send(pending);reset();close.focus()}};
-  dialog.addEventListener('cancel',e=>{if(pending){e.preventDefault();back()}});
-  dialog.addEventListener('close',()=>{if(dialog.open)return;reset();button.setAttribute('aria-expanded','false');button.focus()});
-  const mount=()=>{
-    if(!root?.isConnected)root=document.querySelector('.tsv-window');if(!root)return;
-    if(host.parentElement!==root)root.append(host);
-    if(!toolbar?.isConnected||!root.contains(toolbar))toolbar=root.querySelector('.tsv-central-toolbar');if(toolbar&&button.parentElement!==toolbar)toolbar.append(button);
-    if(!button.querySelector('svg')){
-      const native=root.querySelector('svg[name="settings"],svg.tsv-icon-settings');
-      if(native){const icon=native.cloneNode(true);icon.setAttribute('aria-hidden','true');icon.setAttribute('focusable','false');button.replaceChildren(icon)}
+  const action = (text, attribute) => {
+    const node = make('button', attribute, text);
+    node.type = 'button';
+    return node;
+  };
+  const button = action('TS6 Enhanced', 'data-tsix-manager-open');
+  button.title = 'TS6 Enhanced';
+  button.setAttribute('aria-label', 'TS6 Enhanced');
+  button.setAttribute('aria-haspopup', 'dialog');
+  button.setAttribute('aria-expanded', 'false');
+  button.setAttribute('aria-controls', 'tsix-manager-dialog');
+  const dialog = make('dialog');
+  dialog.id = 'tsix-manager-dialog';
+  dialog.setAttribute('aria-labelledby', 'tsix-manager-title');
+  const title = make('h2', null, 'TS6 Enhanced');
+  title.id = 'tsix-manager-title';
+  const version = make('span', 'data-version'),
+    overview = make('div', 'data-overview'),
+    status = make('p', 'data-status');
+  status.id = 'tsix-manager-status';
+  status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', 'polite');
+  dialog.setAttribute('aria-describedby', status.id);
+  const updateActions = make('div', 'data-update-action'),
+    check = action('Check for updates'),
+    update = action('Update…', 'data-primary');
+  updateActions.append(check, update);
+  const details = make('details'),
+    summary = make('summary', null, 'Details'),
+    errorText = make('p');
+  details.append(summary, errorText);
+  details.hidden = true;
+  const footer = make('div', 'data-footer'),
+    remove = action('Uninstall…', 'data-remove'),
+    close = action('Close');
+  footer.append(remove, close);
+  overview.append(status, updateActions, details, footer);
+  const confirm = make('div', 'data-confirm');
+  confirm.hidden = true;
+  const warning = make('p', null, 'TeamSpeak will restart and end any calls or streams.'),
+    consequence = make('p', 'data-consequence');
+  warning.id = 'tsix-manager-warning';
+  consequence.id = 'tsix-manager-consequence';
+  const confirmActions = make('div', 'data-confirm-actions'),
+    accept = action(''),
+    cancel = action('Cancel');
+  confirmActions.append(cancel, accept);
+  confirm.append(warning, consequence, confirmActions);
+  const toast = make('div', 'data-toast');
+  toast.setAttribute('role', 'status');
+  toast.hidden = true;
+  const toastTitle = make('strong', null, 'Update available'),
+    message = make('p'),
+    toastActions = make('div', 'data-toast-actions'),
+    review = action('View update', 'data-primary'),
+    dismiss = action('Later');
+  toastActions.append(review, dismiss);
+  toast.append(toastTitle, message, toastActions);
+  dialog.append(title, version, overview, confirm);
+  host.append(style, dialog, toast);
+  root.append(host);
+  let state = {},
+    nonce = '',
+    pending = null,
+    notified = '',
+    initiator = null;
+  const send = action => {
+    if (typeof window.__tsixMaintenanceRequest === 'function' && nonce)
+      window.__tsixMaintenanceRequest(JSON.stringify({ action, nonce }));
+  };
+  const reset = () => {
+    pending = null;
+    confirm.hidden = true;
+    overview.hidden = false;
+    version.hidden = false;
+    title.textContent = 'TS6 Enhanced';
+    dialog.setAttribute('aria-describedby', status.id);
+  };
+  const open = () => {
+    toast.hidden = true;
+    reset();
+    if (!dialog.open) dialog.showModal();
+    button.setAttribute('aria-expanded', 'true');
+    close.focus();
+  };
+  const back = () => {
+    reset();
+    initiator?.focus();
+  };
+  button.onclick = open;
+  review.onclick = open;
+  dismiss.onclick = () => (toast.hidden = true);
+  close.onclick = () => dialog.close();
+  check.onclick = e => {
+    if (e.isTrusted && !state.busy && state.configured) send('check');
+  };
+  const ask = action => {
+    pending = action;
+    initiator = action === 'update' ? update : remove;
+    overview.hidden = true;
+    version.hidden = true;
+    confirm.hidden = false;
+    title.textContent = action === 'update' ? 'Update TS6 Enhanced?' : 'Uninstall TS6 Enhanced?';
+    warning.textContent =
+      action === 'update'
+        ? 'TeamSpeak will briefly disconnect and restart after the download is verified.'
+        : 'TeamSpeak will restart and end any calls or streams.';
+    dialog.setAttribute('aria-describedby', `${warning.id} ${consequence.id}`);
+    consequence.textContent =
+      action === 'update'
+        ? 'Reconnect to your servers and channels, restore mute state, and resume your shared streams. Watched streams may need to be rejoined.'
+        : 'Restores your previous appearance. Your accounts and chats stay.';
+    accept.textContent = action === 'update' ? 'Restart and update' : 'Uninstall';
+    accept.toggleAttribute('data-primary', action === 'update');
+    accept.toggleAttribute('data-destructive', action === 'uninstall');
+    cancel.focus();
+  };
+  update.onclick = e => {
+    if (e.isTrusted && !state.busy && (state.available || state.pending)) ask('update');
+  };
+  remove.onclick = e => {
+    if (e.isTrusted && !state.busy) ask('uninstall');
+  };
+  cancel.onclick = back;
+  accept.onclick = e => {
+    if (e.isTrusted && pending && !state.busy) {
+      send(pending);
+      reset();
+      close.focus();
+    }
+  };
+  dialog.addEventListener('cancel', e => {
+    if (pending) {
+      e.preventDefault();
+      back();
+    }
+  });
+  dialog.addEventListener('close', () => {
+    if (dialog.open) return;
+    reset();
+    button.setAttribute('aria-expanded', 'false');
+    button.focus();
+  });
+  const mount = () => {
+    if (!root?.isConnected) root = document.querySelector('.tsv-window');
+    if (!root) return;
+    if (host.parentElement !== root) root.append(host);
+    if (!toolbar?.isConnected || !root.contains(toolbar)) toolbar = root.querySelector('.tsv-central-toolbar');
+    if (toolbar && button.parentElement !== toolbar) toolbar.append(button);
+    if (!button.querySelector('svg')) {
+      const native = root.querySelector('svg[name="settings"],svg.tsv-icon-settings');
+      if (native) {
+        const icon = native.cloneNode(true);
+        icon.setAttribute('aria-hidden', 'true');
+        icon.setAttribute('focusable', 'false');
+        button.replaceChildren(icon);
+      }
     }
     // Detaching an open dialog removes it from the modal top layer but retains
     // its open attribute. Restore the backdrop and focus containment after a
     // native remount; the queued close event must not reset this reopened view.
-    if(dialog.open&&!dialog.matches(':modal')){dialog.close();dialog.showModal();(pending?cancel:close).focus()}
+    if (dialog.open && !dialog.matches(':modal')) {
+      dialog.close();
+      dialog.showModal();
+      (pending ? cancel : close).focus();
+    }
   };
-  const observer=new MutationObserver(mount);observer.observe(document.body,{childList:true,subtree:true});mount();
-  window.__tsixManager={setState(next,token){
-    // Polls may refresh transport metadata without changing anything visible.
-    // Avoid rewriting live status text or waking our own mount observer then.
-    if(['version','configured','busy','available','pending','detail','message'].every(key=>next[key]===state[key])){state=next;nonce=token;return}
-    if(pending==='update'&&next.available!==state.available){reset();close.focus()}
-    state=next;nonce=token;version.textContent=`v${state.version}`;status.textContent=state.message;
-    check.hidden=!state.configured||!!state.available;check.disabled=!!state.busy;remove.disabled=!!state.busy;
-    const canUpdate=state.available||state.pending;
-    update.textContent=state.available?'Update…':'Restart and update…';update.disabled=!!state.busy||!canUpdate;update.hidden=!canUpdate;updateActions.hidden=check.hidden&&update.hidden;accept.disabled=!!state.busy;
-    details.hidden=!state.detail;errorText.textContent=state.detail||'';if(!state.detail)details.open=false;
-    button.toggleAttribute('data-update',!!state.available);button.title=state.available?'TS6 Enhanced — update available':'TS6 Enhanced';button.setAttribute('aria-label',button.title);
-    if(!state.available)toast.hidden=true;
-    if(state.available&&state.available!==notified){notified=state.available;message.textContent=`TS6 Enhanced ${state.available}`;toast.hidden=dialog.open}
-  },dispose(){observer.disconnect();button.remove();host.remove();delete window.__tsixManager}};
-  return {attached:true};
-})()
+  const observer = new MutationObserver(mount);
+  observer.observe(document.body, { childList: true, subtree: true });
+  mount();
+  window.__tsixManager = {
+    setState(next, token) {
+      // Polls may refresh transport metadata without changing anything visible.
+      // Avoid rewriting live status text or waking our own mount observer then.
+      if (
+        ['version', 'configured', 'busy', 'available', 'pending', 'detail', 'message'].every(
+          key => next[key] === state[key]
+        )
+      ) {
+        state = next;
+        nonce = token;
+        return;
+      }
+      if (pending === 'update' && next.available !== state.available) {
+        reset();
+        close.focus();
+      }
+      state = next;
+      nonce = token;
+      version.textContent = `v${state.version}`;
+      status.textContent = state.message;
+      check.hidden = !state.configured || !!state.available;
+      check.disabled = !!state.busy;
+      remove.disabled = !!state.busy;
+      const canUpdate = state.available || state.pending;
+      update.textContent = state.available ? 'Update…' : 'Restart and update…';
+      update.disabled = !!state.busy || !canUpdate;
+      update.hidden = !canUpdate;
+      updateActions.hidden = check.hidden && update.hidden;
+      accept.disabled = !!state.busy;
+      details.hidden = !state.detail;
+      errorText.textContent = state.detail || '';
+      if (!state.detail) details.open = false;
+      button.toggleAttribute('data-update', !!state.available);
+      button.title = state.available ? 'TS6 Enhanced — update available' : 'TS6 Enhanced';
+      button.setAttribute('aria-label', button.title);
+      if (!state.available) toast.hidden = true;
+      if (state.available && state.available !== notified) {
+        notified = state.available;
+        message.textContent = `TS6 Enhanced ${state.available}`;
+        toast.hidden = dialog.open;
+      }
+    },
+    dispose() {
+      observer.disconnect();
+      button.remove();
+      host.remove();
+      delete window.__tsixManager;
+    }
+  };
+  return { attached: true };
+})();
