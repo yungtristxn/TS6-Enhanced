@@ -1,5 +1,5 @@
 // Bundled into the DLL inside a closure with connection, release, css and
-// attachWorkspace/attachStreams/attachManager. Never opens a debugging port.
+// attachFeatures/attachWorkspace/attachChat/attachStreams/attachManager. Never opens a debugging port.
 async function startNativeEnhanced() {
   if (
     window !== window.top ||
@@ -145,7 +145,10 @@ async function startNativeEnhanced() {
   state.cssDelivery = earlyCurrent ? 'resource' : 'javascript';
   // Runtime-owned styles leave native Appearance settings untouched. Removing
   // the DLL removes these styles on next startup, including after a failed host.
+  // Feature switches load first; every helper reads them while attaching.
+  if (!window.__tsixFeatures) attachFeatures();
   if (!window.__tsixWorkspace) attachWorkspace();
+  if (!window.__tsixChat) attachChat();
   if (!window.__tsixStreams) attachStreams();
   attachManager();
   if (release.updates?.sessionRestore === 1 && typeof attachSession === 'function') attachSession();

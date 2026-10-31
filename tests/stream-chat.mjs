@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {streamsRuntime} from '../tools/streams/bundle.mjs';
 import {createServer} from 'node:http';
 import {readFile,mkdir} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
@@ -6,8 +7,8 @@ import {settleLayout} from './browser-settle.mjs';
 import {clientPath} from './client-path.mjs';
 const chatIcon=(await readFile(`${clientPath}/html/client_ui/images/icons/chat.svg`,'utf8')).replace('<svg','<svg name="mode-chat"');
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href:'playwright');
-const routes=new Map([['/',new URL('./stream-tray.html',import.meta.url)],['/layout.css',new URL('../theme/layout.css',import.meta.url)],['/streams-runtime.js',new URL('../tools/streams-runtime.js',import.meta.url)]]);
-const server=createServer(async(req,res)=>{const path=new URL(req.url,'http://localhost').pathname,file=routes.get(path);if(!file){res.writeHead(404).end();return}res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html');let content=await readFile(file);if(path==='/')content=content.toString().replace('<main class="tsv-screenshare">',`<div hidden>${chatIcon}</div><main class="tsv-screenshare">`);res.end(content)});
+const routes=new Map([['/',new URL('./stream-tray.html',import.meta.url)],['/layout.css',new URL('../theme/layout.css',import.meta.url)],['/streams-runtime.js',streamsRuntime]]);
+const server=createServer(async(req,res)=>{const path=new URL(req.url,'http://localhost').pathname,file=routes.get(path);if(!file){res.writeHead(404).end();return}res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html');let content=typeof file==='function'?await file():await readFile(file);if(path==='/')content=content.toString().replace('<main class="tsv-screenshare">',`<div hidden>${chatIcon}</div><main class="tsv-screenshare">`);res.end(content)});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await chromium.launch({headless:true,...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
 const errors=[],checks=[];
@@ -76,7 +77,7 @@ try{
   __tsixStreams.dispose();
  });
  assert.equal(await page.locator('[data-tsix-empty-stream-row],[data-tsix-source-actions]').count(),0);
- await page.evaluate(await readFile(routes.get('/streams-runtime.js'),'utf8'));await empty.waitFor();
+ await page.evaluate(await streamsRuntime());await empty.waitFor();
  await page.evaluate(()=>{
   const wrapper=document.querySelector('.screen-grid-wrapper');wrapper.querySelector('#hidden-message').remove();wrapper.classList.remove('is-empty');wrapper.append(lab.hiddenGrid);
   lab.hiddenStream.hidden=false;lab.vm.allSessions=lab.visibleSessions;lab.vm.doUpdateGrid();__tsixStreams.sync();

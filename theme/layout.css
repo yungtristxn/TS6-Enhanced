@@ -1,10 +1,11 @@
 /* TS6 beta5 / 1791901251. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 2.2.1;
+  --tsix-layout-version: 2.3.0;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
+  --tsix-chat-api: 1;
   --tsix-unit: 15px;
   --tsix-classic-row: 32px;
   --tsix-classic-detail-row: 44px;
@@ -75,6 +76,23 @@
   .ts-chat-message-system-body.compact { flex-wrap: wrap; row-gap: 2px; }
   .ts-chat-message-system-body.compact .ts-chat-message-system-body-contents { flex: 1 1 100%; }
   .ts-chat-message-system-body.compact .ts-chat-message-system-time { margin-left: 0; }
+}
+/* Slim system lines (joins, leaves, kicks, pokes): no card, and the time
+ * follows the text instead of the far edge. Feature: chatCompactEvents. */
+:root:not([data-tsix-off~="chatCompactEvents"]) .ts-chat-container .ts-chat-message-system-body.compact { background: none; width: auto; max-width: 100%; align-items: center; margin-top: 0; margin-bottom: 0; }
+:root:not([data-tsix-off~="chatCompactEvents"]) .ts-chat-container .ts-chat-message-system-body.compact .ts-chat-message-system-body-contents { flex: 0 1 auto; margin-top: 1px; margin-bottom: 1px; color: var(--tsix-text-secondary, var(--ts-chat-system-message-text-color)); }
+:root:not([data-tsix-off~="chatCompactEvents"]) .ts-chat-container .ts-chat-message-system-body.compact > .ts-chat-message-system-time { margin: 0 0 0 8px; align-self: center; font-size: var(--tsix-type-caption); line-height: 16px; opacity: .75; }
+/* Readable line length in wide windows. Rows only: the stream stage above a
+ * channel chat keeps the full pane width. Feature: chatWidth. */
+:root:not([data-tsix-off~="chatWidth"]) .ts-chat-container :is(.ts-chat-room-event-detailed, .ts-chat-room-event-compact) { max-width: calc(var(--tsix-unit) * 64); }
+/* Folded run of join/leave events (chat helper). */
+[data-tsix-chat-run] { flex: 0 0 auto; align-self: center; box-sizing: border-box; height: 18px; margin: 0 0 0 8px; padding: 0 7px; border: 1px solid var(--tsix-control-border); border-radius: 9px; background: var(--tsix-control-bg); color: var(--tsix-chrome-muted); font: inherit; font-size: var(--tsix-type-caption); line-height: 16px; white-space: nowrap; cursor: pointer; }
+[data-tsix-chat-run]:hover { background: var(--tsix-control-hover); color: var(--tsix-chrome-text); }
+[data-tsix-chat-run]:active { background: var(--tsix-control-pressed); }
+[data-tsix-chat-run]:focus-visible { outline: 2px solid var(--tsix-chrome-accent); outline-offset: 1px; }
+@media (forced-colors: active) {
+  [data-tsix-chat-run] { border-color: ButtonText; color: ButtonText; }
+  [data-tsix-chat-run]:focus-visible { outline-color: Highlight; }
 }
 
 /* Outbound state stays in the middle column above Start Stream, without
@@ -656,6 +674,14 @@
 .main-pane-layout .tsv-server-tree-icon { --tsv-icon-size: 22px; }
 .main-pane-layout .ts-server-tree-item-leaf .tsv-item-highlight { border-radius: 3px; }
 .main-pane-layout .ts-server-tree-item-leaf.tsv-active .tsv-item-highlight { background: var(--tsix-control-hover); box-shadow: inset 3px 0 var(--tsix-chrome-accent); border-radius: 3px; }
+/* One right-hand edge per row: expanders, tag spacing and client badges end
+ * together, and a channel tag keeps the same column with or without
+ * subchannels (natively the spacing slot is narrower than the expander). */
+.main-pane-layout .ts-server-tree-item-node :is(.ts-expander,.ts-expander-spacing,.ts-tag-spacing) { flex: 0 0 auto; box-sizing: border-box; width: var(--tsix-tree-accessory, 22px); min-width: var(--tsix-tree-accessory, 22px); margin: 0; padding: 0; }
+.main-pane-layout .ts-server-tree-item-node .ts-expander > .ts-expander-chevron { right: 0; }
+.main-pane-layout .ts-server-tree-item-node .ts-server-tree-item-tag { margin: 0 4px 0 0; }
+.main-pane-layout .ts-server-tree-item-leaf .ts-server-tree-client-info { margin-right: 0; }
+.main-pane-layout .ts-server-tree-item-has-banner .tsv-item-accessory::before { right: 0; }
 
 /* Shared chrome; native media layout and status colors stay owned by TS. */
 .tsv-window { background: var(--tsix-chrome-bg); }

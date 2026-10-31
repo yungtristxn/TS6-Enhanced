@@ -1,5 +1,6 @@
 // Exact installed Vue/virtual-list regression. Messages are synthetic and local.
 import assert from 'node:assert/strict';
+import {streamsRuntime} from '../tools/streams/bundle.mjs';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
@@ -11,8 +12,8 @@ assert.equal(createHash('sha256').update(bundle).digest('hex').toUpperCase(),rel
 const module=id=>{const signature=`${id}:(e,t,n)=>{`,start=bundle.indexOf(signature)+signature.length;assert.ok(start>=signature.length);const end=/},\d+:\(e,t,n\)=>\{/.exec(bundle.slice(start));assert.ok(end);return bundle.slice(start,start+end.index)};
 const css=await readFile(`${client}/html/client_ui/main.css`,'utf8');
 const listCSS=[...css.matchAll(/[^{}]*(?:\.vl-|\.tsv-virtual-list)[^{}]*\{[^{}]*\}/g)].map(m=>m[0]).join('\n');
-const source=await readFile(new URL('../tools/streams-runtime.js',import.meta.url),'utf8');
-const helpers=source.slice(source.indexOf('  function deferChatLayout('),source.indexOf('  function syncChatLayout('));
+const source=await streamsRuntime();
+const helpers=source.slice(source.indexOf('function deferChatLayout('),source.indexOf('function syncChatLayout('));
 const browser=await chromium.launch({headless:true,...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
 const checks=[],errors=[];
 try {

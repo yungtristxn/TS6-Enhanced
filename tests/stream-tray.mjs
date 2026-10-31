@@ -1,6 +1,7 @@
 // Browser regression test; Playwright is a development-only dependency.
 // Set TSIX_PLAYWRIGHT_MODULE to reuse an existing installation's index.mjs.
 import assert from 'node:assert/strict';
+import {streamsRuntime} from '../tools/streams/bundle.mjs';
 import {createServer} from 'node:http';
 import {readFile, mkdir} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
@@ -9,12 +10,12 @@ const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE ? pathToFileURL
 const routes=new Map([
  ['/',new URL('./stream-tray.html',import.meta.url)],
  ['/layout.css',new URL('../theme/layout.css',import.meta.url)],
- ['/streams-runtime.js',new URL('../tools/streams-runtime.js',import.meta.url)]
+ ['/streams-runtime.js',streamsRuntime]
 ]);
 const server=createServer(async(req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname, file=routes.get(path);
  if(!file){res.writeHead(404).end();return;}
- try {res.setHeader('Content-Type',path.endsWith('.css')?'text/css':path.endsWith('.js')?'text/javascript':'text/html');res.end(await readFile(file));}
+ try {res.setHeader('Content-Type',path.endsWith('.css')?'text/css':path.endsWith('.js')?'text/javascript':'text/html');res.end(typeof file==='function'?await file():await readFile(file));}
  catch {res.writeHead(500).end();}
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -87,7 +88,7 @@ try {
   await page.evaluate(()=>lab.focus(null));await toggle.waitFor({state:'detached'});
   assert.equal(await page.locator('[inert]:not(.ts-chat-container)').count(),0);
   await page.evaluate(()=>lab.focus(lab.vm.allSessions[0]));await toggle.waitFor();assert.equal((await state()).tray,'collapsed');
-  await page.evaluate(await readFile(routes.get('/streams-runtime.js'),'utf8'));
+  await page.evaluate(await streamsRuntime());
   assert.equal((await state()).tray,'collapsed');
   await toggle.click();
   await page.evaluate(()=>lab.focus(null));await toggle.waitFor({state:'detached'});
@@ -131,7 +132,7 @@ try {
   await page.evaluate(()=>lab.remove('c'));await page.waitForFunction(()=>lab.vm.layoutStreams.length===2);
   assert.equal((await state()).tray,'collapsed');
   await page.evaluate(()=>lab.remove('a'));await toggle.waitFor({state:'detached'});assert.equal(await page.locator('[inert]:not(.ts-chat-container)').count(),0);
-  const runtime=await readFile(routes.get('/streams-runtime.js'),'utf8');
+  const runtime=await streamsRuntime();
   await page.evaluate(runtime);await page.evaluate(runtime);assert.equal((await state()).watchers,1);
   await page.evaluate(()=>document.querySelector('main').remove());
   await page.waitForFunction(()=>lab.watchers.size===0);
@@ -205,14 +206,14 @@ try {
  });
  await check('Showing chat preserves draft and media and persists across reattachment',async()=>{
   await page.getByRole('button',{name:'Show chat',exact:true}).click();assert.ok(await page.locator('.ts-chat-container').isVisible());assert.equal((await state()).draft,'Draft is preserved');assert.ok((await state()).identity);
-  await page.evaluate(await readFile(routes.get('/streams-runtime.js'),'utf8'));assert.ok(await page.getByRole('button',{name:'Hide chat',exact:true}).isVisible());assert.ok((await state()).split<1);
+  await page.evaluate(await streamsRuntime());assert.ok(await page.getByRole('button',{name:'Hide chat',exact:true}).isVisible());assert.ok((await state()).split<1);
  });
  await check('restricted storage degrades to an in-memory preference',async()=>{
   await page.addInitScript(()=>{Storage.prototype.getItem=()=>{throw new Error('Storage unavailable')};Storage.prototype.setItem=()=>{throw new Error('Storage unavailable')}});
   await page.reload();await toggle.waitFor();assert.equal((await state()).tray,'expanded');
   await toggle.click();await page.evaluate(()=>lab.focus(null));await toggle.waitFor({state:'detached'});
   await page.evaluate(()=>lab.focus(lab.vm.allSessions[0]));await toggle.waitFor();assert.equal((await state()).tray,'collapsed');
-  await page.evaluate(await readFile(routes.get('/streams-runtime.js'),'utf8'));assert.equal((await state()).tray,'collapsed');
+  await page.evaluate(await streamsRuntime());assert.equal((await state()).tray,'collapsed');
  });
  assert.deepEqual(errors,[],'No browser console warnings or errors');
  console.log(JSON.stringify({result:'PASS',url,checks,consoleErrors:errors,scope:'Synthetic browser geometry and lifecycle; no live TS6 playback certification'},null,2));

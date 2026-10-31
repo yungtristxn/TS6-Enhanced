@@ -13,7 +13,8 @@
     "test:native": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Native",
     "test:installer": "pwsh -NoProfile -File scripts/Test-Project.ps1 -Suite Installer",
     "format": "prettier --write tools",
-    "format:check": "prettier --check tools"
+    "format:check": "prettier --check tools",
+    "release": "pwsh -NoProfile -File scripts/Publish-Release.ps1"
   },
   "devDependencies": {
     "playwright": "1.60.0",

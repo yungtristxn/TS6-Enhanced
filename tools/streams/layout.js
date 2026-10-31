@@ -1,0 +1,354 @@
+// Stage, tray and chat-rail layout for the native stream grid.
+// Read the supported beta5 tile model without replacing native sessions.
+function layoutState(vm) {
+  if (
+    !Array.isArray(vm.flatTiles) ||
+    !Array.isArray(vm.sortableStreamsContainer?.sortedStreams) ||
+    typeof vm.refForTile !== 'function' ||
+    typeof vm.isFocused !== 'function' ||
+    typeof vm.isStreamVisible !== 'function'
+  )
+    return null;
+  const video = vm.flatTiles.filter(t => t.tile.payload.kind === 'video');
+  return {
+    sessions: vm.sortableStreamsContainer.sortedStreams.filter(
+      s => typeof s.isInbound === 'boolean' && vm.isStreamVisible(s)
+    ),
+    viewers: vm.flatTiles.filter(t => t.tile.payload.kind !== 'video' || t.pip),
+    tiles: video.map(t => {
+      const node = vm.refForTile(t.tile),
+        session = t.tile.payload.session;
+      return {
+        id: t.tile.id,
+        session,
+        active: playerActive(node, session),
+        focused: vm.isFocused(t.tile),
+        x: t.x,
+        w: t.w,
+        y: t.y,
+        h: t.h,
+        node
+      };
+    }),
+    drag: !!vm.inDragTile
+  };
+}
+function schedule() {
+  if (queued || disposed) return;
+  queued = true;
+  // Vue/native ResizeObservers may publish new geometry during delivery.
+  // Reconcile on the next frame rather than writing layout in that cycle.
+  frame = requestAnimationFrame(() => {
+    frame = 0;
+    queued = false;
+    if (!disposed) sync();
+  });
+}
+function restoreTiles(record) {
+  for (const [node, before] of record.tiles) {
+    for (const [key, value] of Object.entries(before)) {
+      if (value === null) node.removeAttribute(key);
+      else node.setAttribute(key, value);
+    }
+  }
+  record.tiles.clear();
+}
+function clearTray(record) {
+  restoreTiles(record);
+  record.toggle?.remove();
+  record.toggle = null;
+  record.element.removeAttribute(trayMarker);
+}
+function updateTray(record, active, state = layoutState(record.vm)) {
+  const { element, vm } = record;
+  const focused = state?.tiles.find(tile => tile.focused);
+  // Layout refs are keyed by native session identifiers. Never reorder tiles
+  // or change the session list: hiding a preview must not leave its stream.
+  const hero = focused?.node;
+  const wrapper = hero?.parentElement?.closest('.screen-grid-wrapper');
+  const canToggle =
+    active && state.sessions.length > 1 && !state.viewers.length && focused?.active && wrapper && !state.drag;
+  const collapsed = trayCollapsed;
+  const retainedToggle = record.toggle;
+  if (!canToggle || document.fullscreenElement) {
+    clearTray(record);
+    syncChatRail(record, active);
+    return;
+  }
+  const nodes = new Set(state.tiles.map(t => t.node));
+  for (const [node, before] of record.tiles)
+    if (!nodes.has(node)) {
+      for (const [key, value] of Object.entries(before)) setAttr(node, key, value);
+      record.tiles.delete(node);
+    }
+  for (const tile of state.tiles) {
+    const node = tile.node;
+    if (!node) continue;
+    if (!record.tiles.has(node))
+      record.tiles.set(
+        node,
+        Object.fromEntries(['data-tsix-tray-tile', 'inert'].map(key => [key, node.getAttribute(key)]))
+      );
+    setAttr(node, 'data-tsix-tray-tile', node === hero ? 'focused' : 'preview');
+    setAttr(node, 'inert', collapsed && node !== hero ? '' : record.tiles.get(node).inert);
+  }
+  if (!retainedToggle?.isConnected) {
+    record.toggle = document.createElement('button');
+    record.toggle.type = 'button';
+    record.toggle.setAttribute('data-tsix-tray-toggle', '');
+    // Native button semantics provide Enter/Space activation automatically.
+    record.toggle.addEventListener('mousedown', event => event.stopPropagation());
+    record.toggle.addEventListener('click', event => {
+      event.stopPropagation();
+      trayCollapsed = !trayCollapsed;
+      try {
+        localStorage.setItem(preferenceKey, String(trayCollapsed));
+      } catch {
+        /* Toggling still works for this renderer session. */
+      }
+      sync();
+    });
+    wrapper.parentElement.querySelector('.screenshare__global-hover-actions-wrapper:last-child')?.append(record.toggle);
+  }
+  const label = collapsed ? 'Show other streams' : 'Hide other streams';
+  setAttr(record.toggle, 'aria-label', label);
+  setAttr(record.toggle, 'title', label);
+  setAttr(record.toggle, 'aria-expanded', !collapsed);
+  const host = wrapper.parentElement.querySelector('.screenshare__global-hover-actions-wrapper:last-child');
+  if (!host) {
+    clearTray(record);
+    syncChatRail(record, active);
+    return;
+  }
+  if (record.toggle.parentElement !== host) host.append(record.toggle);
+  const previews = state.tiles.filter(t => t !== focused);
+  const side = previews.some(t => t.x >= focused.x + focused.w - 2);
+  setAttr(record.toggle, 'data-tsix-tray-axis', side ? 'horizontal' : 'vertical');
+  const height = vm.gridHeight ?? vm.maximumVideoHeight;
+  const center =
+    collapsed || !previews.length
+      ? height / 2
+      : (Math.min(...previews.map(t => t.y)) + Math.max(...previews.map(t => t.y + t.h))) / 2;
+  const offset = `${Math.round((center / Math.max(1, height)) * 10000) / 100}%`;
+  if (record.toggle.style.getPropertyValue('--tsix-tray-position') !== offset)
+    record.toggle.style.setProperty('--tsix-tray-position', offset);
+  setAttr(element, trayMarker, collapsed ? 'collapsed' : 'expanded');
+  syncChatRail(record, active);
+}
+function clearChatRail(record) {
+  record.chatResize?.disconnect();
+  record.chatResize = null;
+  if (record.chatHost) {
+    if (record.chatHostBefore === null) record.chatHost.removeAttribute('data-tsix-chat-host');
+    else record.chatHost.setAttribute('data-tsix-chat-host', record.chatHostBefore);
+    record.chatHost = null;
+  }
+}
+function syncChatRail(record, enabled) {
+  const bar = record.chatToolbar;
+  if (!bar) return;
+  const button = bar.firstChild,
+    row = record.element.querySelector('.screen-grid-wrapper')?.parentElement;
+  const host =
+    enabled && !document.fullscreenElement
+      ? row?.querySelector(':scope > .screenshare__global-hover-actions-wrapper:last-child')
+      : null;
+  const native = document.querySelector('svg[name="mode-chat"]');
+  if (!host || (!record.chatIcon && !native)) {
+    clearChatRail(record);
+    bar.removeAttribute('data-tsix-chat-rail');
+    const label = button.getAttribute('aria-label');
+    if (button.textContent !== label) button.textContent = label;
+    if (bar.parentElement !== record.element)
+      record.element.insertBefore(bar, record.element.querySelector(':scope > .tsv-body'));
+    return;
+  }
+  if (record.chatHost !== host) {
+    clearChatRail(record);
+    record.chatHost = host;
+    record.chatHostBefore = host.getAttribute('data-tsix-chat-host');
+    host.setAttribute('data-tsix-chat-host', '');
+    record.chatResize = new ResizeObserver(schedule);
+    record.chatResize.observe(host);
+  }
+  if (!record.chatIcon) {
+    record.chatIcon = cloneIcon(native);
+    record.chatIcon.setAttribute('data-tsix-chat-icon', '');
+  }
+  if (button.firstChild !== record.chatIcon) button.replaceChildren(record.chatIcon);
+  if (bar.parentElement !== host) host.append(bar);
+  if (!bar.hasAttribute('data-tsix-chat-rail')) bar.setAttribute('data-tsix-chat-rail', '');
+  const toggle = record.toggle,
+    r = host.getBoundingClientRect();
+  const y = toggle?.isConnected ? toggle.getBoundingClientRect().bottom - r.top + 8 : r.height / 2 - 14;
+  const top = Math.round(Math.max(4, Math.min(y, r.height - 32))) + 'px';
+  if (bar.style.getPropertyValue('--tsix-chat-top') !== top) bar.style.setProperty('--tsix-chat-top', top);
+}
+function update(record, enabled) {
+  const { element, vm } = record;
+  syncChatLayout(record, enabled);
+  const state = layoutState(vm);
+  const active =
+    enabled &&
+    state?.sessions.length > 0 &&
+    vm.showStreams &&
+    vm.screenshareViewingSupported &&
+    !vm.isGridOpenedInPopup &&
+    !vm.isPopout;
+  const chat = element.querySelector('.ts-chat-container');
+  const hasChat = !!chat;
+  const playing = state?.tiles.some(tile => tile.active);
+  const previewOnly = active && !playing && state.viewers.length === 0;
+  // beta5 inserts a portal and display:contents context between fullArea
+  // and the row. Mark the actual region rather than assuming beta4's DOM.
+  if (active) {
+    const grid = element.querySelector('.screen-grid-wrapper');
+    const region = [...vm.$refs.fullArea.children].find(node => node.contains(grid));
+    const current = new Set([region, grid?.parentElement]);
+    for (const [node, attrs] of record.layoutNodes)
+      if (!current.has(node)) {
+        for (const [key, value] of attrs) {
+          if (value === null) node.removeAttribute(key);
+          else node.setAttribute(key, value);
+        }
+        record.layoutNodes.delete(node);
+      }
+    for (const [node, key] of [
+      [region, 'data-tsix-stream-region'],
+      [grid?.parentElement, 'data-tsix-stream-row']
+    ]) {
+      if (!node) continue;
+      if (!record.layoutNodes.has(node)) record.layoutNodes.set(node, new Map());
+      const attrs = record.layoutNodes.get(node);
+      if (!attrs.has(key)) attrs.set(key, node.getAttribute(key));
+      if (!node.hasAttribute(key)) node.setAttribute(key, '');
+    }
+  } else restoreLayoutNodes(record);
+  if (active && hasChat) {
+    if (!record.chatToolbar) {
+      const bar = document.createElement('div'),
+        button = document.createElement('button');
+      bar.setAttribute('data-tsix-stream-toolbar', '');
+      button.type = 'button';
+      button.setAttribute('data-tsix-chat-toggle', '');
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        chatVisible = !chatVisible;
+        try {
+          localStorage.setItem(chatPreferenceKey, String(chatVisible));
+        } catch {}
+        sync();
+      });
+      for (const type of ['pointerdown', 'mousedown', 'dblclick'])
+        button.addEventListener(type, event => event.stopPropagation());
+      bar.append(button);
+      element.insertBefore(bar, element.querySelector(':scope > .tsv-body'));
+      record.chatToolbar = bar;
+    }
+    syncChatVisibility(record, chat, !chatVisible);
+    setAttr(element, 'data-tsix-chat', chatVisible ? 'shown' : 'hidden');
+    const button = record.chatToolbar.firstChild,
+      label = chatVisible ? 'Hide chat' : 'Show chat';
+    if (!record.chatToolbar.hasAttribute('data-tsix-chat-rail') && button.textContent !== label)
+      button.textContent = label;
+    setAttr(button, 'aria-label', label);
+    setAttr(button, 'title', label);
+    setAttr(button, 'aria-expanded', chatVisible);
+  } else {
+    syncChatVisibility(record, null, false);
+    clearChatRail(record);
+    record.chatToolbar?.remove();
+    record.chatToolbar = null;
+    element.removeAttribute('data-tsix-chat');
+  }
+  // Native fullscreen mode changes before requestFullscreen completes.
+  // Stop allocating pane heights during that transition as well.
+  if (document.fullscreenElement || vm.item?.layoutMode?.kind === 'fullscreen' || vm.presented) {
+    element.removeAttribute(marker);
+    element.removeAttribute(layoutMarker);
+    updateTray(record, false, state);
+    syncFocusActions(record, false, state);
+    return;
+  }
+  syncFocusActions(record, active && feature('clickFocus'), state);
+  if (active && typeof vm.resizeVideoHeightOrigin === 'number' && vm.resizeVideoHeightOrigin !== -1) {
+    record.resizing = true;
+    record.dragSplit = vm.overrideSplitPercentage;
+    updateTray(record, active, state);
+    return;
+  }
+  if (record.resizing) {
+    record.resizing = false;
+    if (Number.isFinite(record.dragSplit) && record.dragSplit >= 0) record.savedSplit = record.dragSplit;
+  }
+  let changed = false;
+  if (active) {
+    if (record.savedSplit === null) record.savedSplit = vm.overrideSplitPercentage;
+    const unit = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tsix-unit')) || 15;
+    const nativeSplit = record.savedSplit === -1 ? vm.maxVideoAreaHeightPct : record.savedSplit;
+    const height = Math.max(1, vm.maximumHeight);
+    const chatMin = Math.min(unit * 14, Math.max(80, height * 0.4));
+    const chatLimit = Math.max(0, height - chatMin - 8);
+    const single = state.sessions.length === 1 && state.tiles.length === 1 && !state.viewers.length;
+    const collapsedFocus = trayCollapsed && state.tiles.some(t => t.focused && t.active);
+    const focusAllocation =
+      (single || collapsedFocus) && record.savedSplit === -1 ? chatLimit : Math.min(height * nativeSplit, chatLimit);
+    const limit = chatVisible && hasChat ? focusAllocation : height;
+    // Joining changes the content of the stage, not its size. Reserve the
+    // same chat budget and player frame before and after opening a stream.
+    const footerHeight = record.actionDock?.footer?.hasAttribute('data-tsix-footer-grid')
+      ? record.actionDock.footer.getBoundingClientRect().height
+      : 0;
+    const videoHeight = Math.max(0, limit - footerHeight);
+    // Retain the native content-sized grid when it already leaves room for
+    // chat. Forcing an explicit split otherwise adds a large empty block.
+    const nativeAuto =
+      !footerHeight &&
+      chatVisible &&
+      hasChat &&
+      !single &&
+      !collapsedFocus &&
+      record.savedSplit === -1 &&
+      limit >= height * nativeSplit - 0.1;
+    const split = nativeAuto ? -1 : videoHeight / height;
+    const minValue = `${chatMin}px`;
+    if (element.style.getPropertyValue('--tsix-chat-min-height') !== minValue)
+      element.style.setProperty('--tsix-chat-min-height', minValue);
+    if (vm.overrideSplitPercentage !== split) {
+      vm.overrideSplitPercentage = split;
+      changed = true;
+    }
+    if (vm.maximumHeight > 0 && Math.abs(vm.maximumVideoHeight - videoHeight) > 0.1) {
+      vm.maximumVideoHeight = videoHeight;
+      changed = true;
+    }
+  } else if (record.savedSplit !== null) {
+    vm.overrideSplitPercentage = record.savedSplit;
+    record.savedSplit = null;
+    vm.maximumVideoHeight =
+      vm.maximumHeight * (vm.overrideSplitPercentage === -1 ? vm.maxVideoAreaHeightPct : vm.overrideSplitPercentage);
+    changed = true;
+  }
+  if (changed && vm.maximumWidth > 0 && vm.maximumHeight > 0) vm.doUpdateGrid();
+  const stage =
+    active && state.tiles.length
+      ? previewOnly
+        ? 'preview'
+        : state.sessions.length === 1 && state.tiles.length === 1 && state.viewers.length === 0 && !state.drag
+          ? 'single'
+          : 'multiple'
+      : null;
+  if (stage) {
+    if (element.getAttribute(marker) !== stage) element.setAttribute(marker, stage);
+  } else element.removeAttribute(marker);
+  setAttr(
+    element,
+    layoutMarker,
+    stage
+      ? state.sessions.length === 1 && state.tiles.length === 1 && !state.viewers.length && !state.drag
+        ? 'single'
+        : 'grid'
+      : null
+  );
+  updateTray(record, active, state);
+}

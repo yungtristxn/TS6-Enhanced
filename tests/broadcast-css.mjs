@@ -1,6 +1,7 @@
 // Real native stylesheet/theme/font cascade, with synthetic outbound sessions.
 // Covers the upgrade state that the original clean-shell fixture omitted.
 import assert from 'node:assert/strict';
+import {streamsRuntime} from '../tools/streams/bundle.mjs';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {clientPath} from './client-path.mjs';
@@ -8,7 +9,7 @@ const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(p
 const [html,css,runtime,native,legacy,bundle]=await Promise.all([
  readFile(new URL('./broadcast.html',import.meta.url),'utf8'),
  readFile(new URL('../theme/layout.css',import.meta.url),'utf8'),
- readFile(new URL('../tools/streams-runtime.js',import.meta.url),'utf8'),
+ streamsRuntime(),
  readFile(clientPath+'/html/client_ui/main.css','utf8'),
  readFile(new URL('./fixtures/legacy-sharing.css',import.meta.url),'utf8'),
  readFile(clientPath+'/html/client_ui/main.js','utf8')

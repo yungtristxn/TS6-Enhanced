@@ -1,4 +1,4 @@
-// Owned management UI; native settings artwork is reused without changing it.
+// Owned management UI with its own toolbar artwork, distinct from TS settings.
 // Downloads and native actions remain in the authenticated local manager.
 (() => {
   window.__tsixManager?.dispose();
@@ -13,7 +13,7 @@
     [data-tsix-manager-open]{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:0 0 32px;width:32px;height:32px;box-sizing:border-box;margin:0 0 0 8px;padding:4px;border:1px solid transparent;border-radius:var(--tsix-chrome-radius,4px);background:transparent;color:var(--tsix-chrome-muted,#b6c5d8);font:inherit;font-size:12px;cursor:pointer;-webkit-app-region:no-drag}
     [data-tsix-manager-open]:not(:has(svg)){width:auto;flex-basis:auto;padding:4px 8px}
     [data-tsix-manager-open] svg{width:22px;height:22px;pointer-events:none}
-    [data-tsix-manager-open] .tsv-icon-base-fill{fill:currentColor}
+    [data-tsix-manager-open] svg path{fill:currentColor}
     [data-tsix-manager-open]::before{content:'';position:absolute;left:-6px;top:7px;height:16px;border-left:1px solid var(--tsix-chrome-border,#3b4c61)}
     [data-tsix-manager-open]:hover,[data-tsix-manager-open][aria-expanded=true]{background:var(--tsix-control-hover,#344b64);color:var(--tsix-chrome-text,#edf2f7)}
     [data-tsix-manager-open]:active{background:var(--tsix-control-pressed,#3e5873)}
@@ -44,12 +44,25 @@
     #tsix-manager [data-confirm-actions]{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:20px}
     #tsix-manager details{margin-top:12px;color:var(--tsix-muted);font-size:12px}
     #tsix-manager summary{width:fit-content;cursor:pointer;border-radius:var(--tsix-chrome-radius,4px)}#tsix-manager summary:focus-visible{outline:2px solid var(--tsix-chrome-accent,#8bc4ff);outline-offset:2px}#tsix-manager details p{margin-top:8px;max-height:100px;overflow:auto;white-space:pre-wrap}
+    #tsix-manager [data-features]{margin-top:20px;padding-top:16px;border-top:1px solid var(--tsix-chrome-border,#3b4c61)}
+    #tsix-manager h3{margin:0;font-size:14px;line-height:20px;font-weight:600}
+    #tsix-manager [data-feature-group]{margin:12px 0 0;color:var(--tsix-muted);font-size:12px;line-height:16px;font-weight:600}
+    #tsix-manager [data-feature]{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 16px;padding:6px 0;cursor:pointer}
+    #tsix-manager [data-feature] small{grid-column:1;color:var(--tsix-muted);font-size:12px;line-height:16px}
+    #tsix-manager [data-feature] input{grid-column:2;grid-row:1/span 2;appearance:none;position:relative;width:34px;height:20px;margin:0;border:1px solid var(--tsix-control-border,#526780);border-radius:10px;background:var(--tsix-control-bg,#27374b);cursor:pointer;transition:background-color .12s}
+    #tsix-manager [data-feature] input::before{content:'';position:absolute;top:3px;left:3px;width:12px;height:12px;border-radius:50%;background:var(--tsix-chrome-muted,#b6c5d8);transition:transform .12s}
+    #tsix-manager [data-feature] input:checked{background:var(--tsix-primary-bg,#255b91);border-color:var(--tsix-primary-border,#4a89c5)}
+    #tsix-manager [data-feature] input:checked::before{transform:translateX(14px);background:#fff}
+    #tsix-manager [data-feature] input:focus-visible{outline:2px solid var(--tsix-chrome-accent,#8bc4ff);outline-offset:2px}
+    #tsix-manager [data-feature]:has(input:disabled){cursor:default;opacity:.55}
+    #tsix-manager [data-feature] input:disabled{cursor:default}
+    @media(prefers-reduced-motion:reduce){#tsix-manager [data-feature] input,#tsix-manager [data-feature] input::before{transition:none}}
     #tsix-manager [data-toast]{position:fixed;top:48px;right:16px;width:300px;max-width:calc(100vw - 32px);box-sizing:border-box;padding:16px;border-radius:var(--tsix-surface-radius,8px);background:var(--tsix-content-bg,#202936);border:1px solid var(--tsix-chrome-border,#3b4c61);box-shadow:var(--tsix-surface-shadow,0 8px 24px #0005);z-index:12}
     #tsix-manager [data-toast] strong{display:block;margin-bottom:4px;font-weight:600}#tsix-manager [data-toast] p{color:var(--tsix-muted)}
     #tsix-manager [data-toast-actions]{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
     #tsix-manager [hidden]{display:none!important}
     @media(max-width:420px){#tsix-manager dialog{padding:20px}}
-    @media(forced-colors:active){#tsix-manager dialog,#tsix-manager [data-toast]{border-color:CanvasText}#tsix-manager button,[data-tsix-manager-open]{border:1px solid ButtonText}#tsix-manager [data-remove]{color:ButtonText}#tsix-manager button:disabled{opacity:1;color:GrayText;border-color:GrayText}#tsix-manager button:focus-visible,#tsix-manager summary:focus-visible,[data-tsix-manager-open]:focus-visible{outline-color:Highlight}#tsix-manager [data-status],#tsix-manager [data-version],#tsix-manager [data-consequence]{color:CanvasText}[data-tsix-manager-open][data-update]::after{background:Highlight}}
+    @media(forced-colors:active){#tsix-manager dialog,#tsix-manager [data-toast]{border-color:CanvasText}#tsix-manager button,[data-tsix-manager-open]{border:1px solid ButtonText}#tsix-manager [data-remove]{color:ButtonText}#tsix-manager button:disabled{opacity:1;color:GrayText;border-color:GrayText}#tsix-manager button:focus-visible,#tsix-manager summary:focus-visible,[data-tsix-manager-open]:focus-visible{outline-color:Highlight}#tsix-manager [data-status],#tsix-manager [data-version],#tsix-manager [data-consequence],#tsix-manager [data-feature] small{color:CanvasText}[data-tsix-manager-open][data-update]::after{background:Highlight}#tsix-manager [data-feature] input{border-color:ButtonText}#tsix-manager [data-feature] input::before{background:ButtonText}#tsix-manager [data-feature] input:checked{background:Highlight}#tsix-manager [data-feature] input:checked::before{background:HighlightText}}
   `;
   const make = (tag, attribute, text) => {
     const node = document.createElement(tag);
@@ -62,7 +75,26 @@
     node.type = 'button';
     return node;
   };
+  // A four-point sparkle: unlike the TeamSpeak settings cog beside it.
+  const icon = () => {
+    const ns = 'http://www.w3.org/2000/svg',
+      svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    for (const d of [
+      'M10 3c.5 4.2 2.8 6.5 7 7-4.2.5-6.5 2.8-7 7-.5-4.2-2.8-6.5-7-7 4.2-.5 6.5-2.8 7-7Z',
+      'M18 13c.3 2.2 1.3 3.2 3.5 3.5-2.2.3-3.2 1.3-3.5 3.5-.3-2.2-1.3-3.2-3.5-3.5 2.2-.3 3.2-1.3 3.5-3.5Z',
+      'M18.5 2c.2 1.3.7 1.8 2 2-1.3.2-1.8.7-2 2-.2-1.3-.7-1.8-2-2 1.3-.2 1.8-.7 2-2Z'
+    ]) {
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', d);
+      svg.append(path);
+    }
+    return svg;
+  };
   const button = action('TS6 Enhanced', 'data-tsix-manager-open');
+  button.replaceChildren(icon());
   button.title = 'TS6 Enhanced';
   button.setAttribute('aria-label', 'TS6 Enhanced');
   button.setAttribute('aria-haspopup', 'dialog');
@@ -89,11 +121,57 @@
     errorText = make('p');
   details.append(summary, errorText);
   details.hidden = true;
+  // Escape hatches for individual helpers. Changes apply immediately.
+  const features = make('section', 'data-features');
+  features.setAttribute('aria-labelledby', 'tsix-manager-features');
+  const renderFeatures = () => {
+    const api = window.__tsixFeatures;
+    features.hidden = !api;
+    if (!api) return;
+    const heading = make('h3', null, 'Features');
+    heading.id = 'tsix-manager-features';
+    const nodes = [heading];
+    let group = '';
+    for (const feature of api.definitions()) {
+      if (feature.group !== group) {
+        group = feature.group;
+        nodes.push(make('p', 'data-feature-group', group));
+      }
+      const row = make('label', 'data-feature'),
+        text = make('span', null, feature.label),
+        detail = make('small', null, feature.detail),
+        input = make('input');
+      input.type = 'checkbox';
+      input.setAttribute('role', 'switch');
+      input.setAttribute('aria-label', feature.label);
+      input.checked = feature.value;
+      input.dataset.featureId = feature.id;
+      const inactive = feature.requires && !api.enabled(feature.requires);
+      input.disabled = !!inactive;
+      detail.id = `tsix-feature-${feature.id}`;
+      input.setAttribute('aria-describedby', detail.id);
+      if (inactive)
+        detail.textContent = `${feature.detail} Requires “${api.definitions().find(item => item.id === feature.requires)?.label}”.`;
+      input.onchange = () => {
+        api.set(feature.id, input.checked);
+      };
+      row.append(text, detail, input);
+      nodes.push(row);
+    }
+    // Rebuilding would drop keyboard focus from the switch that was toggled.
+    const focused = document.activeElement?.dataset?.featureId;
+    features.replaceChildren(...nodes);
+    if (focused) features.querySelector(`[data-feature-id="${focused}"]`)?.focus();
+  };
+  const onFeatures = () => {
+    if (dialog.open) renderFeatures();
+  };
+  window.addEventListener('tsix-features', onFeatures);
   const footer = make('div', 'data-footer'),
     remove = action('Uninstall…', 'data-remove'),
     close = action('Close');
   footer.append(remove, close);
-  overview.append(status, updateActions, details, footer);
+  overview.append(status, updateActions, details, features, footer);
   const confirm = make('div', 'data-confirm');
   confirm.hidden = true;
   const warning = make('p', null, 'TeamSpeak will restart and end any calls or streams.'),
@@ -138,6 +216,7 @@
   const open = () => {
     toast.hidden = true;
     reset();
+    renderFeatures();
     if (!dialog.open) dialog.showModal();
     button.setAttribute('aria-expanded', 'true');
     close.focus();
@@ -206,15 +285,7 @@
     if (host.parentElement !== root) root.append(host);
     if (!toolbar?.isConnected || !root.contains(toolbar)) toolbar = root.querySelector('.tsv-central-toolbar');
     if (toolbar && button.parentElement !== toolbar) toolbar.append(button);
-    if (!button.querySelector('svg')) {
-      const native = root.querySelector('svg[name="settings"],svg.tsv-icon-settings');
-      if (native) {
-        const icon = native.cloneNode(true);
-        icon.setAttribute('aria-hidden', 'true');
-        icon.setAttribute('focusable', 'false');
-        button.replaceChildren(icon);
-      }
-    }
+    if (!button.querySelector('svg')) button.replaceChildren(icon());
     // Detaching an open dialog removes it from the modal top layer but retains
     // its open attribute. Restore the backdrop and focus containment after a
     // native remount; the queued close event must not reset this reopened view.
@@ -272,6 +343,7 @@
     },
     dispose() {
       observer.disconnect();
+      window.removeEventListener('tsix-features', onFeatures);
       button.remove();
       host.remove();
       delete window.__tsixManager;

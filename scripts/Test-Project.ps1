@@ -13,6 +13,8 @@ try {
     switch($Suite){
         Core {
             foreach($file in Get-ChildItem tools,tests -File | Where-Object Extension -in '.js','.mjs'){Run node @('--check',$file.FullName)}
+            # Stream helper parts are fragments of one closure; check them joined.
+            Run node @('tools/streams/bundle.mjs')
             foreach($file in Get-ChildItem scripts,tests -Filter '*.ps1'){
                 $tokens=$null;$errors=$null
                 [void][Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors)
@@ -29,7 +31,7 @@ try {
             $themeArguments=@('-NoProfile','-File','scripts/Test-Theme.ps1')
             if($env:TSIX_CLIENT_PATH){$themeArguments+=@('-ClientPath',$env:TSIX_CLIENT_PATH)}
             Run pwsh $themeArguments
-            foreach($file in @('manager','session-guard','session-runtime','broadcast-css','stream-launch','stream-volume-vue','stream-resize','stream-chat-refresh')){Run node @("tests/$file.mjs")}
+            foreach($file in @('manager','session-guard','session-runtime','broadcast-css','stream-launch','stream-volume-vue','stream-resize','stream-chat-refresh','chat-events','tree-alignment')){Run node @("tests/$file.mjs")}
             Run pwsh @('-NoProfile','-File','tests/startup-update.ps1')
             Run pwsh @('-NoProfile','-File','tests/restart-update.ps1')
         }

@@ -8,9 +8,17 @@ npx playwright install chromium
 npm test
 ```
 
-Run `npm run format` after editing `tools/`; `npm run format:check` verifies it. Additional checks: `npm run test:browser`, `npm run test:native` and `npm run test:installer`. Native checks read resources from the supported TeamSpeak installation; set `TSIX_CLIENT_PATH` to inspect a copy. These suites do not install into or control the running client.
+Run `npm run format` after editing `tools/`; `npm run format:check` verifies it. The stream helper lives in `tools/streams/` as parts of one closure (`state`, `layout`, `controls`, `volume`, `broadcast`, `api`). `tools/streams/bundle.mjs` joins them for the DLL and for tests, so top-level names must stay unique across parts. Additional checks: `npm run test:browser`, `npm run test:native` and `npm run test:installer`. Native checks read resources from the supported TeamSpeak installation; set `TSIX_CLIENT_PATH` to inspect a copy. These suites do not install into or control the running client.
 
 The start-stream dialog and source picker retain their native layout and controls. The sharing bar forwards navigation/settings to the native stream manager and pause/stop to the original session, including when the preview is hidden. `tests/stream-launch.mjs` renders the supported client's Vue/template/CSS to check that attaching the helper leaves the launch flow unchanged and verifies the manager handlers; `tests/broadcast.mjs` covers synthetic action, keyboard, lifecycle and geometry regressions. Neither test establishes live audio/video acceptance.
+
+## Feature switches and chat
+
+`tools/features-runtime.js` loads first and owns the switches in the TS6 Enhanced dialog. It stores only disabled features in local storage (`tsix.layout.features`), sets `data-tsix-off` on the root for CSS-only features, and dispatches `tsix-features` so helpers resync. Helpers treat a missing store as enabled.
+
+`tools/chat-runtime.js` groups runs of three or more join/leave/disconnect/timeout events in legacy server and channel chats. It shadows the three `updateFilteredMessages*` methods on each chat object and computes TeamSpeak's own `filteredMessages` list, with each run folded into its latest event. Switching it off or disposing it restores the native methods and list. TeamSpeak's "show system messages" option keeps precedence. `tests/chat-events.mjs` runs the exact native filter methods and Vue with synthetic messages. `tests/tree-alignment.mjs` checks the tree's right-hand column against the native stylesheet.
+
+Stream volume memory stores the last committed gain per streamer identity UID in `tsix.layout.streamVolumes`, up to 200 entries; 100% and 0% remove the entry. It applies once per watched session and only over TeamSpeak's default volume, so update recovery and earlier adjustments take precedence.
 
 ## Native integration
 
@@ -25,6 +33,14 @@ The bundled Node helper handles update checks and maintenance through an authent
 `release.json` defines versions, compatibility and the update repository. `runtime-lock.json` pins Node, and `native/cef.lock.json` pins the CEF SDK. Keep existing extension IDs, storage paths and recovery receipts compatible.
 
 ## Release
+
+Commit the version bump and `docs/releases/<version>.md` on `main`, then run:
+
+```powershell
+npm run release
+```
+
+`scripts/Publish-Release.ps1` checks the branch, worktree, tag and version marker, runs the format check and the Core, Browser and Native suites, and builds the installer. It asks before pushing `main` and the tag, uploads the draft, compares every uploaded digest with the local SHA-256, and asks again before publishing. `-WhatIf` previews the outward steps; `-SkipTests` and `-CefSdkDirectory` are available. The equivalent manual steps:
 
 ```powershell
 pwsh -NoProfile -File scripts/Build-Release.ps1 -Installer -ForPublication

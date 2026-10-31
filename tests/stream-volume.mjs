@@ -1,5 +1,6 @@
 // Real Web Audio signal and rendered controls; no TS6 account or live media.
 import assert from 'node:assert/strict';
+import {streamsRuntime} from '../tools/streams/bundle.mjs';
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
@@ -7,13 +8,13 @@ const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE ? pathToFileURL
 const routes=new Map([
  ['/',new URL('./stream-tray.html',import.meta.url)],
  ['/layout.css',new URL('../theme/layout.css',import.meta.url)],
- ['/streams-runtime.js',new URL('../tools/streams-runtime.js',import.meta.url)]
+ ['/streams-runtime.js',streamsRuntime]
 ]);
 const server=createServer(async(req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname,file=routes.get(path);
  if(!file){res.writeHead(404).end();return;}
  res.setHeader('Content-Type',path.endsWith('.css')?'text/css':path.endsWith('.js')?'text/javascript':'text/html');
- res.end(await readFile(file));
+ res.end(typeof file==='function'?await file():await readFile(file));
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await chromium.launch({headless:true,args:['--mute-audio','--autoplay-policy=no-user-gesture-required'],...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
@@ -110,5 +111,31 @@ try {
  assert.equal(await page.locator('[data-tsix-volume-control],[data-tsix-native-volume]').count(),0);
  assert.equal(await page.evaluate(()=>lab.watchers.size),0);assert.deepEqual(errors,[]);
  checks.push('TS6 video-only transport sends native gain 3, keeps HTML volume legal across refs, and resets on removal');
+ // Volume per streamer: the committed choice is stored by identity UID and
+ // reapplied over TeamSpeak's default; restored sessions and the switch win.
+ await page.goto(url);await input.waitFor();
+ const runtime=await streamsRuntime(),features=await readFile(new URL('../tools/features-runtime.js',import.meta.url),'utf8');
+ const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('tsix.layout.streamVolumes')||'null'));
+ const reattach=(before='')=>page.evaluate(({runtime,before})=>{window.__tsixStreams.dispose();const s=lab.refs.a.querySelector('.video-stream').__vue__.session;s.client={properties:{uniqueIdentifier:'uid-a'}};s.status=4;s.muted=false;s.volume=1;new Function('s',before)(s);(0,eval)(runtime)},{runtime,before});
+ await reattach("localStorage.setItem('tsix.layout.streamVolumes',JSON.stringify({'uid-a':{gain:2,at:1}}))");
+ await page.waitForFunction(()=>audioGraphs.at(-1)?.context.testGain.gain.value===2);assert.equal((await info()).percent,200);
+ await set(150);await page.waitForFunction(()=>audioGraphs.at(-1).context.testGain.gain.value===1.5);
+ assert.deepEqual(Object.keys(await saved()),['uid-a']);assert.equal((await saved())['uid-a'].gain,1.5);
+ await set(100);assert.equal(await saved(),null);
+ await set(0);assert.equal(await saved(),null);
+ checks.push('a streamer’s committed volume is stored by identity and reapplied; 100% and 0% leave no entry');
+ await set(250);assert.equal((await saved())['uid-a'].gain,2.5);
+ await reattach("window.__restore=true");
+ await page.evaluate(()=>window.__tsixStreams.restoreVolume(lab.refs.a.querySelector('.video-stream').__vue__.session,1));
+ await input.waitFor();await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ assert.equal((await info()).percent,100);assert.equal((await info()).native,1);
+ await page.evaluate(features);await page.evaluate(()=>__tsixFeatures.set('volumeMemory',false));
+ await reattach();await input.waitFor();await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ assert.equal((await info()).percent,100);await set(180);assert.equal((await saved())['uid-a'].gain,2.5);
+ await page.evaluate(()=>__tsixFeatures.set('volumeBoost',false));
+ await page.waitForFunction(()=>!document.querySelector('[data-tsix-volume-control],[data-tsix-native-volume]'));
+ await page.evaluate(()=>{__tsixFeatures.set('volumeBoost',true);__tsixFeatures.set('volumeMemory',true);window.__tsixStreams.dispose();localStorage.clear()});
+ assert.deepEqual(errors,[]);
+ checks.push('a restored session keeps its restored volume; switching memory off neither applies nor stores, and switching the boost off restores the native slider');
  console.log(JSON.stringify({passed:checks.length,checks,signal:{rms300:full,rms150:half},errors},null,2));
 } finally {await browser.close();await new Promise(r=>server.close(r))}

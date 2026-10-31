@@ -6,6 +6,14 @@ Install TeamSpeak first, then run the TS6 Enhanced installer and click **Install
 
 Open TeamSpeak normally. Enhanced loads through the original application and its existing shortcuts.
 
+## Features
+
+Open **TS6 Enhanced** (the sparkle button in the toolbar) to switch individual features off or on. Changes apply immediately and are kept for your Windows account:
+
+- **Click to focus a stream**: a click focuses a stream; clicking it again returns to the grid.
+- **Stream volume up to 300%** and **Remember volume per streamer**: your last volume for each person is reapplied when you watch them again. 100% and muting are left to TeamSpeak.
+- **Slim system messages**, **Group repeated join and leave messages** and **Limit chat line length** for server and channel chats. Folded join/leave runs show a **+N more** button; TeamSpeak's own option to hide system messages still applies.
+
 ## Update or uninstall
 
 Open **TS6 Enhanced** in the toolbar. Updates are checked at startup and every six hours. **Restart and update** verifies the newest compatible release, saves the current session, restarts TeamSpeak, and restores your server/channel, mute state and matching shared streams. Audio returns before stream recovery waits. Unavailable sources remain stopped; private/group calls and other unsupported states block the automatic restart. Interrupted installations retain their queue for the next launch.

@@ -1,6 +1,7 @@
 // Use the exact supported client's Vue 2 runtime, isolated from accounts/media.
 // Functional video refs are replaced during render; fake watchers miss this.
 import assert from 'node:assert/strict';
+import {streamsRuntime} from '../tools/streams/bundle.mjs';
 import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href : 'playwright');
@@ -10,8 +11,8 @@ const signature='62893:(e,t,n)=>{',start=bundle.indexOf(signature)+signature.len
 assert.ok(start>=signature.length);
 const end=/},\d+:\(e,t,n\)=>\{/.exec(bundle.slice(start));assert.ok(end);
 const vueSource=bundle.slice(start,start+end.index);
-const source=await readFile(new URL('../tools/streams-runtime.js',import.meta.url),'utf8');
-const volumeSource=source.slice(source.indexOf('  function createVolume('),source.indexOf('  function onFullscreenChange('));
+const source=await streamsRuntime();
+const volumeSource=source.slice(source.indexOf('// Volume per streamer'),source.indexOf('// Sharing card'));
 assert.ok(!volumeSource.includes('sync:true'));
 const browser=await chromium.launch({headless:true,args:['--mute-audio','--autoplay-policy=no-user-gesture-required'],...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})});
 try {
@@ -20,7 +21,7 @@ try {
  await page.evaluate(vueSource=>{const exports={},require=()=>{throw Error('Unexpected Vue dependency')};require.r=()=>{};require.d=(target,props)=>{for(const [k,get]of Object.entries(props))Object.defineProperty(target,k,{get,enumerable:true})};new Function('e','t','n',vueSource)({},exports,require);window.Vue=Object.values(exports).find(v=>v?.version==='2.7.16');if(!Vue)throw Error('Expected supported Vue runtime: '+Object.keys(exports))},vueSource);
  await page.evaluate(volumeSource=>{
   navigator.createMediaStreamRequest=()=>{throw Error('No native calls allowed in fixture')};
-  const create=new Function(`${volumeSource};return createVolume`)();
+  const create=new Function(`const feature=()=>true;${volumeSource};return createVolume`)();
   const DragHelper={render(h){return h('div')}};
   const NativeSlider={props:['value'],data:()=>({actualValue:100}),
    watch:{value(value){this.actualValue=Math.max(0,Math.min(100,value))},actualValue(value){this.$emit('input',value)}},

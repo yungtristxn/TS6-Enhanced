@@ -1,6 +1,7 @@
 // Render the supported client's unmodified launch template with its exact Vue
 // runtime. Capture/session services are synthetic; no client is launched.
 import assert from 'node:assert/strict';
+import {streamsRuntime} from '../tools/streams/bundle.mjs';
 import {readFile,writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
@@ -14,7 +15,7 @@ const launch=module(28312),renderStart=launch.indexOf('const D=(0,w.A)(M,')+'con
 assert.ok(renderStart>20);
 const render=launch.slice(renderStart,launch.lastIndexOf(',[],!1,null,'));
 assert.ok(render.startsWith('function()')&&render.endsWith('}'));
-const source=await readFile(new URL('../tools/streams-runtime.js',import.meta.url),'utf8');
+const source=await streamsRuntime();
 const nativeCSS=await readFile(`${clientPath}/html/client_ui/main.css`,'utf8');
 // Load the bundled dark-theme variables using the CSS-loader interface only.
 const darkExports={},cssRequire=id=>id===76314?()=>[]:{};

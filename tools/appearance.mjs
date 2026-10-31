@@ -78,7 +78,7 @@ export async function restoreAppearance(c, baseline) {
     ).value;
     if (!available) throw Error('The original theme is missing; restore it before uninstalling');
     await c.evaluate(
-      'window.__tsixUpdateSession?.dispose();window.__tsixSessionGuard?.dispose();window.__tsixLegacyStyle?.dispose();window.__tsixStreams?.dispose();window.__tsixWorkspace?.dispose()'
+      'window.__tsixUpdateSession?.dispose();window.__tsixSessionGuard?.dispose();window.__tsixLegacyStyle?.dispose();window.__tsixStreams?.dispose();window.__tsixChat?.dispose();window.__tsixWorkspace?.dispose();window.__tsixFeatures?.dispose()'
     );
     unwrap(
       await c.send('Runtime.callFunctionOn', {

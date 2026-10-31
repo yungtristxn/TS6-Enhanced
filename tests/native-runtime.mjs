@@ -27,7 +27,7 @@ try{
    Object.defineProperty(document.styleSheets[0],'href',{value:'tsui://default/main.css'});
    if(custom){const style=document.createElement('style');style.id='user-style';style.textContent='#style-target{color:purple}';document.head.append(style)}
    if(storageBlocked)Object.defineProperty(window,'localStorage',{get(){throw new DOMException('Storage is unavailable','SecurityError')}});
-   const fixture=window.fixture={requests:[],sockets:[],states:[],attaches:{workspace:0,streams:0,manager:0},refreshes:0,syncs:0,versionRequests:0};
+   const fixture=window.fixture={requests:[],sockets:[],states:[],attaches:{features:0,workspace:0,chat:0,streams:0,manager:0},refreshes:0,syncs:0,versionRequests:0};
    fixture.appearanceWatches=new Set();
    document.querySelector('main').__vue__={appearanceSettings:{user_style:null,tree_compact:false,chat_input_toolbar_visibility:'always'},$watch(get,callback){fixture.appearanceWatches.add(callback);return()=>fixture.appearanceWatches.delete(callback)}};
    fixture.selectTheme=selected=>{document.querySelector('main').__vue__.appearanceSettings.user_style=selected;for(const callback of fixture.appearanceWatches)callback()};
@@ -40,6 +40,8 @@ try{
     close(){if(this.readyState!==1)return;this.readyState=3;this.onclose?.()}
     deliver(value){this.onmessage?.({data:JSON.stringify(value)})}
    };
+   window.attachFeatures=()=>{fixture.attaches.features++;window.__tsixFeatures={enabled:()=>true}};
+   window.attachChat=()=>{fixture.attaches.chat++;window.__tsixChat={sync(){},dispose(){throw Error('Healthy chat helper must survive updates')}}};
    window.attachWorkspace=()=>{fixture.attaches.workspace++;window.__tsixWorkspace={refresh(){fixture.refreshes++},dispose(){throw Error('Healthy workspace must survive updates')}}};
    window.attachStreams=()=>{fixture.attaches.streams++;window.__tsixStreams={sync(){fixture.syncs++},dispose(){throw Error('Healthy streams must survive updates')}}};
    window.attachManager=()=>{fixture.attaches.manager++;window.__tsixManager={setState(state,token){fixture.states.push({state,token})}}};
@@ -50,7 +52,7 @@ try{
  const start=(address=nativeLocation,transport=connection)=>page.evaluate(`((connection,release,css,location)=>{${source}\n})(${JSON.stringify(transport)},${JSON.stringify(release)},${JSON.stringify(css)},${JSON.stringify(address)})`);
  await setup({ready:false});await start();
  assert.equal(await page.evaluate(()=>__tsixNative.status),'waiting');
- assert.deepEqual(await page.evaluate(()=>fixture.attaches),{workspace:0,streams:0,manager:0});
+ assert.deepEqual(await page.evaluate(()=>fixture.attaches),{features:0,workspace:0,chat:0,streams:0,manager:0});
  await page.evaluate(()=>{document.querySelector('.tsv-window').__vue__.windowLayout={}});
  await page.waitForFunction(()=>__tsixNative.status==='ready'&&fixture.requests.some(r=>r.data.action==='ready'));
  const ready=await page.evaluate(()=>fixture.requests.find(r=>r.data.action==='ready'));
@@ -59,7 +61,7 @@ try{
  assert.deepEqual(await page.evaluate(()=>({endpoint:fixture.sockets[0].endpoint,protocol:fixture.sockets[0].protocol})),{endpoint:connection.endpoint,protocol:`tsix.v1.${connection.token}`});
  await page.evaluate(()=>{window.original={workspace:__tsixWorkspace,streams:__tsixStreams,video:document.querySelector('video')}});
  await start();
- assert.deepEqual(await page.evaluate(()=>fixture.attaches),{workspace:1,streams:1,manager:1});
+ assert.deepEqual(await page.evaluate(()=>fixture.attaches),{features:1,workspace:1,chat:1,streams:1,manager:1});
  assert.equal(await page.evaluate(()=>fixture.sockets.length),1);
  checks.push('Startup waits for the native window, captures existing preferences and attaches once per document');
  await page.evaluate(()=>fixture.sockets[0].deliver({state:{version:'2.0',configured:true},style:{id:'retired-protocol',css:':root{--tsix-layout-version:9.0.0}',themeVersion:'9.0.0'}}));
@@ -78,7 +80,7 @@ try{
  assert.equal(await page.evaluate(()=>fixture.requests.at(-1).data.action),'check');
  await page.evaluate(()=>fixture.sockets[0].close());
  await page.waitForFunction(()=>fixture.sockets.length===2&&fixture.requests.filter(r=>r.data.action==='ready').length===2);
- assert.deepEqual(await page.evaluate(()=>fixture.attaches),{workspace:1,streams:1,manager:1});
+ assert.deepEqual(await page.evaluate(()=>fixture.attaches),{features:1,workspace:1,chat:1,streams:1,manager:1});
  assert.equal(await page.evaluate(()=>original.video===document.querySelector('video')&&original.streams===__tsixStreams),true);
  checks.push('Only authenticated maintenance actions are sent; transport reconnect preserves existing helpers and media');
  await setup({early:true,custom:true});await start();await page.waitForFunction(()=>__tsixNative.status==='ready');
@@ -128,20 +130,20 @@ try{
  const gc=await page.context().newCDPSession(page);await gc.send('HeapProfiler.collectGarbage');await gc.detach();
  await page.waitForFunction(()=>__tsixNative.status==='ready');
  assert.equal(await page.evaluate(()=>fixture.versionRequests),2);
- assert.deepEqual(await page.evaluate(()=>fixture.attaches),{workspace:1,streams:1,manager:1});
+ assert.deepEqual(await page.evaluate(()=>fixture.attaches),{features:1,workspace:1,chat:1,streams:1,manager:1});
  checks.push('A dropped native version callback times out and retries successfully without premature or duplicate attachment');
  for(const address of [{...nativeLocation,hostname:'extension'},{...nativeLocation,pathname:'/other.html'},{...nativeLocation,search:'?popup=1'}]){
   await setup();await start(address);assert.equal(await page.evaluate(()=>!!window.__tsixNative),false);
  }
  await setup({build:1});await start();await page.waitForFunction(()=>__tsixNative.status==='unsupported');
- assert.deepEqual(await page.evaluate(()=>fixture.attaches),{workspace:0,streams:0,manager:0});
+ assert.deepEqual(await page.evaluate(()=>fixture.attaches),{features:0,workspace:0,chat:0,streams:0,manager:0});
  assert.equal(await page.locator('#tsix-native-style').count(),0);
  await setup();await start(nativeLocation,null);await page.waitForFunction(()=>__tsixNative.status==='ready');
  assert.equal(await page.evaluate(()=>fixture.states.at(-1).state.configured),false);
  assert.equal(await page.evaluate(()=>fixture.sockets.length),0);
  checks.push('Wrong document and unsupported builds stay untouched; a missing update connection leaves the interface usable');
  await setup({storageBlocked:true});await start();await page.waitForFunction(()=>__tsixNative.status==='ready');
- assert.deepEqual(await page.evaluate(()=>fixture.attaches),{workspace:1,streams:1,manager:1});
+ assert.deepEqual(await page.evaluate(()=>fixture.attaches),{features:1,workspace:1,chat:1,streams:1,manager:1});
  assert.equal(await page.evaluate(()=>fixture.sockets.length),0);
  assert.equal(await page.evaluate(()=>fixture.states.at(-1).state.message),'Update support couldn’t read saved preferences.');
  assert.equal(await page.evaluate(()=>__tsixNative.error),'Storage is unavailable');

@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { streamsRuntime } from './streams/bundle.mjs';
 const output = resolve(process.argv[2]);
 const root = fileURLToPath(new URL('../', import.meta.url));
 const release = JSON.parse(await readFile(join(root, 'release.json'), 'utf8'));
@@ -10,13 +11,17 @@ if (/--tsix-layout-version:\s*([^;]+);/.exec(css)?.[1].trim() !== release.versio
   throw Error('CSS version marker differs from release.json');
 const parts = [`const release=${JSON.stringify(release)};`];
 for (const [name, file] of [
+  ['attachFeatures', 'features-runtime.js'],
   ['attachWorkspace', 'workspace-runtime.js'],
-  ['attachStreams', 'streams-runtime.js'],
+  ['attachChat', 'chat-runtime.js'],
+  ['attachStreams', streamsRuntime],
   ['attachManager', 'manager-runtime.js'],
   ['attachSession', 'session-runtime.js'],
   ['attachSessionGuard', 'session-guard.js']
 ])
-  parts.push(`function ${name}(){\n${await readFile(join(root, 'tools', file), 'utf8')}\n}`);
+  parts.push(
+    `function ${name}(){\n${typeof file === 'function' ? await file() : await readFile(join(root, 'tools', file), 'utf8')}\n}`
+  );
 parts.push(await readFile(join(root, 'tools/native-runtime.js'), 'utf8'));
 await writeFile(join(output, 'payload.js'), parts.join('\n'));
 await writeFile(join(output, 'layout.css'), css);

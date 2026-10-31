@@ -1,9 +1,10 @@
 // Native shell preservation, measured density, keyboard and idle stability.
 import assert from 'node:assert/strict';import {createServer} from 'node:http';import {readFile} from 'node:fs/promises';import {pathToFileURL} from 'node:url';
+import {streamsRuntime} from '../tools/streams/bundle.mjs';
 import {clientPath} from './client-path.mjs';
 const {chromium}=await import(process.env.TSIX_PLAYWRIGHT_MODULE?pathToFileURL(process.env.TSIX_PLAYWRIGHT_MODULE).href:'playwright');
 const routes=new Map([['/',new URL('./shell.html',import.meta.url)],['/layout.css',new URL('../theme/layout.css',import.meta.url)],['/workspace-runtime.js',new URL('../tools/workspace-runtime.js',import.meta.url)]]);
-const server=createServer(async(req,res)=>{const file=routes.get(req.url);if(!file){res.writeHead(404).end();return}res.setHeader('Content-Type',req.url.endsWith('.js')?'text/javascript':req.url.endsWith('.css')?'text/css':'text/html');res.end(await readFile(file))});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+const server=createServer(async(req,res)=>{const file=routes.get(req.url);if(!file){res.writeHead(404).end();return}res.setHeader('Content-Type',req.url.endsWith('.js')?'text/javascript':req.url.endsWith('.css')?'text/css':'text/html');res.end(typeof file==='function'?await file():await readFile(file))});await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await chromium.launch({headless:true,...(process.env.TSIX_BROWSER_CHANNEL?{channel:process.env.TSIX_BROWSER_CHANNEL}:{})}),checks=[],errors=[];
 try{
  const p=await browser.newPage({viewport:{width:1322,height:847}});p.on('pageerror',e=>errors.push(e.message));
@@ -65,7 +66,7 @@ try{
  checks.push('Disposal and reattachment restore listeners without duplicate actions');
  // Both helpers must remain dormant until their stylesheet arrives, then
  // activate without duplicate keyboard actions or replacing their instances.
- const streams=await readFile(new URL('../tools/streams-runtime.js',import.meta.url),'utf8');
+ const streams=await streamsRuntime();
  for(const delayed of [false,true]){
   await p.evaluate(delayed=>{
    window.__tsixStreams?.dispose();window.__tsixWorkspace?.dispose();
