@@ -85,7 +85,11 @@ async function startNativeEnhanced() {
     if (node.getAttribute('media') !== 'not all') node.setAttribute('media', 'not all');
     state.legacyThemeSuppressed = true;
   };
-  const legacyObserver = new MutationObserver(syncLegacy);
+  let placeStyle = null;
+  const legacyObserver = new MutationObserver(() => {
+    syncLegacy();
+    placeStyle?.();
+  });
   legacyObserver.observe(document.head, {
     childList: true,
     subtree: true,
@@ -132,16 +136,44 @@ async function startNativeEnhanced() {
   const earlyCurrent =
     earlyRule &&
     getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim() === release.version;
-  if (!earlyCurrent) {
-    if (earlyRule) earlyRule.media.mediaText = 'not all';
-    const style = document.createElement('style');
-    style.id = 'tsix-native-style';
-    style.textContent = css;
-    // Match the native response's position so user themes retain precedence.
-    const anchor = mainSheet?.ownerNode;
-    if (anchor?.parentNode) anchor.after(style);
-    else document.head.append(style);
-  }
+  // TeamSpeak's style loader appends its built-in theme after main.css and
+  // swaps it on theme changes. At equal specificity that theme would override
+  // the layout, so keep one owned copy directly after the active built-in
+  // theme (or after main.css without one). A selected user style (#userStyle)
+  // loads later and keeps precedence. The early copy serves until then.
+  const builtInTheme = () =>
+    [...document.head.querySelectorAll('style')]
+      .filter(node => {
+        if (node.id === 'tsix-native-style') return false;
+        try {
+          const rule = node.sheet?.cssRules[0];
+          return (
+            rule?.type === CSSRule.STYLE_RULE &&
+            rule.selectorText.startsWith(':root') &&
+            rule.style.getPropertyValue('--tsv-font-color') !== ''
+          );
+        } catch {
+          return false;
+        }
+      })
+      .pop() || null;
+  let ownStyle = null;
+  placeStyle = () => {
+    const theme = builtInTheme();
+    if (earlyCurrent && !theme && !ownStyle) return;
+    if (!ownStyle) {
+      ownStyle = document.createElement('style');
+      ownStyle.id = 'tsix-native-style';
+      ownStyle.textContent = css;
+    }
+    const anchor = theme || mainSheet?.ownerNode;
+    if (anchor?.parentNode) {
+      if (anchor.nextElementSibling !== ownStyle) anchor.after(ownStyle);
+    } else if (!ownStyle.isConnected) document.head.append(ownStyle);
+    if (earlyRule && earlyRule.media.mediaText !== 'not all') earlyRule.media.mediaText = 'not all';
+    state.cssOrder = theme ? 'after-theme' : 'main';
+  };
+  placeStyle();
   state.cssDelivery = earlyCurrent ? 'resource' : 'javascript';
   // Runtime-owned styles leave native Appearance settings untouched. Removing
   // the DLL removes these styles on next startup, including after a failed host.

@@ -1,7 +1,7 @@
 /* TS6 beta5 / 1791901251. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 2.3.0;
+  --tsix-layout-version: 2.3.1;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
@@ -580,8 +580,8 @@
   text-shadow: none;
 }
 .sidebar-pane-layout { background: var(--tsix-chrome-bg); box-shadow: inset -1px 0 var(--tsix-chrome-border); }
-.sidebar-pane-layout > :is(.tsv-header,.tsv-body,.tsv-footer) { background: var(--tsix-chrome-bg); background-image: none; }
-.sidebar-pane-layout .tsv-title-bar { height: 44px; min-height: 44px; }
+.sidebar-pane-layout.tsv-sidebar > :is(.tsv-header,.tsv-body,.tsv-footer):not(.transparent) { background: var(--tsix-chrome-bg); background-image: none; }
+.sidebar-pane-layout > .tsv-header > .tsv-bar.tsv-title-bar { height: 44px; min-height: 44px; }
 .sidebar-pane-layout .tsv-search-bar {
   height: 34px; min-height: 34px; box-sizing: border-box;
   display: flex; align-items: center;
@@ -659,27 +659,49 @@
  * trailing slot is sticky, so the reserve sits under the in-flow canvas. */
 .main-pane-layout .ts-server-tree-scroller > .vl-canvas { margin-bottom: var(--tsix-broadcast-reserve, 0px); }
 .main-pane-layout .ts-server-header { --tsv-icon-size-xlarge: 22px; }
-.main-pane-layout .ts-server-header .tsv-view-banner {
-  margin: 0 8px 8px; box-sizing: border-box; height: 48px; min-height: 48px;
-  padding: 8px 4px; border-bottom: 0; box-shadow: inset 0 -1px var(--tsix-chrome-border); border-radius: 0; background: transparent;
+/* Tree top: the server header is the tree's 48px title row, level with the
+ * detail header and its divider, with its icon and name in the channel
+ * columns. Notifications follow below it, inset like the rows. The extra
+ * .tsv-view keeps these above the built-in theme's banner rules. */
+.main-pane-layout .ts-server-tree-scroller > .vl-leading > div { display: flex; flex-direction: column; }
+.main-pane-layout .ts-server-tree-scroller > .vl-leading .ts-server-header { order: -1; margin: 0 -10px 4px; }
+.main-pane-layout .ts-server-header .tsv-view-banner.tsv-view {
+  box-sizing: border-box; height: 48px; min-height: 48px; margin: 0; padding: 0 20px 0 30px;
+  display: flex; align-items: center; border: 0; border-radius: 0; background: var(--tsix-content-bg);
+  box-shadow: inset 0 -1px var(--tsix-chrome-border); cursor: pointer;
 }
-.main-pane-layout .ts-server-header .tsv-view-background,
-.main-pane-layout .ts-server-header .tsv-view-background::before,
-.main-pane-layout .ts-server-header .tsv-view-background::after { background: transparent; border-radius: 0; }
-.main-pane-layout .ts-server-header .tsv-view-content { font: 600 var(--tsix-type-header)/24px var(--tsv-font-family); }
+/* Settings: the category column's title is the same 48px header row. */
+.tsv-settings > .tsv-settings-categories > .tsv-settings-title { box-sizing: border-box; height: 48px; margin: -8px -10px 8px -20px; padding: 0 10px 0 28px; display: flex; align-items: center; box-shadow: inset 0 -1px var(--tsix-chrome-border); }
+.tsv-settings > .tsv-settings-categories > .tsv-settings-title > .ts-font-muted { color: var(--tsix-chrome-text); font: 600 var(--tsix-type-header)/24px var(--tsv-font-family); }
+/* Continue the divider through the scrollbar gutter beside the header. */
+.main-pane-layout .ts-server-tree-item-root:has(.ts-server-header) { background: linear-gradient(var(--tsix-chrome-border), var(--tsix-chrome-border)) 0 47px / 100% 1px no-repeat, var(--tsix-content-bg); }
+.main-pane-layout .ts-server-header .tsv-view-banner.tsv-view:hover { background: color-mix(in srgb, var(--tsix-control-bg) 55%, var(--tsix-content-bg)); }
+.main-pane-layout .ts-server-header .tsv-view-banner.tsv-view.tsv-active { box-shadow: inset 3px 0 var(--tsix-chrome-accent), inset 0 -1px var(--tsix-chrome-border); }
+.main-pane-layout .ts-server-header .tsv-view-banner.tsv-view > .tsv-view-background { display: none; }
+.main-pane-layout .ts-server-header .tsv-view-banner.tsv-view > :is(.tsv-view-image,.tsv-view-content,.tsv-view-accessory) { margin: 0; align-self: center; }
+.main-pane-layout .ts-server-header .tsv-view-banner.tsv-view > .tsv-view-image { margin-right: 10px; }
+.main-pane-layout .ts-server-header .tsv-view-banner.tsv-view > .tsv-view-content { min-width: 0; font: 600 var(--tsix-type-header)/24px var(--tsv-font-family); color: var(--tsix-chrome-text); }
+.main-pane-layout > .tsv-body:has(.ts-server-header) > .ts-notifications-overlay { top: 48px; padding: 4px 18px 0 10px; }
+.main-pane-layout .ts-notifications-overlay .ts-notification::before { background: var(--tsix-control-bg); border-radius: var(--tsix-chrome-radius); box-shadow: inset 0 0 0 1px var(--tsix-chrome-border); }
+.main-pane-layout .ts-notifications-overlay .ts-notification::after { box-shadow: none; }
 .main-pane-layout .ts-server-tree-item-leaf { font: 400 var(--tsix-classic-type)/var(--tsix-classic-line) var(--tsv-font-family); }
 .main-pane-layout .ts-server-tree-channel-info { color: var(--tsix-chrome-text); font: 600 var(--tsix-classic-type)/var(--tsix-classic-line) var(--tsv-font-family); }
 .main-pane-layout :is(.ts-server-tree-client-info,.ts-client-nick,.ts-server-tree-item-text-wrapper) { font: 400 var(--tsix-classic-type)/var(--tsix-classic-line) var(--tsv-font-family); }
 .main-pane-layout :is(.ts-server-tree-channel-info,.ts-server-tree-client-info) { margin-top: 0; margin-bottom: 0; }
 .main-pane-layout .tsv-server-tree-icon { --tsv-icon-size: 22px; }
 .main-pane-layout .ts-server-tree-item-leaf .tsv-item-highlight { border-radius: 3px; }
-.main-pane-layout .ts-server-tree-item-leaf.tsv-active .tsv-item-highlight { background: var(--tsix-control-hover); box-shadow: inset 3px 0 var(--tsix-chrome-accent); border-radius: 3px; }
+/* The built-in theme outlines the active channel with a pill border and
+ * removes box-shadows with !important; use a border-based accent instead. */
+.main-pane-layout .ts-server-tree-item-leaf :is(.tsv-item-highlight,.tsv-item-highlight-extra).tsv-item-highlight { border: 0; border-radius: 3px; }
+.main-pane-layout .ts-server-tree-item-leaf.tsv-active .tsv-item-highlight.tsv-item-highlight { background: var(--tsix-control-hover); border-left: 3px solid var(--tsix-chrome-accent); }
+/* Client badges sit on the row like channel tags, without dark boxes. */
+.main-pane-layout .ts-server-tree-item-leaf :is(.ts-server-tree-active-status,.ts-server-tree-inactive-status) { background: transparent; }
 /* One right-hand edge per row: expanders, tag spacing and client badges end
  * together, and a channel tag keeps the same column with or without
  * subchannels (natively the spacing slot is narrower than the expander). */
 .main-pane-layout .ts-server-tree-item-node :is(.ts-expander,.ts-expander-spacing,.ts-tag-spacing) { flex: 0 0 auto; box-sizing: border-box; width: var(--tsix-tree-accessory, 22px); min-width: var(--tsix-tree-accessory, 22px); margin: 0; padding: 0; }
 .main-pane-layout .ts-server-tree-item-node .ts-expander > .ts-expander-chevron { right: 0; }
-.main-pane-layout .ts-server-tree-item-node .ts-server-tree-item-tag { margin: 0 4px 0 0; }
+.main-pane-layout .ts-server-tree-item-node .ts-server-tree-item-tag { margin: 0 4px 0 0; color: var(--tsix-chrome-muted); text-shadow: none; }
 .main-pane-layout .ts-server-tree-item-leaf .ts-server-tree-client-info { margin-right: 0; }
 .main-pane-layout .ts-server-tree-item-has-banner .tsv-item-accessory::before { right: 0; }
 
@@ -734,10 +756,12 @@
 :is(.tsv-central-toolbar,.ts-server-status-bar,.tsv-content-header-bar) .tsv-tool-button {
   min-height: 32px; border-radius: var(--tsix-chrome-radius); box-sizing: border-box;
 }
-.tsv-content-header-bar .tsv-segmented-control { flex: 0 0 auto; height: 36px; min-height: 36px; box-sizing: border-box; align-items: center; padding: 2px; gap: 2px; border-radius: var(--tsix-chrome-radius); background: var(--tsix-chrome-bg); }
+.tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control.tsv-segmented-control { flex: 0 0 auto; height: 36px; min-height: 36px; box-sizing: border-box; align-items: center; padding: 2px; gap: 2px; border-radius: var(--tsix-chrome-radius); background: var(--tsix-chrome-bg); }
 .tsv-content-header-bar .tsv-segmented-button { min-width: 32px; min-height: 32px; border-radius: 3px; }
-.tsv-content-header-bar .tsv-segmented-button.active { background: var(--tsix-control-hover); }
-.tsv-content-header-bar .tsv-segmented-button:not(.active):hover { background: var(--tsix-control-bg); }
+.tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control .tsv-segmented-button.active { background: var(--tsix-control-hover); }
+.tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control .tsv-segmented-button:not(.active):hover { background: var(--tsix-control-bg); }
+/* Selected segments are filled, so the theme's dividers are redundant. */
+.tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control .tsv-segmented-button::after { display: none; }
 [data-tsix-manager-open] { border-radius: var(--tsix-chrome-radius); color: var(--tsix-chrome-muted); }
 /* Remove the native 55px flex basis so both 48px footers actually align. */
 .sidebar-pane-layout > .tsv-footer,
@@ -748,8 +772,16 @@
 .sidebar-pane-layout > .tsv-footer > .tsv-bar,
 .main-pane-layout .ts-server-status-bar {
   height: 100%; min-height: 0; box-sizing: border-box; padding: 0 12px; margin: 0;
-  border-top: 0; background: var(--tsix-chrome-bg);
+  border-top: 0; background: transparent;
 }
+/* The footer draws the divider; the theme's short presence line is redundant. */
+.sidebar-pane-layout.tsv-sidebar > .tsv-footer::before,
+.main-pane-layout > .tsv-body > .tsv-item-view > .tsv-footer::before { display: none; }
+/* Create Channel: a 32px primary square like its neighbours, not a gradient slab. */
+.main-pane-layout .ts-server-status-bar .tsv-tool-button.filled:not(:has(.tsv-tool-button-title)) { width: 32px; min-width: 32px; padding: 0; justify-content: center; }
+.main-pane-layout .ts-server-status-bar .tsv-tool-button.filled { background: var(--tsix-primary-bg); background-image: none; }
+.main-pane-layout .ts-server-status-bar .tsv-tool-button.filled:hover { background: var(--tsix-primary-hover); }
+.main-pane-layout .ts-server-status-bar .tsv-tool-button.filled:active { background: var(--tsix-primary-pressed); }
 .sidebar-pane-layout > .tsv-footer .tsv-item-text { font: 400 var(--tsix-type-label)/20px var(--tsv-font-family); }
 /* Keep the profile name readable beside the native edit/presence/settings actions. */
 .sidebar-pane-layout > .tsv-footer > .tsv-bar { padding: 0 8px; gap: 4px; align-items: center; }

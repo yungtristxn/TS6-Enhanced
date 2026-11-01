@@ -18,13 +18,15 @@ try{
   {contentType:'text/css',body:':root{--tsix-layout-version:1.0.9}#style-target{padding-left:77px;color:orange}'}:route.request().url().endsWith('/custom.css')?
   {contentType:'text/css',body:'#style-target{color:purple}'}:
   {contentType:'text/html',body:'<head><link rel="stylesheet" href="/main.css"></head><body><main><div class="tsv-window"><video></video><span id="style-target">Style target</span></div></main></body>'}));
- const setup=async({build=1791901251,ready=true,dropFirst=false,early=false,custom=false,stale=false,storageBlocked=false}={})=>{
+ const setup=async({build=1791901251,ready=true,dropFirst=false,early=false,custom=false,stale=false,storageBlocked=false,theme=false}={})=>{
   fixtureCss='#style-target{padding-left:3px;color:blue}'+(early?`@media all{:root{--tsix-css-delivery:resource-v1}${stale?css.replace('2.0.0','1.0.0'):css}#style-target{padding-left:23px;color:red}}`:'');
   await page.goto('http://tsix-native.test/');
-  await page.evaluate(({build,ready,dropFirst,custom,storageBlocked})=>{
+  await page.evaluate(({build,ready,dropFirst,custom,storageBlocked,theme})=>{
    // The actual stylesheet remains same-origin HTTP for this browser fixture.
    // Only its reported native address differs, like the lexical page address.
    Object.defineProperty(document.styleSheets[0],'href',{value:'tsui://default/main.css'});
+   // TeamSpeak's style loader appends its built-in theme after main.css.
+   if(theme){const style=document.createElement('style');style.textContent=':root,::after,::before{--tsv-font-color:#E0E0E0}:root{--tsix-layout-version:0.0.0}#style-target{color:green}';document.head.append(style)}
    if(custom){const style=document.createElement('style');style.id='user-style';style.textContent='#style-target{color:purple}';document.head.append(style)}
    if(storageBlocked)Object.defineProperty(window,'localStorage',{get(){throw new DOMException('Storage is unavailable','SecurityError')}});
    const fixture=window.fixture={requests:[],sockets:[],states:[],attaches:{features:0,workspace:0,chat:0,streams:0,manager:0},refreshes:0,syncs:0,versionRequests:0};
@@ -45,7 +47,7 @@ try{
    window.attachWorkspace=()=>{fixture.attaches.workspace++;window.__tsixWorkspace={refresh(){fixture.refreshes++},dispose(){throw Error('Healthy workspace must survive updates')}}};
    window.attachStreams=()=>{fixture.attaches.streams++;window.__tsixStreams={sync(){fixture.syncs++},dispose(){throw Error('Healthy streams must survive updates')}}};
    window.attachManager=()=>{fixture.attaches.manager++;window.__tsixManager={setState(state,token){fixture.states.push({state,token})}}};
-  },{build,ready,dropFirst,custom,storageBlocked});
+  },{build,ready,dropFirst,custom,storageBlocked,theme});
  };
  // Chromium fixtures do not implement TeamSpeak's private tsui scheme. Supply
  // only that document address lexically; all runtime and DOM code is unchanged.
@@ -88,6 +90,14 @@ try{
  assert.equal(await page.locator('#tsix-native-style').count(),0);
  assert.deepEqual(await page.locator('#style-target').evaluate(e=>({padding:getComputedStyle(e).paddingLeft,color:getComputedStyle(e).color})),{padding:'23px',color:'rgb(128, 0, 128)'});
  checks.push('Early CSS needs no duplicate sheet and preserves custom Appearance precedence');
+ await setup({early:true,custom:true,theme:true});await start();await page.waitForFunction(()=>__tsixNative.status==='ready');
+ assert.deepEqual(await page.evaluate(()=>({order:__tsixNative.cssOrder,after:document.getElementById('tsix-native-style')?.previousElementSibling?.textContent.startsWith(':root'),early:[...document.styleSheets[0].cssRules].find(r=>r.media)?.media.mediaText})),{order:'after-theme',after:true,early:'not all'});
+ const api=()=>page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--tsix-layout-version').trim());
+ assert.equal(await api(),'2.0.0');assert.equal(await page.locator('#style-target').evaluate(e=>getComputedStyle(e).color),'rgb(128, 0, 128)');
+ await page.evaluate(()=>{const old=document.getElementById('tsix-native-style').previousElementSibling;old.remove();const next=document.createElement('style');next.textContent=':root,::after,::before{--tsv-font-color:#202020}:root{--tsix-layout-version:0.0.0}';document.head.append(next)});
+ await page.waitForFunction(()=>document.head.lastElementChild.id==='tsix-native-style');
+ assert.equal(await api(),'2.0.0');assert.equal(await page.locator('#tsix-native-style').count(),1);
+ checks.push('Layout CSS follows the built-in theme, including after a theme switch, while a user style keeps precedence');
  await setup({custom:true});await start();await page.waitForFunction(()=>__tsixNative.status==='ready');
  assert.equal(await page.evaluate(()=>__tsixNative.cssDelivery),'javascript');
  assert.equal(await page.locator('#style-target').evaluate(e=>getComputedStyle(e).color),'rgb(128, 0, 128)');
