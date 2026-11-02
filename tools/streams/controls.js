@@ -152,6 +152,7 @@ function syncPreviewJoins(enabled) {
         if (!vm?.session?.isInbound || !vm.session.isJoinable || typeof vm.onJoin !== 'function') continue;
         if (joins.has(preview) && joins.get(preview).vm !== vm) {
           joins.get(preview).button.remove();
+          joins.get(preview).label.remove();
           joins.delete(preview);
         }
         seen.add(preview);
@@ -166,13 +167,35 @@ function syncPreviewJoins(enabled) {
           });
           for (const type of ['mousedown', 'pointerdown', 'keydown', 'keyup'])
             button.addEventListener(type, event => event.stopPropagation());
-          joins.set(preview, { vm, button });
-          host.append(button);
-        } else if (joins.get(preview).button.parentElement !== host) host.append(joins.get(preview).button);
+          // Name the streamer and stream above the action; the native name
+          // overlay is hidden while the stream is only joinable.
+          const label = document.createElement('div');
+          label.setAttribute('data-tsix-preview-label', '');
+          const name = document.createElement('span'),
+            title = document.createElement('span');
+          name.setAttribute('data-tsix-preview-name', '');
+          title.setAttribute('data-tsix-preview-title', '');
+          label.append(name, title);
+          joins.set(preview, { vm, button, label, name, title });
+        }
+        const join = joins.get(preview);
+        const session = vm.session,
+          streamer = session.client?.displayName ?? session.matrixChatMember?.displayName ?? '',
+          stream = typeof session.config?.name === 'string' ? session.config.name.trim() : '';
+        if (join.name.textContent !== streamer) join.name.textContent = streamer;
+        if (join.title.textContent !== stream) join.title.textContent = stream;
+        // Write only on change: attribute churn would keep the observer busy.
+        const show = { name: !!streamer, title: !!stream && stream !== streamer };
+        setAttr(join.name, 'hidden', show.name ? null : '');
+        setAttr(join.title, 'hidden', show.title ? null : '');
+        setAttr(join.label, 'hidden', show.name || show.title ? null : '');
+        if (join.label.parentElement !== host || join.label.nextSibling !== join.button) host.append(join.label);
+        if (join.button.parentElement !== host || join.button.previousSibling !== join.label) host.append(join.button);
       }
   for (const [preview, record] of joins)
     if (!seen.has(preview)) {
       record.button.remove();
+      record.label.remove();
       joins.delete(preview);
     }
 }
@@ -203,9 +226,7 @@ function syncFocusActions(record, enabled, state) {
           originalFullscreen = vm.toggleFullscreen;
         let origin = null,
           moved = false,
-          armed = false,
-          previousMode,
-          previousAt = -Infinity;
+          armed = false;
         const down = e => {
           origin = [e.clientX, e.clientY];
           moved = false;
@@ -229,22 +250,11 @@ function syncFocusActions(record, enabled, state) {
             clearTimeout(vm._dblClickTimeout);
             vm._dblClickTimeout = null;
           }
-          previousMode = record.vm.item?.layoutMode;
-          previousAt = performance.now();
           // An immediate focus change can put a different tile under the second
-          // click. Remember the originating player, not the later hit target.
+          // click of a double-click. Remember this click so that one is ignored.
           record.focusClick =
             e?.isTrusted && e.type === 'click' && e.detail === 1
-              ? {
-                  time: performance.now(),
-                  x: e.clientX,
-                  y: e.clientY,
-                  node,
-                  session: vm.session,
-                  vm,
-                  mode: previousMode,
-                  fullscreen: originalFullscreen
-                }
+              ? { time: performance.now(), x: e.clientX, y: e.clientY }
               : null;
           // Same as native and the keyboard: a preview gains focus, and the
           // focused stream returns to the grid.
@@ -255,15 +265,9 @@ function syncFocusActions(record, enabled, state) {
         };
         const fullscreen = e => {
           // The player's own fullscreen/exit buttons and menu item call this
-          // with their click event. Only a double-click on the video surface is
-          // a gesture to filter; a double-click on a control is not fullscreen.
-          if (e?.type === 'dblclick') {
-            if (themeActive() && (node.closest('[inert]') || streamControl(e.target))) return;
-            // Undo the immediate focus from this gesture's first click only.
-            if (record.vm.item && performance.now() - previousAt < 600) record.vm.item.layoutMode = previousMode;
-          }
-          previousAt = -Infinity;
-          previousMode = undefined;
+          // with their click event. Clicking around the stage must never enter
+          // fullscreen, so a double-click on the player only acts as one click.
+          if (e?.type === 'dblclick' && themeActive() && !document.fullscreenElement) return;
           return originalFullscreen.call(vm, e);
         };
         const keydown = e => {
@@ -338,37 +342,28 @@ function installFocusGestures(record) {
   record.captureClick = e => {
     const first = record.focusClick;
     record.focusClick = null;
-    if (
-      !e.isTrusted ||
-      // Two separate single clicks are not a double-click, however close.
-      e.detail < 2 ||
-      !nearby(first, e) ||
-      !record.element.contains(e.target) ||
-      !themeActive() ||
-      document.fullscreenElement ||
-      first.vm._isDestroyed ||
-      !first.node.isConnected ||
-      first.vm.session !== first.session ||
-      first.node.closest('[inert]') ||
-      record.vm.inDragTile ||
-      record.vm.inDragStream ||
-      (!e.target.closest('.video-stream') && !e.target.closest('.screen-grid-wrapper')) ||
-      streamControl(e.target)
-    )
-      return;
+    // Two separate single clicks are not a double-click, however close.
+    if (e.detail < 2 || !nearby(first, e) || !stageSurface(e)) return;
+    // The second click of a double-click keeps the first click's layout.
     e.preventDefault();
     e.stopImmediatePropagation();
-    record.fullscreenClick = { time: performance.now(), x: e.clientX, y: e.clientY };
-    if (record.vm.item) record.vm.item.layoutMode = first.mode;
-    first.fullscreen.call(first.vm, e);
   };
+  // Native players enter fullscreen on double-click, including previews this
+  // helper does not wrap. In the stage that only happens from the button.
   record.captureDouble = e => {
-    if (nearby(record.fullscreenClick, e)) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-    }
-    record.fullscreenClick = null;
+    if (!stageSurface(e)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
   };
+  const stageSurface = e =>
+    e.isTrusted &&
+    record.element.contains(e.target) &&
+    themeActive() &&
+    !document.fullscreenElement &&
+    !record.vm.inDragTile &&
+    !record.vm.inDragStream &&
+    !!e.target.closest('.video-stream,.screen-grid-wrapper') &&
+    !streamControl(e.target);
   document.addEventListener('click', record.captureClick, true);
   document.addEventListener('dblclick', record.captureDouble, true);
 }
@@ -498,6 +493,7 @@ function release(record) {
   for (const [node, r] of record.focusActions) releaseFocus(record, node, r);
   restoreLayoutNodes(record);
   clearTray(record);
+  clearStageChrome(record);
   record.chatToolbar?.remove();
   record.element.removeAttribute('data-tsix-chat');
   // Restore only our transient layout inputs, never media/session state.
@@ -637,6 +633,7 @@ function sync() {
           vm.presented,
           vm.fullscreenTileId,
           vm.item?.layoutMode?.kind,
+          ...(Array.isArray(vm.hostIndicators) ? vm.hostIndicators : []).map(i => `${i.id}:${!!i.issueIcon}`),
           ...(s?.tiles || []).map(t => `${t.id}:${t.focused}:${t.active}:${t.x}:${t.w}:${t.y}:${t.h}`)
         ].join(':');
       }, schedule);
@@ -646,7 +643,9 @@ function sync() {
     syncActionDock(records.get(element), enabled);
   }
   for (const [element, record] of records) if (!live.has(element) || record.vm._isDestroyed) release(record);
-  syncButtons(enabled);
   syncVolumes(enabled && feature('volumeBoost'));
+  // Before keyboard semantics, so a new fallback mute button gets them at once.
+  syncFallbackVolumes(enabled);
+  syncButtons(enabled);
   syncPreviewJoins(enabled);
 }

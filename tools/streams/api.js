@@ -37,18 +37,19 @@ document.addEventListener('loadedmetadata', schedule, true);
 document.addEventListener('loadeddata', schedule, true);
 document.addEventListener('fullscreenchange', onFullscreenChange);
 window.addEventListener('tsix-features', schedule);
+const volumeControlFor = session =>
+  [...volumes.values(), ...[...fallbackVolumes.values()].map(entry => entry.control)].find(
+    control => control.session === session
+  );
 window.__tsixStreams = {
   version: '1.1.0',
   sync,
-  volumeForSession: session =>
-    volumeHandoffs.get(session) ??
-    [...volumes.values()].find(control => control.session === session)?.gain() ??
-    session.volume,
+  volumeForSession: session => volumeHandoffs.get(session) ?? volumeControlFor(session)?.gain() ?? session.volume,
   restoreVolume(session, value) {
     if (disposed || !Number.isFinite(value) || value < 0 || value > 3) throw Error('Invalid stream volume');
     // A restored session keeps its saved volume, never the per-streamer one.
     volumeRemembered.add(session);
-    const control = [...volumes.values()].find(control => control.session === session);
+    const control = volumeControlFor(session);
     if (value > 1 && control) {
       volumeHandoffs.delete(session);
       control.setVolume(value);
@@ -81,9 +82,13 @@ window.__tsixStreams = {
     for (const id of volumeFrames.values()) cancelAnimationFrame(id);
     volumeFrames.clear();
     broadcast.dispose();
+    syncFallbackVolumes(false);
     for (const control of volumes.values()) control.dispose();
     volumes.clear();
-    for (const { button } of joins.values()) button.remove();
+    for (const { button, label } of joins.values()) {
+      button.remove();
+      label.remove();
+    }
     joins.clear();
     document.removeEventListener('load', onStyleLoad, true);
     document.removeEventListener('loadedmetadata', schedule, true);

@@ -81,5 +81,41 @@ try {
   return {oldSynchronousWatcherRenderCount:renders,renderLoopReproduced:renders>30};
  });
  assert.ok(reproduction.renderLoopReproduced,'The regression must reproduce the original failure');
- console.log(JSON.stringify({result:'PASS',...report,...reproduction,errors},null,2));
+ // TeamSpeak omits its volume control when either audio flag is off, while
+ // stream audio can still play. The fallback uses the native button component.
+ const fallback=await page.evaluate(async volumeSource=>{
+  const create=new Function(`const feature=()=>true;const volumeHandoffs=new WeakMap(),volumeRemembered=new WeakSet();${volumeSource};return createFallbackVolume`)();
+  const TsButton=Vue.extend({props:['image'],render(h){return h('div',{class:'tsv-button',on:{click:e=>this.$emit('click',e)}},[h('svg',{attrs:{name:this.image}})])}});
+  const player=new Vue({data:()=>({session:{isInbound:true,status:4,volume:1,muted:false},internalVolume:100,mediaStream:new MediaStream(),videoRef:null,revision:0}),
+   computed:{volume:{get(){return this.session.muted?0:this.internalVolume},set(v){this.internalVolume=v;this.session.muted=v===0;this.session.volume=v/100}}},
+   methods:{onConnectionRef(el){this.videoRef=el;if(el&&el.srcObject!==this.mediaStream)el.srcObject=this.mediaStream},toggleMute(){this.session.muted=!this.session.muted}},
+   render(h){this.revision;return h('div',{class:'video-stream'},[h('video',{ref:el=>this.onConnectionRef(el)}),h('div',{class:'screen-overlay__bottom',attrs:{'data-v-fixture':''}},[h('div',{class:'compensate-border tsv-flex-grow'}),h(TsButton,{props:{image:'stream-leave'}})])])}
+  }).$mount();document.body.append(player.$el);
+  const bar=player.$el.querySelector('.screen-overlay__bottom'),spacer=bar.querySelector('.tsv-flex-grow');
+  const originalRef=player.onConnectionRef;
+  let entry=create(bar,spacer,TsButton,player,3);
+  const button=entry.wrapper.querySelector('.tsv-button'),icon=()=>entry.wrapper.querySelector('svg').getAttribute('name'),out=()=>entry.wrapper.querySelector('output').textContent;
+  const placed=bar.firstElementChild===entry.wrapper&&entry.wrapper.nextElementSibling===spacer&&entry.wrapper.hasAttribute('data-v-fixture')&&button.hasAttribute('data-v-fixture');
+  button.click();await player.$nextTick();
+  const muted={muted:player.session.muted,icon:icon(),out:out()};
+  button.click();await player.$nextTick();
+  const unmuted={muted:player.session.muted,icon:icon(),out:out()};
+  const input=entry.wrapper.querySelector('input');input.value='250';input.dispatchEvent(new Event('input'));
+  const boosted=player.session.volume;
+  player.revision++;await player.$nextTick();
+  const survivesRender=entry.wrapper.parentElement===bar;
+  entry.dispose();await player.$nextTick();
+  const cleaned=!bar.querySelector('[data-tsix-fallback-volume]')&&player.session.volume===1&&player.onConnectionRef===originalRef;
+  entry=create(bar,spacer,TsButton,player,1);
+  const capped=entry.wrapper.querySelector('input').max;
+  entry.dispose();player.$destroy();player.$el.remove();
+  return {placed,muted,unmuted,boosted,survivesRender,cleaned,capped};
+ },volumeSource);
+ assert.ok(fallback.placed,'The fallback sits where the native control would, with the native scope attribute');
+ assert.deepEqual(fallback.muted,{muted:true,icon:'speaker-slash',out:'0%'});
+ assert.deepEqual(fallback.unmuted,{muted:false,icon:'speaker',out:'100%'});
+ assert.equal(fallback.boosted,2.5);assert.ok(fallback.survivesRender,'A native re-render keeps the fallback');
+ assert.ok(fallback.cleaned,'Dispose restores gain, the native ref and the bar');assert.equal(fallback.capped,'100');
+ assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({result:'PASS',...report,...reproduction,fallback,errors},null,2));
 }finally{await browser.close()}

@@ -1,7 +1,7 @@
 /* TS6 beta5 / 1791901251. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 2.3.1;
+  --tsix-layout-version: 2.4.0;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
@@ -99,8 +99,8 @@
  * resizing native panes or covering the video and chat workspace. */
 [data-tsix-broadcast-bar][data-tsix-sharing-controls] {
   --tsix-live-color: #ff7a86;
-  position: absolute; left: 12px; bottom: var(--tsix-broadcast-bottom, 8px);
-  width: 260px; max-width: calc(100% - 24px); height: auto; box-sizing: border-box;
+  position: absolute; left: 12px; right: 12px; bottom: var(--tsix-broadcast-bottom, 8px);
+  width: auto; max-width: none; height: auto; box-sizing: border-box;
   z-index: 6; pointer-events: auto; display: flex; flex-direction: column;
   align-items: stretch; justify-content: flex-start; gap: 4px; padding: 8px;
   container: tsix-sharing / inline-size;
@@ -186,7 +186,7 @@
 [data-tsix-sharing-controls] [data-tsix-viewer-list] ul { padding: 0; margin: 8px 0 0; list-style: none; }
 [data-tsix-sharing-controls] [data-tsix-viewer-list] li { display: flex; align-items: center; gap: 8px; min-height: 32px; }
 [data-tsix-sharing-controls] [data-tsix-viewer-list] li > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-[data-tsix-broadcast-bar][data-tsix-sharing-controls][data-fullscreen] { position: fixed; top: 12px; bottom: auto; left: auto; right: 12px; max-width: calc(100% - 24px); }
+[data-tsix-broadcast-bar][data-tsix-sharing-controls][data-fullscreen] { position: fixed; top: 12px; bottom: auto; left: auto; right: 12px; width: 260px; max-width: calc(100% - 24px); }
 [data-tsix-broadcast-bar][data-tsix-sharing-controls][data-fullscreen] [data-tsix-viewer-list] { top: calc(100% + 6px); bottom: auto; left: auto; right: -1px; width: min(360px, calc(100vw - 24px)); max-height: min(300px, calc(100vh - var(--tsix-broadcast-height, 120px) - 30px)); }
 
 /* Sharing follows the native toolbar's grouped actions and shared feedback. */
@@ -285,6 +285,20 @@
 .tsv-screenshare[data-tsix-stream-stage] :is(.stream-preview__avatar, .stream-preview__join) { width: clamp(64px, 18cqw, 160px); max-width: 40%; }
 .tsv-screenshare[data-tsix-stream-stage] .stream-preview.is-joinable:has([data-tsix-preview-join]) .stream-preview__join,
 .tsv-screenshare[data-tsix-stream-stage] .video-stream:has(> .stream-preview.is-joinable) > .screen-overlay { display: none; }
+/* Who is streaming, and the stream's name, between avatar and Watch button. */
+[data-tsix-preview-label] {
+  display: flex; flex-direction: column; align-items: center; box-sizing: border-box;
+  max-width: min(90%, 480px); margin-top: 12px; padding: 4px 12px; pointer-events: none;
+  border-radius: var(--tsix-chrome-radius); background: color-mix(in srgb, var(--tsix-chrome-bg) 82%, transparent);
+  text-align: center;
+}
+[data-tsix-preview-label][hidden], [data-tsix-preview-label] > [hidden] { display: none; }
+[data-tsix-preview-label] > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-tsix-preview-name] { color: var(--tsix-chrome-text); font: 600 var(--tsix-type-header)/24px var(--tsv-font-family); }
+[data-tsix-preview-title] { color: var(--tsix-chrome-muted); font: 400 var(--tsix-type-label)/20px var(--tsv-font-family); }
+@container (max-width: 300px) { [data-tsix-preview-title] { display: none; } }
+[data-tsix-preview-label]:not([hidden]) + [data-tsix-preview-join] { margin-top: 12px; }
+@media (forced-colors: active) { [data-tsix-preview-label] { border: 1px solid CanvasText; } }
 [data-tsix-preview-join] {
   flex: 0 0 auto; min-height: 36px; margin-top: 16px; padding: 6px 16px;
   border: 1px solid var(--tsix-primary-border); border-radius: var(--tsix-chrome-radius); font: inherit;
@@ -321,12 +335,52 @@
 .tsv-screenshare[data-tsix-stream-stage] [data-tsix-stream-row] > .screenshare__global-hover-actions-wrapper {
   flex: 0 0 32px; width: 32px; min-width: 32px; box-sizing: border-box;
 }
+/* The left rail only ever holds the native "previous page" arrow. Without it,
+ * the stage meets the voice column at the same inset as its other edges. */
+.tsv-screenshare[data-tsix-stream-stage] [data-tsix-stream-row] > .screenshare__global-hover-actions-wrapper:first-child:not(:has(> .tsv-pagination)) { display: none; }
+/* A stage reaching the window bottom: the player bar's top edge continues the
+ * footer line of the side columns (the stream helper measures the footer). */
+.tsv-screenshare[data-tsix-footer-align] [data-tsix-stream-row] {
+  --tsix-control-height: max(32px, calc(var(--tsix-footer-height) - var(--tsix-stage-inset) - var(--tsv-video-border-width, 2px)));
+}
+/* Stream-issue badge (and focus pin): anchored inside its player frame by the
+ * stream helper, styled like the other floating stage controls. */
+.tsv-screenshare .screen-host-indicators[data-tsix-indicator="frame"] {
+  transform: translate(var(--tsix-indicator-x), var(--tsix-indicator-y)) translateX(-100%); gap: 4px; padding: 0;
+}
+.tsv-screenshare .screen-host-indicators[data-tsix-indicator="hidden"] { display: none; }
+.tsv-screenshare .screen-host-indicators[data-tsix-indicator] :is(.screen-overlay_top_issues, .screen-host-indicators__pin) {
+  display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
+  width: 28px; height: 28px; min-width: 28px; min-height: 28px; padding: 0; opacity: 1;
+  border: 1px solid var(--tsix-chrome-border); border-radius: var(--tsix-chrome-radius); background: var(--tsix-chrome-bg);
+}
+.tsv-screenshare .screen-host-indicators[data-tsix-indicator] .screen-host-indicators__pin { padding: 5px; }
+.tsv-screenshare .screen-host-indicators[data-tsix-indicator] .screen-overlay_top_issues:hover { background: var(--tsix-control-hover); }
+.tsv-screenshare .screen-host-indicators[data-tsix-indicator] .screen-overlay_top_issues:focus-visible { outline: 2px solid var(--tsix-focus); outline-offset: -2px; }
+.tsv-screenshare .screen-host-indicators[data-tsix-indicator] .screen-overlay_top_issues .tsv-icon { width: 16px; height: 16px; }
+@media (forced-colors: active) {
+  .tsv-screenshare .screen-host-indicators[data-tsix-indicator] :is(.screen-overlay_top_issues, .screen-host-indicators__pin) { border-color: CanvasText; background: Canvas; }
+}
 [data-tsix-stream-footer] {
   display: flex; align-items: center; justify-content: flex-end; box-sizing: border-box;
   height: var(--tsix-control-height); min-height: var(--tsix-control-height); padding: 0 6px;
   background: var(--tsix-chrome-bg); border-top: 1px solid var(--tsix-chrome-border);
 }
 [data-tsix-stream-footer][data-tsix-footer-grid] { margin: 0 38px; }
+/* An unopened player has no playback controls, only view actions. Float them
+ * over the preview's bottom edge on hover or focus instead of reserving a
+ * mostly empty strip. The player box is unchanged, so opening the stream
+ * keeps the same frame (the video then sits above its control bar). */
+.tsv-screenshare[data-tsix-stream-stage] .video-stream:has(> [data-tsix-stream-footer]:not([data-tsix-footer-grid])) > .stream-preview { height: 100%; }
+.video-stream > [data-tsix-stream-footer]:not([data-tsix-footer-grid]) {
+  position: absolute; z-index: 2; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(transparent, color-mix(in srgb, var(--tsix-chrome-bg) 70%, transparent));
+  border-top: 0; opacity: 0; transition: opacity 120ms ease-out;
+}
+.video-stream:is(:hover,:focus-within) > [data-tsix-stream-footer]:not([data-tsix-footer-grid]) { opacity: 1; }
+.video-stream > [data-tsix-stream-footer]:not([data-tsix-footer-grid]) [data-tsix-view-actions] { padding: 2px; border-radius: var(--tsix-chrome-radius); background: var(--tsix-chrome-bg); }
+@media (prefers-reduced-motion: reduce) { .video-stream > [data-tsix-stream-footer]:not([data-tsix-footer-grid]) { transition: none; } }
+@media (forced-colors: active) { .video-stream > [data-tsix-stream-footer]:not([data-tsix-footer-grid]) { opacity: 1; background: Canvas; } }
 /* The all-hidden state is a message with a restore menu, not a video stage. */
 [data-tsix-empty-stream-row] { align-items: center; gap: 8px; min-height: 40px; padding: 4px 12px; box-sizing: border-box; }
 [data-tsix-empty-stream-row] > .screen-grid-wrapper { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
@@ -527,6 +581,8 @@
   height: var(--tsix-hidden-chat-height, var(--tsix-chat-min-height, 210px));
   min-height: 0;
   flex: none;
+  /* Its overlays (drop zone) must not overflow the pane and add a scrollbar. */
+  overflow: hidden;
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
@@ -598,10 +654,9 @@
   border-radius: 0; background: transparent;
 }
 /* A native stack may expose several sibling section tabs. Only a single tab
- * uses the title/tool grid; putting every sibling in its first cell hides all
- * but the last section from pointer input. */
-.sidebar-pane-layout .tsv-tabs:not(:has(> .tsv-tab-item ~ .tsv-tab-item)) { display: grid; grid-template-columns: minmax(0,1fr) 28px; grid-template-rows: 28px; }
-.sidebar-pane-layout .tsv-tabs:not(:has(> .tsv-tab-item ~ .tsv-tab-item)):has(.ts-sidebar-tab-sub-panel-accessory) { grid-template-rows: 28px 28px; }
+ * uses the title/tool/expander grid; putting every sibling in its first cell
+ * hides all but the last section from pointer input. */
+.sidebar-pane-layout .tsv-tabs:not(:has(> .tsv-tab-item ~ .tsv-tab-item)) { display: grid; grid-template-columns: minmax(0,1fr) auto 28px; grid-template-rows: 28px; }
 /* The native slim-tab backdrop has higher specificity than .tsv-tabs alone. */
 .sidebar-pane-layout .tsv-tabs.tsv-tabs-slim::before { content: none; display: none; }
 .sidebar-pane-layout .tsv-tabs > .tsv-tab-item { grid-column: 1; grid-row: 1; min-width: 28px; min-height: 28px; padding: 0; margin: 0; gap: 8px; justify-content: flex-start; }
@@ -609,14 +664,42 @@
 .sidebar-pane-layout .tsv-tabs > .tsv-tab-item > .tsv-text-truncate { justify-content: flex-start; }
 .sidebar-pane-layout .tsv-tabs:not(:has(> .tsv-tab-item ~ .tsv-tab-item)) > .tsv-extended-expander-click-area { display: contents; }
 .sidebar-pane-layout .tsv-tabs:not(:has(> .tsv-tab-item ~ .tsv-tab-item)) > .tsv-extended-expander-click-area > .tsv-flex-grow { display: none; }
-.sidebar-pane-layout .tsv-tabs .ts-expander { grid-column: 2; grid-row: 1; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; margin: 0; border-radius: 4px; }
+.sidebar-pane-layout .tsv-tabs .ts-expander { grid-column: 3; grid-row: 1; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; margin: 0; border-radius: 4px; }
 .sidebar-pane-layout .tsv-tabs .ts-expander > .ts-expander-chevron { position: static; width: 22px; height: 22px; margin: 0; }
 .sidebar-pane-layout .tsv-tabs .ts-expander:hover { background: var(--tsix-control-bg); }
+/* Section tools share the heading row and appear while it is hovered or holds
+ * focus. Collapsed to zero width otherwise, they stay in the tab order and
+ * leave the full row to the section name. */
 .sidebar-pane-layout .tsv-tabs .tsv-sidebar-header-accessories {
-  grid-column: 1 / -1; grid-row: 2; justify-self: start; justify-content: flex-start;
-  gap: 8px; min-height: 28px; padding: 0; margin: 0 0 0 -3px;
+  grid-column: 2; grid-row: 1; display: flex; align-items: center; justify-content: flex-end;
+  gap: 2px; min-height: 28px; max-width: 0; padding: 0; margin: 0; overflow: hidden; opacity: 0;
 }
-.sidebar-pane-layout .tsv-tabs:not(:has(.ts-sidebar-tab-sub-panel-accessory)) .tsv-sidebar-header-accessories { display: none; }
+.sidebar-pane-layout .tsv-tabs:is(:hover,:focus-within) .tsv-sidebar-header-accessories { max-width: none; margin-left: 4px; overflow: visible; opacity: 1; }
+.sidebar-pane-layout .tsv-tabs:not(:has(:is(.ts-sidebar-tab-sub-panel-accessory,[data-tsix-section-action]))) .tsv-sidebar-header-accessories { display: none; }
+[data-tsix-section-action] {
+  flex: 0 0 28px; width: 28px; height: 28px; display: grid; place-items: center; box-sizing: border-box;
+  padding: 0; margin: 0; border: 0; border-radius: 4px; background: transparent; color: var(--tsix-chrome-accent);
+  font: 600 var(--tsix-type-header)/1 var(--tsv-font-family); cursor: pointer;
+}
+[data-tsix-section-action] > svg { width: 22px; height: 22px; pointer-events: none; }
+[data-tsix-section-action] .tsv-icon-base-stroke { stroke: currentColor; }
+[data-tsix-section-action]:is(:hover,:focus-visible) { background: var(--tsix-control-bg); }
+[data-tsix-section-action]:active { background: var(--tsix-control-pressed); }
+[data-tsix-section-action]:focus-visible { outline: 2px solid var(--tsix-focus); outline-offset: -2px; }
+/* The native add/join row appears only while it edits, loads or fails. */
+.sidebar-pane-layout [data-tsix-section-idle="true"] { display: none; }
+/* Activity group headings (Servers, Chats) get the icon column the section
+ * tabs have, so every sidebar heading starts the same way. */
+.sidebar-pane-layout .tsv-activity-group[data-tsix-group] .tsv-sidebar-header-content:has(> [data-tsix-group-icon]) { position: relative; }
+[data-tsix-group-icon] { position: absolute; left: 1px; top: 50%; width: 20px; height: 20px; margin-top: -10px; color: var(--tsix-heading-text); pointer-events: none; }
+@media (forced-colors: active) {
+  [data-tsix-group-icon] { color: CanvasText; }
+  [data-tsix-section-action] { color: ButtonText; }
+  [data-tsix-section-action]:focus-visible { outline-color: Highlight; }
+}
+/* Offline contacts read as unavailable at a glance; unread badges stay bright. */
+.sidebar-pane-layout .ts-room-list-item[data-tsix-offline] .tsv-item-content > :is(.tsv-icon-primary,.icon-container),
+.sidebar-pane-layout .ts-room-list-item[data-tsix-offline] .tsv-item-text > .tsv-text-truncate { opacity: .55; }
 .sidebar-pane-layout .ts-sidebar-tab-sub-panel-accessory { width: 28px; height: 28px; min-width: 28px; min-height: 28px; box-sizing: border-box; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
 .sidebar-pane-layout .tsv-tabs .ts-sidebar-tab-sub-panel-accessory:is(:hover,:focus-visible) { transform: none; background: var(--tsix-control-bg); }
 .sidebar-pane-layout .tsv-bar-item-title { margin: 0; color: var(--tsix-heading-text); font: 600 var(--tsix-type-label)/20px var(--tsv-font-family); }
@@ -696,6 +779,17 @@
 .main-pane-layout .ts-server-tree-item-leaf.tsv-active .tsv-item-highlight.tsv-item-highlight { background: var(--tsix-control-hover); border-left: 3px solid var(--tsix-chrome-accent); }
 /* Client badges sit on the row like channel tags, without dark boxes. */
 .main-pane-layout .ts-server-tree-item-leaf :is(.ts-server-tree-active-status,.ts-server-tree-inactive-status) { background: transparent; }
+/* Group, channel-group, badge and country icons repeat on most rows; keep them
+ * quiet until the row is hovered or selected. Talk power, streaming,
+ * commander and priority speaker (the active status) stay at full strength. */
+.main-pane-layout .ts-server-tree-item-leaf .ts-server-tree-inactive-status { opacity: .5; transition: opacity 120ms ease-out; }
+.main-pane-layout .ts-server-tree-item-leaf:is(:hover,:focus-within,.tsv-selected,.tsv-active) .ts-server-tree-inactive-status { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .main-pane-layout .ts-server-tree-item-leaf .ts-server-tree-inactive-status { transition: none; } }
+@media (forced-colors: active) { .main-pane-layout .ts-server-tree-item-leaf .ts-server-tree-inactive-status { opacity: 1; } }
+/* Your own client: the native 500 weight is lost to the row font above, which
+ * leaves the theme's dark highlight blue as the lowest-contrast name. */
+.main-pane-layout .ts-server-tree-item-leaf.client.self :is(.ts-client-nick,.ts-server-tree-item-text-wrapper) { color: var(--tsix-chrome-accent); }
+.main-pane-layout .ts-server-tree-item-leaf.client.self .ts-server-tree-item-text-wrapper > .tsv-tree-preserve-spaces { font-weight: 600; }
 /* One right-hand edge per row: expanders, tag spacing and client badges end
  * together, and a channel tag keeps the same column with or without
  * subchannels (natively the spacing slot is narrower than the expander). */
@@ -824,6 +918,11 @@
 [data-tsix-chat-icon] .tsv-icon-base-stroke { stroke: currentColor; }
 [data-tsix-chat-rail] [data-tsix-chat-toggle][aria-expanded="true"] { color: var(--tsix-chrome-accent); background: var(--tsix-control-hover); }
 [data-tsix-chat-rail] [data-tsix-chat-toggle]:hover { color: var(--tsix-chrome-text); background: var(--tsix-control-hover); }
+/* With the rail to itself (no preview-tray toggle or pagination), the chat
+ * control is a full-height edge strip instead of a small floating square. */
+[data-tsix-chat-host]:not(:has(> :is([data-tsix-tray-toggle],.tsv-pagination))) > [data-tsix-chat-rail] { top: 4px; bottom: 4px; height: auto; }
+[data-tsix-chat-host]:not(:has(> :is([data-tsix-tray-toggle],.tsv-pagination))) > [data-tsix-chat-rail] [data-tsix-chat-toggle] { height: 100%; }
+[data-tsix-chat-host]:not(:has(> :is([data-tsix-tray-toggle],.tsv-pagination))) > [data-tsix-chat-rail] [data-tsix-chat-toggle][aria-expanded="true"]:not(:hover) { background: var(--tsix-control-bg); }
 /* Shared feedback stays within each button; it never enlarges a video hit area. */
 :is([data-tsix-chat-toggle],[data-tsix-tray-toggle],[data-tsix-view-action],[data-tsix-viewer-toggle]):active:not(:disabled) { background: var(--tsix-control-pressed); }
 :is([data-tsix-chat-toggle],[data-tsix-tray-toggle],[data-tsix-view-action],[data-tsix-viewer-toggle],[data-tsix-preview-join]):disabled { opacity: .5; cursor: default; }

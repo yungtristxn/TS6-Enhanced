@@ -14,7 +14,8 @@
     if (node.getAttribute(key) !== value) node.setAttribute(key, value);
   };
   let frame = 0,
-    disposed = false;
+    disposed = false,
+    active = false;
   let community = null;
   function syncCommunity(enabled) {
     const node = root.querySelector('.sidebar-pane-layout .ts-join-community .tsv-button-content');
@@ -32,6 +33,198 @@
     for (const n of [icon, ...icon.querySelectorAll('[id]')]) n.removeAttribute('id');
     node.replaceChildren(icon, document.createTextNode('Create community'));
   }
+  // Activity group headers ("Servers", "Chats") have no icon natively. Mark
+  // each group's kind from its items so the theme can draw a matching glyph.
+  const groupMarks = new Map();
+  const groupGlyphs = {
+    servers: [
+      ['rect', { x: 3.5, y: 4, width: 17, height: 6.5, rx: 1.5 }],
+      ['rect', { x: 3.5, y: 13.5, width: 17, height: 6.5, rx: 1.5 }],
+      ['path', { d: 'M7 7.25h.01M7 16.75h.01M11 7.25h6M11 16.75h6' }]
+    ],
+    chats: [['path', { d: 'M4 5.5h16v10H9.5L5 19.5v-4H4z' }]],
+    other: [
+      ['rect', { x: 4, y: 4, width: 7, height: 7, rx: 1.5 }],
+      ['rect', { x: 13, y: 4, width: 7, height: 7, rx: 1.5 }],
+      ['rect', { x: 4, y: 13, width: 7, height: 7, rx: 1.5 }],
+      ['rect', { x: 13, y: 13, width: 7, height: 7, rx: 1.5 }]
+    ]
+  };
+  function groupIcon(kind) {
+    const ns = 'http://www.w3.org/2000/svg',
+      svg = document.createElementNS(ns, 'svg');
+    for (const [key, value] of Object.entries({
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': '1.8',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      'aria-hidden': 'true',
+      focusable: 'false',
+      'data-tsix-group-icon': kind
+    }))
+      svg.setAttribute(key, value);
+    for (const [tag, values] of groupGlyphs[kind]) {
+      const shape = document.createElementNS(ns, tag);
+      for (const [key, value] of Object.entries(values)) shape.setAttribute(key, String(value));
+      svg.append(shape);
+    }
+    return svg;
+  }
+  function syncActivityGroups(enabled) {
+    const seen = new Set();
+    if (enabled)
+      for (const list of root.querySelectorAll('.sidebar-pane-layout .tsv-activities')) {
+        const groups = list.__vue__?.openedActivityGroups;
+        const nodes = list.querySelectorAll('.tsv-list > .tsv-activity-group');
+        if (!Array.isArray(groups) || groups.length !== nodes.length) continue;
+        nodes.forEach((node, index) => {
+          const type = groups[index]?.items?.[0]?.[0]?.type;
+          const kind = type === 'connection' ? 'servers' : type === 'chatRoom' || type === 'call' ? 'chats' : 'other';
+          if (!groupMarks.has(node)) groupMarks.set(node, { before: node.getAttribute('data-tsix-group'), icon: null });
+          const mark = groupMarks.get(node);
+          attr(node, 'data-tsix-group', kind);
+          seen.add(node);
+          // Expanded headings only; a collapsed sidebar shows a native symbol.
+          const content = node.querySelector('.tsv-sidebar-header-content');
+          if (!content?.querySelector(':scope > .tsv-item-text')) {
+            mark.icon?.remove();
+            return;
+          }
+          if (mark.icon?.getAttribute('data-tsix-group-icon') !== kind) {
+            mark.icon?.remove();
+            mark.icon = groupIcon(kind);
+          }
+          if (mark.icon.parentElement !== content) content.append(mark.icon);
+        });
+      }
+    for (const [node, { before, icon }] of groupMarks)
+      if (!seen.has(node)) {
+        icon?.remove();
+        if (before === null) node.removeAttribute('data-tsix-group');
+        else attr(node, 'data-tsix-group', before);
+        groupMarks.delete(node);
+      }
+  }
+  // "Add Contact" and "Join Group Chat" are inline editor rows below their
+  // section. Offer them as header actions like the other section tools, and
+  // show the native row only while it edits, loads or reports an error.
+  const addCells = {
+    'ts-contacts-add-cell': {
+      label: 'Add contact',
+      idle: vm => !vm.showContactAddInput && !vm.isAddingContact && !vm.isError
+    },
+    'ts-rooms-join-cell': {
+      label: 'Join group chat',
+      idle: vm => !vm.showRoomAddInput && !vm.isJoiningRoom && !vm.isError
+    }
+  };
+  const sectionActions = new Map();
+  function syncSectionActions(enabled) {
+    const seen = new Set();
+    if (enabled)
+      for (const group of root.querySelectorAll('.sidebar-pane-layout .tsv-resources-group')) {
+        const host = group.querySelector(':scope > .tsv-tabs .tsv-sidebar-header-accessories');
+        for (const cell of group.querySelectorAll('ul')) {
+          const vm = cell.__vue__,
+            spec = vm?.$el === cell && addCells[vm.$options?.name];
+          if (!spec || typeof vm.startEditing !== 'function') continue;
+          seen.add(cell);
+          let entry = sectionActions.get(cell);
+          if (entry && entry.vm !== vm) {
+            releaseSectionAction(cell, entry);
+            entry = null;
+          }
+          if (!entry) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.setAttribute('data-tsix-section-action', '');
+            button.setAttribute('aria-label', spec.label);
+            button.title = spec.label;
+            const icon = cell.querySelector('svg[name]');
+            if (icon) {
+              const copy = icon.cloneNode(true);
+              copy.setAttribute('aria-hidden', 'true');
+              for (const n of [copy, ...copy.querySelectorAll('[id]')]) n.removeAttribute('id');
+              button.append(copy);
+            } else button.textContent = '+';
+            // The header toggles its section on click; this action must not.
+            for (const type of ['mousedown', 'pointerdown', 'dblclick'])
+              button.addEventListener(type, event => event.stopPropagation());
+            button.addEventListener('click', event => {
+              event.stopPropagation();
+              // Reveal the row before the editor mounts so it can take focus.
+              cell.removeAttribute('data-tsix-section-idle');
+              vm.startEditing();
+              vm.$nextTick(() => {
+                if (!disposed && !cell.contains(document.activeElement)) cell.querySelector('input')?.focus();
+              });
+            });
+            entry = { vm, button, before: cell.getAttribute('data-tsix-section-idle') };
+            sectionActions.set(cell, entry);
+          }
+          // Without a single-section header (tabbed stacks), keep the native row.
+          if (host) {
+            if (entry.button.parentElement !== host) host.append(entry.button);
+            attr(cell, 'data-tsix-section-idle', String(spec.idle(vm)));
+          } else {
+            entry.button.remove();
+            cell.removeAttribute('data-tsix-section-idle');
+          }
+        }
+      }
+    for (const [cell, entry] of sectionActions) if (!seen.has(cell)) releaseSectionAction(cell, entry);
+  }
+  function releaseSectionAction(cell, { button, before }) {
+    button.remove();
+    if (before === null) cell.removeAttribute('data-tsix-section-idle');
+    else attr(cell, 'data-tsix-section-idle', before);
+    sectionActions.delete(cell);
+  }
+  // Offline contacts keep their native list position; only the row is marked.
+  const offlineRows = new Set();
+  function syncOfflineContacts(enabled) {
+    const seen = new Set();
+    if (enabled)
+      for (const list of root.querySelectorAll('.sidebar-pane-layout .ts-contact-list')) {
+        const offline = list.__vue__?.offlineContacts;
+        if (!Array.isArray(offline)) continue;
+        const items = new Set(offline);
+        for (const row of list.querySelectorAll('.ts-room-list-item')) {
+          const vm = row.__vue__,
+            item = vm?.item ?? vm?.$parent?.item;
+          if (!item) continue;
+          const value = items.has(item) ? '' : null;
+          if (value === null) row.removeAttribute('data-tsix-offline');
+          else {
+            attr(row, 'data-tsix-offline', value);
+            seen.add(row);
+          }
+        }
+      }
+    for (const row of offlineRows) if (!seen.has(row)) row.removeAttribute('data-tsix-offline');
+    offlineRows.clear();
+    for (const row of seen) offlineRows.add(row);
+  }
+  // Truncated tree names reveal their full text on hover. Rows are recycled,
+  // so the title is computed on each pointer entry and only ever owned here.
+  const treeText = '.main-pane-layout .ts-server-tree-item-leaf :is(.ts-client-nick,.ts-server-tree-channel-info)';
+  const overflowing = node =>
+    [node, ...node.querySelectorAll('.tsv-text-truncate,span')].some(n => n.scrollWidth > n.clientWidth + 1);
+  const onTreeHover = event => {
+    const node = active && event.target?.closest?.(treeText);
+    if (!node || (node.hasAttribute('title') && !node.hasAttribute('data-tsix-title'))) return;
+    const text = node.textContent.replace(/\s+/g, ' ').trim();
+    if (text && overflowing(node)) {
+      attr(node, 'title', text);
+      attr(node, 'data-tsix-title', '');
+    } else if (node.hasAttribute('data-tsix-title')) {
+      node.removeAttribute('title');
+      node.removeAttribute('data-tsix-title');
+    }
+  };
+  root.addEventListener('mouseover', onTreeHover);
   function schedule() {
     if (frame || disposed) return;
     frame = requestAnimationFrame(() => {
@@ -45,6 +238,15 @@
     syncTreeMetrics();
     syncControls(enabled);
     syncCommunity(enabled);
+    syncActivityGroups(enabled);
+    syncSectionActions(enabled);
+    syncOfflineContacts(enabled);
+    active = enabled;
+    if (!enabled)
+      for (const node of root.querySelectorAll('[data-tsix-title]')) {
+        node.removeAttribute('title');
+        node.removeAttribute('data-tsix-title');
+      }
     for (const node of enabled ? root.querySelectorAll(selector) : []) {
       if (!tracked.has(node)) {
         const before = Object.fromEntries(attributes.map(key => [key, node.getAttribute(key)]));
@@ -316,6 +518,8 @@
     if (
       changes.some(change => {
         const node = change.target.nodeType === 1 ? change.target : change.target.parentElement;
+        // Recycled contact rows change only their text; re-mark offline rows.
+        if (change.type === 'characterData') return !!node?.closest('.sidebar-pane-layout .ts-contact-list');
         if (change.type === 'attributes')
           return (
             node === root ||
@@ -339,7 +543,13 @@
     )
       schedule();
   });
-  observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled'] });
+  observer.observe(root, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ['class', 'disabled']
+  });
   const themeObserver = new MutationObserver(schedule);
   themeObserver.observe(document.head, {
     childList: true,
@@ -355,12 +565,20 @@
   const unwatch = vm.$watch('collapsedSidebar', sync);
   sync();
   window.__tsixWorkspace = {
-    version: '1.0.4',
+    version: '1.1.0',
     refresh: schedule,
     dispose() {
       disposed = true;
       if (frame) cancelAnimationFrame(frame);
       syncCommunity(false);
+      syncActivityGroups(false);
+      syncSectionActions(false);
+      syncOfflineContacts(false);
+      root.removeEventListener('mouseover', onTreeHover);
+      for (const node of root.querySelectorAll('[data-tsix-title]')) {
+        node.removeAttribute('title');
+        node.removeAttribute('data-tsix-title');
+      }
       observer.disconnect();
       themeObserver.disconnect();
       unwatch();

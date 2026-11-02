@@ -170,7 +170,7 @@ if(new URLSearchParams(location.search).has('preview')){
  for(const tile of Object.values(refs)){
   const player=tile.querySelector('.video-stream');
   const children=[...player.childNodes],pvm=player.__vue__;
-  pvm.session.status=0;pvm.session.isJoinable=true;pvm.joinCalls=0;
+  pvm.session.status=0;pvm.session.isJoinable=true;pvm.joinCalls=0;pvm.session.client??={displayName:'Alex Streamer'};pvm.session.config??={name:'Desktop capture'};
   pvm.onJoin=()=>{if(!pvm.session.isJoinable)return;pvm.joinCalls++;pvm.session.isJoinable=false;pvm.session.status=4;player.replaceChildren(...children);const video=player.querySelector('video');video?.play().catch(()=>{});video?.srcObject?.getVideoTracks().forEach(t=>t.requestFrame?.());lab.vm.doUpdateGrid();window.__tsixStreams?.sync()};
   player.innerHTML='<div class="stream-preview is-joinable" style="background:#0757c9"><div class="stream-preview__user-card" style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center"><span>Available stream</span></div></div>';
   player.querySelector('.stream-preview').addEventListener('click',e=>{e.stopPropagation();pvm.onJoin()});
@@ -193,6 +193,7 @@ if(new URLSearchParams(location.search).has('preview')){
   isFocused(t){return lab.focused===t.payload.session},
   refForTile(t){return refs[t.id]},
   get inDragTile(){return vm.inDragStream},
+  get hostIndicators(){return lab.indicators||[]},
   doUpdateGrid(){vm.doUpdateGrid()},
   $watch(get,cb){return vm.$watch(get,cb)}
  };

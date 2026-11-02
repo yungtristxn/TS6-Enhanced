@@ -82,8 +82,9 @@ function rememberVolume(session, gain) {
     /* The chosen volume still applies to the current stream. */
   }
 }
-function createVolume(slider, vm, handoffs = new WeakMap(), remembered = new WeakSet()) {
+function createVolume(slider, vm, handoffs = new WeakMap(), remembered = new WeakSet(), { max = 3 } = {}) {
   const session = vm.session,
+    limit = Math.round(Math.max(1, Math.min(3, max)) * 100),
     before = slider.getAttribute('data-tsix-native-volume');
   // The hidden native 0..100 slider emits its clamped model value on mute
   // changes. Detach that model listener while our range owns volume, or
@@ -98,7 +99,7 @@ function createVolume(slider, vm, handoffs = new WeakMap(), remembered = new Wea
   host.setAttribute('data-tsix-volume-control', '');
   input.type = 'range';
   input.min = '0';
-  input.max = '300';
+  input.max = String(limit);
   input.step = '1';
   input.setAttribute('aria-label', 'Stream volume');
   input.className = 'screen-overlay__hero-actions__action-volume-slider';
@@ -110,7 +111,7 @@ function createVolume(slider, vm, handoffs = new WeakMap(), remembered = new Wea
   // Standard audio tracks instead need Web Audio above HTML media's limit.
   const nativeAudio =
     !vm.videoRef.srcObject?.getAudioTracks().length && typeof navigator.createMediaStreamRequest === 'function';
-  let percent = Math.round(Math.max(0, Math.min(nativeAudio ? 3 : 1, session.volume)) * 100);
+  let percent = Math.round(Math.max(0, Math.min(nativeAudio ? limit / 100 : 1, session.volume)) * 100);
   let graph = null,
     epoch = 0,
     dead = false,
@@ -161,7 +162,7 @@ function createVolume(slider, vm, handoffs = new WeakMap(), remembered = new Wea
   function reconcile() {
     if (dead) return;
     if (nativeAudio) {
-      percent = Math.round(Math.max(0, Math.min(3, session.volume)) * 100);
+      percent = Math.round(Math.max(0, Math.min(limit / 100, session.volume)) * 100);
       if (vm.internalVolume !== Math.min(percent, 100)) vm.internalVolume = Math.min(percent, 100);
       const level = session.muted ? 0 : Math.min(1, session.volume);
       if (vm.videoRef && vm.videoRef.volume !== level) vm.videoRef.volume = level;
@@ -280,6 +281,7 @@ function createVolume(slider, vm, handoffs = new WeakMap(), remembered = new Wea
   // audio tracks go through the same Web Audio path as the range input.
   const setVolume = gain => {
     if (dead) return;
+    gain = Math.min(gain, limit / 100);
     if (nativeAudio) {
       session.volume = gain;
       percent = Math.round(gain * 100);
@@ -333,4 +335,101 @@ function createVolume(slider, vm, handoffs = new WeakMap(), remembered = new Wea
       else slider.setAttribute('data-tsix-native-volume', before);
     }
   };
+}
+// TeamSpeak renders its volume control only while both the streamer's audio
+// setting and its own audio flag are on, yet beta5 can play stream audio with
+// either off. A connected inbound player without the native control gets the
+// same control: TeamSpeak's own button component plus the helper's range.
+const fallbackVolumes = new Map();
+function createFallbackVolume(bar, spacer, Button, vm, max) {
+  const session = vm.session,
+    icon = () => (session.muted ? 'speaker-slash' : 'speaker');
+  const wrapper = document.createElement('div'),
+    track = document.createElement('div'),
+    slot = document.createElement('span');
+  wrapper.className = 'screen-overlay__hero-actions__action-volume-wrapper compensate-border tsv-flex';
+  wrapper.setAttribute('data-tsix-fallback-volume', '');
+  track.className = 'screen-overlay__hero-actions__action-volume tsv-flex tsv-flex-start';
+  slot.setAttribute('data-tsix-fallback-slider', '');
+  const mute = new Button({ propsData: { image: icon() } }).$mount();
+  mute.$el.classList.add('screen-overlay__hero-actions__action', 'compensate-border-button');
+  const toggle = event => {
+    event?.stopPropagation?.();
+    event?.preventDefault?.();
+    vm.toggleMute();
+  };
+  mute.$on('click', toggle);
+  // Native scoped styles key on the player's scope attribute.
+  for (const { name } of bar.attributes)
+    if (name.startsWith('data-v-')) for (const node of [wrapper, track, mute.$el]) node.setAttribute(name, '');
+  track.append(slot);
+  wrapper.append(mute.$el, track);
+  bar.insertBefore(wrapper, spacer);
+  const control = createVolume(slot, vm, volumeHandoffs, volumeRemembered, { max });
+  const unwatch = vm.$watch(icon, value => {
+    if (mute.image !== value) mute.image = value;
+  });
+  return {
+    vm,
+    session,
+    max,
+    wrapper,
+    control,
+    dispose() {
+      unwatch();
+      control.dispose();
+      mute.$off('click', toggle);
+      mute.$destroy();
+      wrapper.remove();
+    }
+  };
+}
+function syncFallbackVolumes(enabled) {
+  const seen = new Set();
+  if (enabled)
+    for (const element of new Set([...records.keys(), ...document.querySelectorAll('.tsv-screenshare-portal-ctx')]))
+      for (const node of element.querySelectorAll('.video-stream')) {
+        const vm = node.__vue__,
+          session = vm?.session,
+          bar = node.querySelector('.screen-overlay__bottom'),
+          spacer = bar?.querySelector(':scope > .tsv-flex-grow'),
+          Button = bar?.querySelector(':scope > .tsv-button')?.__vue__?.constructor;
+        if (
+          !session?.isInbound ||
+          session.status !== 4 ||
+          !spacer ||
+          typeof Button !== 'function' ||
+          !vm.$watch ||
+          !vm.videoRef ||
+          typeof vm.volume !== 'number' ||
+          typeof vm.toggleMute !== 'function' ||
+          typeof vm.onConnectionRef !== 'function' ||
+          bar.querySelector(
+            ':scope > .screen-overlay__hero-actions__action-volume-wrapper:not([data-tsix-fallback-volume])'
+          )
+        )
+          continue;
+        const max = feature('volumeBoost') ? 3 : 1;
+        let entry = fallbackVolumes.get(node);
+        if (
+          entry &&
+          (entry.vm !== vm || entry.session !== session || entry.max !== max || entry.wrapper.parentElement !== bar)
+        ) {
+          entry.dispose();
+          fallbackVolumes.delete(node);
+          entry = null;
+        }
+        if (!entry) {
+          // Same readiness rule as the native slider enhancement.
+          if (vm.videoRef.readyState < 2) continue;
+          entry = createFallbackVolume(bar, spacer, Button, vm, max);
+          fallbackVolumes.set(node, entry);
+        }
+        seen.add(node);
+      }
+  for (const [node, entry] of fallbackVolumes)
+    if (!seen.has(node)) {
+      entry.dispose();
+      fallbackVolumes.delete(node);
+    }
 }

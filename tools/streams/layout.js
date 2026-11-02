@@ -135,6 +135,64 @@ function updateTray(record, active, state = layoutState(record.vm)) {
   setAttr(element, trayMarker, collapsed ? 'collapsed' : 'expanded');
   syncChatRail(record, active);
 }
+// Native stream-issue badges are placed from the native tile model, which the
+// stage layout resizes. Anchor each badge to its visible player frame instead,
+// and hide it with a preview the tray hides.
+const indicatorVars = ['--tsix-indicator-x', '--tsix-indicator-y'];
+function clearStageChrome(record) {
+  for (const node of record.indicators ?? []) {
+    for (const key of indicatorVars) node.style.removeProperty(key);
+    node.removeAttribute('data-tsix-indicator');
+  }
+  record.indicators?.clear();
+  record.element.style.removeProperty('--tsix-footer-height');
+  record.element.removeAttribute('data-tsix-footer-align');
+}
+function setVar(node, key, value) {
+  if (node.style.getPropertyValue(key) !== value) node.style.setProperty(key, value);
+}
+function syncStageChrome(record, active, state) {
+  const { element, vm } = record;
+  const grid = active && element.querySelector('.screen-grid');
+  const nodes = grid ? [...grid.querySelectorAll(':scope > .screen-host-indicators')] : [];
+  const list = Array.isArray(vm.hostIndicators) ? vm.hostIndicators : [];
+  record.indicators ??= new Set();
+  for (const node of record.indicators)
+    if (!nodes.includes(node)) {
+      for (const key of indicatorVars) node.style.removeProperty(key);
+      node.removeAttribute('data-tsix-indicator');
+      record.indicators.delete(node);
+    }
+  if (nodes.length && nodes.length === list.length) {
+    const origin = grid.getBoundingClientRect();
+    nodes.forEach((node, i) => {
+      const tile = state.tiles.find(t => t.id === list[i].id);
+      const frame = tile?.node?.querySelector('.video-stream') ?? tile?.node;
+      const box = frame?.getBoundingClientRect();
+      record.indicators.add(node);
+      if (!box?.width || tile.node.closest('[inert]')) {
+        setAttr(node, 'data-tsix-indicator', 'hidden');
+        return;
+      }
+      setAttr(node, 'data-tsix-indicator', 'frame');
+      setVar(node, '--tsix-indicator-x', `${Math.round(box.right - origin.left - 8)}px`);
+      setVar(node, '--tsix-indicator-y', `${Math.round(box.top - origin.top + 8)}px`);
+    });
+  }
+  // A stage that reaches the window's bottom edge shares the footer line of
+  // the side columns: its player bar top meets their footer top.
+  const footer = document.querySelector('.main-pane-layout .tsv-footer'),
+    row = element.querySelector('[data-tsix-stream-row]');
+  const a = footer?.getBoundingClientRect(),
+    b = row?.getBoundingClientRect();
+  if (a?.height && b && Math.abs(a.bottom - b.bottom) < 2) {
+    setVar(element, '--tsix-footer-height', `${Math.round(a.height)}px`);
+    setAttr(element, 'data-tsix-footer-align', '');
+  } else {
+    element.style.removeProperty('--tsix-footer-height');
+    setAttr(element, 'data-tsix-footer-align', null);
+  }
+}
 function clearChatRail(record) {
   record.chatResize?.disconnect();
   record.chatResize = null;
@@ -268,6 +326,7 @@ function update(record, enabled) {
     element.removeAttribute(layoutMarker);
     updateTray(record, false, state);
     syncFocusActions(record, false, state);
+    clearStageChrome(record);
     return;
   }
   syncFocusActions(record, active && feature('clickFocus'), state);
@@ -351,4 +410,6 @@ function update(record, enabled) {
       : null
   );
   updateTray(record, active, state);
+  if (active && stage) syncStageChrome(record, active, state);
+  else clearStageChrome(record);
 }

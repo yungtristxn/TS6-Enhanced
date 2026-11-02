@@ -38,12 +38,13 @@ try{
  assert.ok(surface.hiddenSmaller,'Hidden previews must retain their native preview geometry');assert.ok(surface.hits.every(Boolean));assert.ok(surface.identity);
  await p.evaluate(()=>lab.refs.b.querySelector('.video-stream').__vue__.enterFocusModeAfterDelay(new MouseEvent('click',{detail:1})));
  assert.equal(await p.evaluate(()=>lab.focused.uniqueIdentifier),focusedBefore,'A stale event on an inert preview must be ignored');
- await player.dblclick({position:{x:160,y:120},delay:70});await p.waitForFunction(()=>!!document.fullscreenElement,{},{timeout:2000});
- assert.ok(await p.evaluate(()=>document.fullscreenElement===lab.refs.a.querySelector('.video-stream')));
- await p.evaluate(()=>document.exitFullscreen());await settleLayout(p);
+ await player.dblclick({position:{x:160,y:120},delay:70});await settleLayout(p);
+ assert.equal(await p.evaluate(()=>!!document.fullscreenElement),false,'A double-click on the player must never enter fullscreen');
+ assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier??null),null,'A double-click acts as one click');
+ await p.evaluate(()=>lab.focus(lab.vm.allSessions[0]));await settleLayout(p);
  assert.equal(await p.evaluate(()=>lab.focused.uniqueIdentifier),focusedBefore);
  await toggle.click();await settleLayout(p);await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=true;document.getElementById('previous-theme').remove()});
- checks.push('A click on collapsed focus returns to the grid without focusing hidden previews; stale preview events are ignored and double-click fullscreen stays on the watched stream');
+ checks.push('A click on collapsed focus returns to the grid without focusing hidden previews; stale preview events are ignored and a double-click acts as one click without fullscreen');
  await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=false;lab.vm.allSessions[1].captureStatus=4;lab.focus(lab.vm.allSessions[1])});await settleLayout(p);
  const own=p.locator('.video-stream').nth(1);
  await own.click({position:{x:160,y:120}});
@@ -55,12 +56,11 @@ try{
  assert.equal(await p.evaluate(()=>window.controlClicks),1,'The focus gesture must not consume a stream control click');
  assert.equal(await p.evaluate(()=>!!document.fullscreenElement),false);
  await p.evaluate(()=>document.getElementById('appearing-control').remove());
- await own.dblclick({position:{x:60,y:60},delay:70});await p.waitForFunction(()=>!!document.fullscreenElement);
- assert.ok(await p.evaluate(()=>document.fullscreenElement===lab.refs.b.querySelector('.video-stream')));
- await p.evaluate(()=>document.exitFullscreen());await settleLayout(p);
- assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier),'b');
+ await own.dblclick({position:{x:60,y:60},delay:70});await settleLayout(p);
+ assert.equal(await p.evaluate(()=>!!document.fullscreenElement),false,'A double-click on the own stream must never enter fullscreen');
+ assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier??null),null,'A double-click on the focused own stream returns to the grid once');
  await p.evaluate(()=>{lab.vm.allSessions[1].isInbound=true;lab.focus(lab.vm.allSessions[0])});await settleLayout(p);
- checks.push('A focused own stream returns to the grid on click; controls remain clickable and double-click fullscreen returns to the same focused stream');
+ checks.push('A focused own stream returns to the grid on click; controls remain clickable and a double-click never enters fullscreen');
  // beta5's player fullscreen button calls toggleFullscreen with its own click event.
  await p.evaluate(()=>{const n=lab.refs.a.querySelector('.video-stream'),b=document.createElement('div');b.className='tsv-button';b.id='native-fullscreen';b.setAttribute('aria-label','Fixture fullscreen');b.style.cssText='position:absolute;right:4px;bottom:4px;width:28px;height:28px;z-index:100;background:#345';b.addEventListener('click',e=>{e.stopPropagation();e.preventDefault();n.__vue__.toggleFullscreen(e)});n.append(b)});
  await p.locator('#native-fullscreen').click();await p.waitForFunction(()=>!!document.fullscreenElement,{},{timeout:2000});
@@ -72,12 +72,15 @@ try{
  for(const [id,fromFocus,delay]of [['a',false,0],['a',false,90],['b',true,90],['c',false,40]]){
   await p.evaluate(fromFocus=>lab.focus(fromFocus?lab.vm.allSessions[0]:null),fromFocus);await settleLayout(p);
   const target=p.locator('.video-stream').nth(['a','b','c'].indexOf(id));
-  await target.dblclick({position:{x:20,y:15},delay});await p.waitForFunction(()=>!!document.fullscreenElement,{},{timeout:2000});
-  assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier??null),fromFocus?'a':null,'Double-click fullscreen keeps the pre-click layout');
-  assert.ok(await p.evaluate(id=>document.fullscreenElement===lab.refs[id].querySelector('.video-stream'),id));
-  await p.evaluate(()=>document.exitFullscreen());await settleLayout(p);
+  await target.click({position:{x:20,y:15}});await settleLayout(p);
+  const single=await p.evaluate(()=>lab.focused?.uniqueIdentifier??null);
+  await p.evaluate(fromFocus=>lab.focus(fromFocus?lab.vm.allSessions[0]:null),fromFocus);await settleLayout(p);
+  await p.waitForTimeout(450);
+  await target.dblclick({position:{x:20,y:15},delay});await settleLayout(p);
+  assert.equal(await p.evaluate(()=>!!document.fullscreenElement),false,'A double-click must never enter fullscreen');
+  assert.equal(await p.evaluate(()=>lab.focused?.uniqueIdentifier??null),single,'A double-click has the same effect as one click');
  }
- checks.push('Four double-click timings/targets enter the intended stream and preserve grid/focus return state');
+ checks.push('Four double-click timings/targets act as one click and never enter fullscreen');
  await p.evaluate(()=>lab.focus(null));await settleLayout(p);
  const spot=await p.locator('.video-stream').nth(2).boundingBox();
  await p.mouse.click(spot.x+20,spot.y+15);await p.mouse.click(spot.x+20,spot.y+15);await settleLayout(p);
@@ -103,6 +106,25 @@ try{
  assert.equal(await p.locator('main').getAttribute('data-tsix-stream-stage'),'multiple');assert.equal(await toggle.count(),1);
  await p.evaluate(()=>{lab.refs.a.querySelector('.video-stream').prepend(savedVideo);window.__tsixStreams.sync()});await settleLayout(p);
  checks.push('Paused/loading connected streams retain focus instead of becoming unopened previews');
+ // Native issue badges use the native tile model. They must sit inside the
+ // visible player frame and hide with previews the tray hides.
+ await p.evaluate(()=>{const css=document.createElement('style');css.textContent='.screen-host-indicators{position:absolute;left:0;top:0;display:flex;z-index:5;transform:translate(var(--indicator-x),var(--indicator-y)) translateX(-100%)}';document.head.prepend(css);for(const id of ['a','b']){const n=document.createElement('div');n.className='screen-host-indicators';n.dataset.fixture=id;n.style.cssText='--indicator-x:9999px;--indicator-y:0px';n.innerHTML='<div class="tsv-button screen-overlay_top_issues"><div class="tsv-icon"></div></div>';document.querySelector('.screen-grid').append(n)}lab.indicators=[{id:'a',issueIcon:'warning'},{id:'b',issueIcon:'info'}];lab.focus(lab.vm.allSessions[0]);window.__tsixStreams.sync()});await settleLayout(p);
+ const badge=id=>p.evaluate(id=>{const n=document.querySelector('[data-fixture="'+id+'"]'),f=lab.refs[id].querySelector('.video-stream').getBoundingClientRect(),b=n.getBoundingClientRect();return{state:n.dataset.tsixIndicator,visible:b.width>0,right:f.right-b.right,top:b.top-f.top,size:[b.width,b.height]}},id);
+ for(const id of ['a','b']){const b=await badge(id);assert.equal(b.state,'frame');assert.ok(b.visible);assert.ok(Math.abs(b.right-8)<=1&&Math.abs(b.top-8)<=1,'Badge '+id+' sits 8px inside its frame: '+JSON.stringify(b));assert.deepEqual(b.size,[28,28])}
+ await toggle.click();await settleLayout(p);
+ assert.equal(await p.locator('main').getAttribute('data-tsix-stream-tray'),'collapsed');
+ assert.equal((await badge('b')).state,'hidden');assert.equal((await badge('b')).visible,false);assert.equal((await badge('a')).state,'frame');
+ await toggle.click();await settleLayout(p);
+ const leftRail=()=>p.evaluate(()=>getComputedStyle(document.querySelector('[data-tsix-stream-row] > .screenshare__global-hover-actions-wrapper:first-child')).display);
+ assert.equal(await leftRail(),'none','The empty left rail is removed');
+ await p.evaluate(()=>{const n=document.createElement('div');n.className='tsv-pagination';n.id='fixture-pagination';document.querySelector('[data-tsix-stream-row] > .screenshare__global-hover-actions-wrapper:first-child').append(n)});
+ assert.notEqual(await leftRail(),'none','The left rail returns for pagination');
+ await p.evaluate(()=>{document.getElementById('fixture-pagination').remove();window.__tsixStreams.dispose()});
+ assert.equal(await p.locator('.screen-host-indicators[data-tsix-indicator]').count(),0);
+ assert.equal(await p.evaluate(()=>[...document.querySelectorAll('.screen-host-indicators')].some(n=>n.style.getPropertyValue('--tsix-indicator-x'))),false);
+ await p.evaluate(await streamsRuntime());await settleLayout(p);
+ await p.evaluate(()=>{for(const n of document.querySelectorAll('.screen-host-indicators'))n.remove();lab.indicators=[];window.__tsixStreams.sync()});await settleLayout(p);
+ checks.push('Issue badges sit 8px inside their player frame, hide with collapsed previews and restore on dispose; the empty left rail is removed');
  await p.emulateMedia({reducedMotion:'reduce'});assert.ok(await p.locator('.screen-tile-wrapper').evaluateAll(nodes=>nodes.every(n=>getComputedStyle(n).transitionDuration.split(',').every(v=>parseFloat(v)===0))));
  await p.emulateMedia({reducedMotion:'no-preference'});
  checks.push('Reduced-motion mode disables tile geometry animation');

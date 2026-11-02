@@ -30,11 +30,13 @@ try{
   assert.equal(await page.locator('[data-tsix-chat-rail] [data-tsix-chat-icon]').count(),1);
   const join=page.getByRole('button',{name:'Watch stream',exact:true});
   assert.ok(await join.evaluate(e=>{const b=e.getBoundingClientRect(),p=e.closest('.video-stream').getBoundingClientRect();return b.width>=96&&b.height>=32&&b.top>=p.top&&b.bottom<=p.bottom&&e.contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2))}));
+  const label=await page.evaluate(()=>{const l=document.querySelector('[data-tsix-preview-label]'),b=l.getBoundingClientRect(),p=l.closest('.video-stream').getBoundingClientRect(),j=document.querySelector('[data-tsix-preview-join]').getBoundingClientRect();return{name:l.querySelector('[data-tsix-preview-name]').textContent,inside:b.top>=p.top&&b.bottom<=p.bottom&&b.left>=p.left&&b.right<=p.right,above:b.bottom<=j.top}});
+  assert.deepEqual(label,{name:'Alex Streamer',inside:true,above:true});
   if(chat){const c=await box('.ts-chat-container');assert.ok(before.y+before.height<=c.y+1);assert.ok(c.height>=120&&c.y+c.height<=height+1)}
   if(process.env.TSIX_SCREENSHOT_DIR&&[1322,360].includes(width)&&!chat){await mkdir(process.env.TSIX_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:`${process.env.TSIX_SCREENSHOT_DIR}/fixture-unopened-${width}.png`})}
   if(width===2562)await join.click();else await join.press(chat?'Enter':'Space');
   await page.waitForFunction(()=>document.querySelector('main').dataset.tsixStreamStage==='single');await settleLayout(page);
-  same(before,await box('.video-stream'));await checkDock();assert.equal(await page.locator('[data-tsix-preview-join]').count(),0);
+  same(before,await box('.video-stream'));await checkDock();assert.equal(await page.locator('[data-tsix-preview-join],[data-tsix-preview-label]').count(),0);
   assert.equal(await page.evaluate(()=>lab.refs.a.querySelector('.video-stream').__vue__.joinCalls),1);
   assert.equal(await page.getByLabel('Chat draft').inputValue(),'Keep this unsent draft');assert.ok(await page.evaluate(()=>lab.report().identity));
   if(process.env.TSIX_SCREENSHOT_DIR&&[1322,360].includes(width)&&!chat)await page.screenshot({path:`${process.env.TSIX_SCREENSHOT_DIR}/fixture-opened-${width}.png`});

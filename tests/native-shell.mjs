@@ -84,6 +84,44 @@ try{
   const before=await p.evaluate(()=>lab.actions);await p.locator('#mic').press('Enter');assert.equal(await p.evaluate(()=>lab.actions),before+1);
  }
  checks.push('Disabled and delayed CSS activate existing helpers once, without another launch or duplicate keyboard actions');
+ // Sidebar polish with stand-ins for the audited beta5 component models:
+ // activity group icons, header proxies for the inline add rows, offline
+ // contact marks and full-name titles on truncated tree rows.
+ await p.evaluate(()=>{
+  const sidebar=document.querySelector('.sidebar-pane-layout > .tsv-body'),host=document.createElement('div');host.id='polish';
+  host.innerHTML='<div class="tsv-activities"><div class="tsv-list"><div class="tsv-activity-group"><div class="tsv-sidebar-tab-header"><div class="tsv-item-container"><div class="tsv-item-content tsv-sidebar-header-content"><div class="tsv-item-text"><span class="tsv-sidebar-tab-header-title">Servers</span></div><div class="tsv-item-accessory tsv-sidebar-header-accessories"></div></div></div></div></div><div class="tsv-activity-group"><div class="tsv-sidebar-tab-header"><div class="tsv-item-container"><div class="tsv-item-content tsv-sidebar-header-content"><div class="tsv-item-text"><span class="tsv-sidebar-tab-header-title">Chats</span></div></div></div></div></div></div></div>'+
+   '<div class="tsv-resources-group" id="contacts"><div class="tsv-bar tsv-tabs tsv-tabs-slim"><div class="tsv-tab-item tsv-bar-item"><span class="tsv-bar-item-title">Contacts</span></div><div class="tsv-bar-item tsv-flex-grow tsv-extended-expander-click-area"><div class="tsv-flex-grow"></div><div class="tsv-bar-item tsv-sidebar-header-accessories"></div></div></div><div class="ts-contact-list"><li class="tsv-item ts-room-list-item" id="online"><div class="tsv-item-container"><div class="tsv-item-content"><div class="tsv-item-text"><div class="tsv-text-truncate">Online</div></div></div></div></li><li class="tsv-item ts-room-list-item" id="offline"><div class="tsv-item-container"><div class="tsv-item-content"><div class="tsv-item-text"><div class="tsv-text-truncate">Offline</div></div></div></div></li></div><ul id="add"><li class="tsv-item tsv-item-action"><svg name="chat-contact-add" id="native-add"><path class="tsv-icon-base-stroke" d="M2 2h8"/></svg>Add Contact</li></ul></div>';
+  sidebar.prepend(host);
+  host.querySelector('.tsv-activities').__vue__={openedActivityGroups:[{items:[[{type:'connection'}]]},{items:[[{type:'chatRoom'}]]}]};
+  const online={},offline={};host.querySelector('.ts-contact-list').__vue__={offlineContacts:[offline]};
+  host.querySelector('#online').__vue__={item:online};host.querySelector('#offline').__vue__={$parent:{item:offline}};
+  const ul=host.querySelector('#add'),idle=ul.innerHTML;
+  ul.__vue__={$el:ul,$options:{name:'ts-contacts-add-cell'},showContactAddInput:false,isAddingContact:false,isError:false,starts:0,
+   startEditing(){this.starts++;this.showContactAddInput=true;ul.innerHTML='<li class="tsv-item"><input aria-label="Contact name"></li>'},
+   cancel(){this.showContactAddInput=false;ul.innerHTML=idle},$nextTick(callback){queueMicrotask(callback)}};
+  const leaf=document.createElement('div');leaf.className='ts-server-tree-item-leaf client';leaf.innerHTML='<span class="ts-server-tree-item-text ts-client-nick tsv-text-truncate" id="nick" style="display:block;width:60px;overflow:hidden;white-space:nowrap">Low Cortisol | Change Your Life</span><span class="ts-client-nick" id="short" style="display:block;width:200px">Marko</span>';
+  document.querySelector('.main-pane-layout').append(leaf);
+  window.__tsixWorkspace.refresh();
+ });
+ await p.waitForFunction(()=>document.querySelector('#add')?.getAttribute('data-tsix-section-idle')==='true');
+ const polish=await p.evaluate(()=>({
+  groups:[...document.querySelectorAll('#polish .tsv-activity-group')].map(g=>[g.dataset.tsixGroup,g.querySelector('[data-tsix-group-icon]')?.getAttribute('data-tsix-group-icon')]),
+  action:document.querySelector('#contacts .tsv-sidebar-header-accessories > [data-tsix-section-action]')?.getAttribute('aria-label'),
+  copiedIds:document.querySelectorAll('#contacts [data-tsix-section-action] [id]').length,
+  rowHidden:getComputedStyle(document.querySelector('#add')).display==='none',
+  offline:[...document.querySelectorAll('#polish .ts-room-list-item')].map(r=>r.hasAttribute('data-tsix-offline'))
+ }));
+ assert.deepEqual(polish,{groups:[['servers','servers'],['chats','chats']],action:'Add contact',copiedIds:0,rowHidden:true,offline:[false,true]});
+ await p.locator('#contacts .tsv-tabs').hover();await p.getByRole('button',{name:'Add contact',exact:true}).click();
+ await p.waitForFunction(()=>document.activeElement?.matches('#add input'));
+ assert.deepEqual(await p.evaluate(()=>({starts:document.querySelector('#add').__vue__.starts,shown:getComputedStyle(document.querySelector('#add')).display!=='none'})),{starts:1,shown:true});
+ await p.evaluate(()=>document.querySelector('#add').__vue__.cancel());
+ await p.waitForFunction(()=>document.querySelector('#add').getAttribute('data-tsix-section-idle')==='true');
+ await p.locator('#nick').dispatchEvent('mouseover');await p.locator('#short').dispatchEvent('mouseover');
+ assert.deepEqual(await p.evaluate(()=>[document.querySelector('#nick').title,document.querySelector('#short').hasAttribute('title')]),['Low Cortisol | Change Your Life',false]);
+ const before=await p.evaluate(()=>{window.__tsixWorkspace.dispose();return document.querySelectorAll('#polish [data-tsix-group],[data-tsix-group-icon],[data-tsix-section-action],[data-tsix-section-idle],[data-tsix-offline],[data-tsix-title]').length});
+ assert.equal(before,0);
+ checks.push('Sidebar group icons, header add actions (focus and idle row), offline marks and truncated-name titles apply and clean up');
  // Native resource stacks can expose several sibling tabs. Keep this bounded
  // component fixture separate from the simplified shell geometry above.
  const sidebar=await browser.newPage();sidebar.on('pageerror',e=>errors.push(e.message));
@@ -97,9 +135,14 @@ try{
   await sidebar.setViewportSize({width,height:480});
   const tabs=await sidebar.locator('#grouped > .tsv-tab-item').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return{x:r.x,right:r.right,width:r.width,height:r.height,hittable:node.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}}));
   assert.equal(tabs.length,3);assert.ok(tabs.every((tab,index)=>tab.width>=28&&tab.height>=28&&tab.hittable&&(!index||tab.x>=tabs[index-1].right)));
-  const single=await sidebar.locator('#single').evaluate(node=>{const tab=node.querySelector(':scope > .tsv-tab-item').getBoundingClientRect(),tool=node.querySelector('.ts-sidebar-tab-sub-panel-accessory').getBoundingClientRect(),expander=node.querySelector('.ts-expander').getBoundingClientRect();return{toolBelow:tool.y>=tab.bottom,expanderBeside:expander.x>=tab.right,overflow:node.scrollWidth>node.clientWidth}});
-  assert.deepEqual(single,{toolBelow:true,expanderBeside:true,overflow:false});
+  const measureSingle=()=>sidebar.locator('#single').evaluate(node=>{const tab=node.querySelector(':scope > .tsv-tab-item').getBoundingClientRect(),toolNode=node.querySelector('.ts-sidebar-tab-sub-panel-accessory'),tool=toolNode.getBoundingClientRect(),expander=node.querySelector('.ts-expander').getBoundingClientRect();return{toolShown:toolNode.contains(document.elementFromPoint(tool.x+tool.width/2,tool.y+tool.height/2))&&tool.width>=28,sameRow:Math.abs(tool.y-tab.y)<1&&Math.abs(expander.y-tab.y)<1,order:tool.x>=tab.right&&expander.x>=tool.right,expanderBeside:expander.x>=tab.right,height:Math.round(node.getBoundingClientRect().height),overflow:node.scrollWidth>node.clientWidth}});
+  await sidebar.mouse.move(0,470);
+  const idle=await measureSingle();
+  assert.ok(!idle.toolShown&&idle.expanderBeside&&!idle.overflow,JSON.stringify(idle));
+  await sidebar.locator('#single > .tsv-tab-item').hover();
+  const hovered=await measureSingle();
+  assert.ok(hovered.toolShown&&hovered.sameRow&&hovered.order&&!hovered.overflow&&hovered.height===idle.height,JSON.stringify({idle,hovered}));
  }
- await sidebar.close();checks.push('Native-CSS grouped sidebar tabs stay distinct and hittable at 360/640/1322px; single-section tools remain below the heading');
+ await sidebar.close();checks.push('Native-CSS grouped sidebar tabs stay distinct and hittable at 360/640/1322px; single-section tools share the heading row, revealed on hover');
  assert.deepEqual(errors,[]);console.log(JSON.stringify({result:'PASS',checks,errors},null,2));
 }finally{await browser.close();await new Promise(r=>server.close(r))}
