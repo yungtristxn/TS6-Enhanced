@@ -99,11 +99,14 @@ function syncActionDock(record, enabled) {
         e.stopPropagation();
         if (button.disabled || controlDisabled(native) || !native.isConnected) return;
         const b = button.getBoundingClientRect();
+        // The native menu opens at the given point: below a labelled button,
+        // so the menu never covers it; at the centre of an icon button.
+        const below = button.hasAttribute('data-tsix-labelled');
         const point = {
           target: button,
           currentTarget: button,
-          clientX: b.x + b.width / 2,
-          clientY: b.y + b.height / 2
+          clientX: below ? b.left : b.x + b.width / 2,
+          clientY: below ? b.bottom + 4 : b.y + b.height / 2
         };
         // The native overlay manager also owns its event.target. Dispatching
         // on the hidden source immediately dismisses its menu. Keep the
@@ -122,11 +125,48 @@ function syncActionDock(record, enabled) {
       entry.button.remove();
       dock.buttons.delete(source);
     }
+  syncEmptyNotice(dock, empty);
   for (const [source, before] of dock.sources)
     if (!sources.includes(source)) {
       setAttr(source, 'data-tsix-source-actions', before);
       dock.sources.delete(source);
     }
+}
+// All streams hidden: a short notice and a labelled menu button replace the
+// native sentence that points at a menu at the far edge of the pane.
+const emptyText = 'All streams are hidden',
+  emptyAction = 'Show streams';
+function syncEmptyNotice(dock, empty) {
+  const menu = [...dock.buttons.values()].find(entry => entry.button.getAttribute('data-tsix-view-action') === 'dots');
+  if (empty && menu) {
+    if (!dock.notice) {
+      dock.notice = document.createElement('span');
+      dock.notice.setAttribute('data-tsix-empty-label', '');
+      dock.notice.textContent = emptyText;
+    }
+    if (dock.group.firstChild !== dock.notice) dock.group.prepend(dock.notice);
+    const button = menu.button;
+    if (!button.querySelector(':scope > [data-tsix-view-action-text]')) {
+      const text = document.createElement('span');
+      text.setAttribute('data-tsix-view-action-text', '');
+      text.textContent = emptyAction;
+      button.append(text);
+    }
+    setAttr(button, 'data-tsix-labelled', '');
+    setAttr(button, 'aria-label', 'Show hidden streams');
+    setAttr(button, 'title', 'Show hidden streams');
+    dock.labelled = button;
+    return;
+  }
+  dock.notice?.remove();
+  dock.notice = null;
+  if (dock.labelled) {
+    dock.labelled.querySelector(':scope > [data-tsix-view-action-text]')?.remove();
+    dock.labelled.removeAttribute('data-tsix-labelled');
+    setAttr(dock.labelled, 'aria-label', labels.dots);
+    setAttr(dock.labelled, 'title', labels.dots);
+    dock.labelled = null;
+  }
 }
 function clearEmptyDock(dock) {
   if (!dock.emptyRow) return;

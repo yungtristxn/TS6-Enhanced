@@ -73,6 +73,13 @@ try{
   assert.ok(await page.locator('.ts-stream-view-settings .tsv-button').evaluate(button=>Number(button.dataset.activations)>0&&button.dataset.ownerVisible==='true'));
   if(process.env.TSIX_SCREENSHOT_DIR&&width===1322)await page.screenshot({path:`${process.env.TSIX_SCREENSHOT_DIR}/all-streams-hidden.png`});
  }
+ // A short notice and a labelled button replace the native sentence; its menu opens below the button.
+ assert.equal(await empty.locator('[data-tsix-empty-label]').textContent(),'All streams are hidden');
+ assert.equal(await page.locator('#hidden-message').isVisible(),false);
+ const showStreams=empty.locator('[data-tsix-view-action="dots"]');
+ assert.equal(await showStreams.getAttribute('aria-label'),'Show hidden streams');assert.equal((await showStreams.textContent()).trim(),'Show streams');
+ await showStreams.click();
+ assert.ok(await showStreams.evaluate(button=>{const b=button.getBoundingClientRect(),n=document.querySelector('.ts-stream-view-settings .tsv-button');return Number(n.dataset.clickY)>=b.bottom&&Math.abs(Number(n.dataset.clickX)-b.left)<1}),'The menu opens below the labelled button');
  assert.ok(await page.evaluate(()=>lab.hiddenStream.hidden&&lab.report().identity));
  assert.equal(await page.getByLabel('Chat draft').inputValue(),'Unsent while my preview is hidden');
  await page.evaluate(()=>{
@@ -85,8 +92,10 @@ try{
   lab.hiddenStream.hidden=false;lab.vm.allSessions=lab.visibleSessions;lab.vm.doUpdateGrid();__tsixStreams.sync();
  });
  await empty.waitFor({state:'detached'});await settleLayout(page);await checkDock();
+ assert.equal(await page.locator('[data-tsix-empty-label],[data-tsix-labelled],[data-tsix-view-action-text]').count(),0);
+ assert.equal(await page.locator('[data-tsix-view-action="dots"]').first().getAttribute('aria-label'),'Stream view settings');
  assert.equal(await page.getByLabel('Chat draft').inputValue(),'Unsent while my preview is hidden');
- checks.push('All-hidden state keeps one inline native restore menu without an empty toolbar or popout; hide/show, media, draft and cleanup remain intact');
+ checks.push('All-hidden state shows a notice with a labelled Show streams menu (opening below it) instead of the native sentence, without an empty toolbar or popout; hide/show, media, draft and cleanup remain intact');
  await page.goto(`http://127.0.0.1:${server.address().port}/?model=beta5&single=1&incoming=1`);await setChat(true);
  await page.evaluate(()=>{lab.vm.resizeVideoHeightOrigin=lab.vm.gridHeight;lab.vm.overrideSplitPercentage=.45;lab.vm.maximumVideoHeight=lab.vm.maximumHeight*.45;window.__tsixStreams.sync();lab.vm.resizeVideoHeightOrigin=-1;window.__tsixStreams.sync()});await setChat(false);await setChat(true);
  assert.ok(Math.abs(await page.evaluate(()=>lab.vm.overrideSplitPercentage)-.45)<.001);checks.push('manual divider preference survives chat toggles');

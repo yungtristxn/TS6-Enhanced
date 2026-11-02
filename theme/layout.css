@@ -23,6 +23,8 @@
   --tsix-control-bg: #27374b;
   --tsix-control-hover: #344b64;
   --tsix-control-pressed: #3e5873;
+  /* Selected or expanded controls: one step stronger than hover. */
+  --tsix-control-selected: var(--tsix-control-pressed);
   --tsix-chrome-border: #3b4c61;
   --tsix-control-border: #526780;
   --tsix-chrome-text: #edf2f7;
@@ -86,9 +88,22 @@
  * channel chat keeps the full pane width. Feature: chatWidth. */
 :root:not([data-tsix-off~="chatWidth"]) .ts-chat-container :is(.ts-chat-room-event-detailed, .ts-chat-room-event-compact) { max-width: calc(var(--tsix-unit) * 64); }
 /* Folded run of join/leave events (chat helper). */
-[data-tsix-chat-run] { flex: 0 0 auto; align-self: center; box-sizing: border-box; height: 18px; margin: 0 0 0 8px; padding: 0 7px; border: 1px solid var(--tsix-control-border); border-radius: 9px; background: var(--tsix-control-bg); color: var(--tsix-chrome-muted); font: inherit; font-size: var(--tsix-type-caption); line-height: 16px; white-space: nowrap; cursor: pointer; }
+[data-tsix-chat-run] { flex: 0 0 auto; align-self: center; box-sizing: border-box; height: 18px; margin: 0 0 0 8px; padding: 0 7px; border: 1px solid var(--tsix-control-border); border-radius: var(--tsix-chrome-radius); background: var(--tsix-control-bg); color: var(--tsix-chrome-muted); font: inherit; font-size: var(--tsix-type-caption); line-height: 16px; white-space: nowrap; cursor: pointer; }
 [data-tsix-chat-run]:hover { background: var(--tsix-control-hover); color: var(--tsix-chrome-text); }
 [data-tsix-chat-run]:active { background: var(--tsix-control-pressed); }
+/* A short history sits on the message box, like other chat apps, instead of
+ * hanging from the header. Margin-top auto only takes the space left over: a
+ * full history scrolls normally. The sticky hover menu moves with the rows. */
+.ts-chat-container .vl-root { display: flex; flex-direction: column; }
+.ts-chat-container .vl-root > * { flex-shrink: 0; }
+.ts-chat-container .vl-root > :first-child { margin-top: auto; }
+/* Day separators (chat helper): a rule with the day above its first message. */
+.ts-chat-container [data-tsix-day]::before {
+  content: attr(data-tsix-day); display: block; flex: 0 0 auto; box-sizing: border-box;
+  margin: 12px 0 4px; padding: 6px 0 0 30px; border-top: 1px solid var(--tsix-chrome-border);
+  color: var(--tsix-text-secondary); font: 600 var(--tsix-type-caption)/16px var(--tsv-font-family);
+}
+.ts-chat-container .vl-row:first-child [data-tsix-day]::before { margin-top: 4px; }
 [data-tsix-chat-run]:focus-visible { outline: 2px solid var(--tsix-chrome-accent); outline-offset: 1px; }
 @media (forced-colors: active) {
   [data-tsix-chat-run] { border-color: ButtonText; color: ButtonText; }
@@ -100,7 +115,8 @@
 [data-tsix-broadcast-bar][data-tsix-sharing-controls] {
   --tsix-live-color: #ff7a86;
   position: absolute; left: 12px; right: 12px; bottom: var(--tsix-broadcast-bottom, 8px);
-  width: auto; max-width: none; height: auto; box-sizing: border-box;
+  /* Fills its column with equal insets; wider surfaces (home page) cap it. */
+  width: auto; max-width: 360px; height: auto; box-sizing: border-box;
   z-index: 6; pointer-events: auto; display: flex; flex-direction: column;
   align-items: stretch; justify-content: flex-start; gap: 4px; padding: 8px;
   container: tsix-sharing / inline-size;
@@ -144,8 +160,10 @@
   background: transparent;
   cursor: pointer;
 }
-[data-tsix-sharing-controls] [data-tsix-viewer-toggle]:hover,[data-tsix-sharing-controls] [data-tsix-viewer-toggle][aria-expanded="true"] { background: var(--tsix-control-hover); }
+[data-tsix-sharing-controls] [data-tsix-viewer-toggle]:hover { background: var(--tsix-control-hover); }
+[data-tsix-sharing-controls] [data-tsix-viewer-toggle][aria-expanded="true"] { background: var(--tsix-control-selected); }
 [data-tsix-sharing-controls] [data-tsix-viewer-toggle]:focus-visible { outline: 2px solid var(--tsix-focus); outline-offset: -2px; }
+[data-tsix-sharing-controls] [data-tsix-viewer-toggle][hidden] { display: none; }
 [data-tsix-sharing-controls] [data-tsix-viewer-count] { font-size: 13px; line-height: 20px; color: var(--tsix-chrome-muted); white-space: nowrap; }
 /* Names and avatars remain in the disclosure; the idle badge stays compact. */
 [data-tsix-sharing-controls] [data-tsix-viewer-icons] { display: none; }
@@ -172,7 +190,8 @@
   bottom: calc(100% + 6px);
   left: -1px;
   box-sizing: border-box;
-  width: min(360px, calc(var(--tsix-broadcast-column-width, 100vw) - 24px));
+  /* As wide as the card, border to border. */
+  width: calc(100% + 2px);
   max-height: min(300px, calc(100vh - var(--tsix-broadcast-bottom, 8px) - var(--tsix-broadcast-height, 120px) - 14px));
   overflow-y: auto;
   padding: 12px;
@@ -195,11 +214,11 @@
 [data-tsix-sharing-controls] [data-tsix-viewer-toggle]::after { content: ''; width: 5px; height: 5px; margin: -3px 2px 0 0; border: solid currentColor; border-width: 0 1px 1px 0; transform: rotate(45deg); opacity: .8; }
 [data-tsix-sharing-controls] [data-tsix-viewer-toggle][aria-expanded="true"]::after { transform: rotate(225deg); margin-top: 3px; }
 [data-tsix-sharing-controls] [data-tsix-share-stream] { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-[data-tsix-sharing-controls] [data-tsix-share-actions] { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--tsix-chrome-border); border-radius: var(--tsix-chrome-radius); background: var(--tsix-control-bg); }
+[data-tsix-sharing-controls] [data-tsix-share-actions] { display: flex; gap: 0; padding: 0; border: 0; border-radius: var(--tsix-chrome-radius); background: var(--tsix-control-bg); }
 [data-tsix-sharing-controls] [data-tsix-share-picker], [data-tsix-sharing-controls] [data-tsix-share-action] {
   display: flex; align-items: center; justify-content: center; gap: 4px;
   pointer-events: auto; min-height: 32px; padding: 4px; border: 1px solid transparent;
-  border-radius: 3px; background: transparent; color: var(--tsix-chrome-text);
+  border-radius: var(--tsix-chrome-radius); background: transparent; color: var(--tsix-chrome-text);
   font: inherit; font-size: 13px; line-height: 20px; cursor: pointer;
 }
 [data-tsix-sharing-controls] [data-tsix-share-picker][hidden] { display: none; }
@@ -207,7 +226,8 @@
 [data-tsix-sharing-controls] [data-tsix-share-picker]::after { content: ''; width: 6px; height: 6px; margin-right: 2px; border: solid currentColor; border-width: 0 1px 1px 0; transform: rotate(-135deg); }
 [data-tsix-sharing-controls] [data-tsix-share-picker][aria-expanded="true"]::after { transform: rotate(45deg); }
 [data-tsix-sharing-controls] [data-tsix-share-action="open"] { width: 100%; justify-content: flex-start; gap: 6px; text-align: left; font-size: 14px; font-weight: 500; }
-[data-tsix-sharing-controls] [data-tsix-share-action="open"]::after { content: '↗'; margin-left: auto; color: var(--tsix-chrome-muted); font: 400 14px/20px sans-serif; }
+/* Same drawn chevron as the card's other disclosures, pointing to the stream. */
+[data-tsix-sharing-controls] [data-tsix-share-action="open"]::after { content: ''; flex: 0 0 auto; width: 6px; height: 6px; margin: 0 4px 0 auto; border: solid var(--tsix-chrome-muted); border-width: 0 1px 1px 0; transform: rotate(-45deg); }
 [data-tsix-sharing-controls] [data-tsix-share-label] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-tsix-sharing-controls] [data-tsix-share-icon] { flex: 0 0 18px; width: 18px; height: 18px; pointer-events: none; }
 [data-tsix-sharing-controls] [data-tsix-share-action="open"] [data-tsix-share-icon] { color: var(--tsix-chrome-muted); }
@@ -229,7 +249,7 @@
 }
 [data-tsix-sharing-controls] [data-tsix-share-list] {
   pointer-events: auto; position: absolute; bottom: calc(100% + 6px); left: -1px;
-  width: min(360px, calc(var(--tsix-broadcast-column-width, 100vw) - 24px));
+  width: calc(100% + 2px);
   max-height: min(360px, calc(100dvh - var(--tsix-broadcast-bottom, 8px) - var(--tsix-broadcast-height, 120px) - 14px));
   box-sizing: border-box; overflow: auto; padding: 8px;
   border: 1px solid var(--tsix-chrome-border); border-radius: var(--tsix-surface-radius);
@@ -378,13 +398,24 @@
   border-top: 0; opacity: 0; transition: opacity 120ms ease-out;
 }
 .video-stream:is(:hover,:focus-within) > [data-tsix-stream-footer]:not([data-tsix-footer-grid]) { opacity: 1; }
-.video-stream > [data-tsix-stream-footer]:not([data-tsix-footer-grid]) [data-tsix-view-actions] { padding: 2px; border-radius: var(--tsix-chrome-radius); background: var(--tsix-chrome-bg); }
+.video-stream > [data-tsix-stream-footer]:not([data-tsix-footer-grid]) [data-tsix-view-actions] { padding: 2px; border-radius: var(--tsix-chrome-radius); background: var(--tsix-control-bg); }
 @media (prefers-reduced-motion: reduce) { .video-stream > [data-tsix-stream-footer]:not([data-tsix-footer-grid]) { transition: none; } }
 @media (forced-colors: active) { .video-stream > [data-tsix-stream-footer]:not([data-tsix-footer-grid]) { opacity: 1; background: Canvas; } }
 /* The all-hidden state is a message with a restore menu, not a video stage. */
 [data-tsix-empty-stream-row] { align-items: center; gap: 8px; min-height: 40px; padding: 4px 12px; box-sizing: border-box; }
 [data-tsix-empty-stream-row] > .screen-grid-wrapper { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
-[data-tsix-empty-stream-row] > .screen-grid-wrapper > :not([data-tsix-view-actions]) { flex: 1 1 auto; }
+/* The native sentence is replaced by the helper's notice and labelled button,
+ * aligned with the chat text below. */
+[data-tsix-empty-stream-row] > .screen-grid-wrapper > :not([data-tsix-view-actions]) { display: none; }
+[data-tsix-empty-stream-row] { padding-left: 45px; }
+[data-tsix-empty-stream-row] [data-tsix-view-actions] { gap: 12px; }
+[data-tsix-empty-label] { color: var(--tsix-text-secondary); font-size: var(--tsix-type-label); line-height: 20px; white-space: nowrap; }
+[data-tsix-view-action][data-tsix-labelled] {
+  width: auto; flex: 0 0 auto; gap: 6px; padding: 0 10px; background: var(--tsix-control-bg);
+  color: var(--tsix-chrome-text); font: 400 var(--tsix-type-label)/20px var(--tsv-font-family);
+}
+[data-tsix-view-action][data-tsix-labelled] > svg { display: none; }
+[data-tsix-view-action][data-tsix-labelled]::after { content: ''; width: 5px; height: 5px; margin: -3px 0 0 2px; border: solid currentColor; border-width: 0 1px 1px 0; transform: rotate(45deg); opacity: .8; }
 [data-tsix-empty-stream-row] > .screenshare__global-hover-actions-wrapper { display: none; }
 .tsv-screenshare:has([data-tsix-empty-stream-row]) > .tsv-body > .tsv-scroll-area-v > .tsv-mar-t-small { display: none; }
 .tsv-screenshare .screen-overlay__bottom > .tsv-button,
@@ -850,13 +881,17 @@
 :is(.tsv-central-toolbar,.ts-server-status-bar,.tsv-content-header-bar) .tsv-tool-button {
   min-height: 32px; border-radius: var(--tsix-chrome-radius); box-sizing: border-box;
 }
-.tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control.tsv-segmented-control { flex: 0 0 auto; height: 36px; min-height: 36px; box-sizing: border-box; align-items: center; padding: 2px; gap: 2px; border-radius: var(--tsix-chrome-radius); background: var(--tsix-chrome-bg); }
-.tsv-content-header-bar .tsv-segmented-button { min-width: 32px; min-height: 32px; border-radius: 3px; }
-.tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control .tsv-segmented-button.active { background: var(--tsix-control-hover); }
-.tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control .tsv-segmented-button:not(.active):hover { background: var(--tsix-control-bg); }
+/* Toggle groups share one surface: filled, 32px, buttons edge to edge (as the
+ * native mic/speaker and layout groups). */
+.tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control.tsv-segmented-control { flex: 0 0 auto; height: 32px; min-height: 32px; box-sizing: border-box; align-items: center; padding: 0; gap: 0; border-radius: var(--tsix-chrome-radius); background: var(--tsix-control-bg); }
+.tsv-content-header-bar .tsv-segmented-button { min-width: 32px; min-height: 32px; border-radius: var(--tsix-chrome-radius); }
+.tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control .tsv-segmented-button.active { background: var(--tsix-control-selected); }
+.tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control .tsv-segmented-button:not(.active):hover { background: var(--tsix-control-hover); }
 /* Selected segments are filled, so the theme's dividers are redundant. */
 .tsv-activity-detail .tsv-content-header-bar .tsv-segmented-control .tsv-segmented-button::after { display: none; }
+/* An action button, bare like AFK; only toggle groups get a filled surface. */
 [data-tsix-manager-open] { border-radius: var(--tsix-chrome-radius); color: var(--tsix-chrome-muted); }
+:root [data-tsix-manager-open][aria-expanded="true"] { background: var(--tsix-control-selected); color: var(--tsix-chrome-text); }
 /* Remove the native 55px flex basis so both 48px footers actually align. */
 .sidebar-pane-layout > .tsv-footer,
 .main-pane-layout > .tsv-body > .tsv-item-view > .tsv-footer {
@@ -916,11 +951,11 @@
 [data-tsix-chat-icon] { width: 22px; height: 22px; pointer-events: none; }
 [data-tsix-chat-icon] .tsv-icon-base-fill { fill: currentColor; }
 [data-tsix-chat-icon] .tsv-icon-base-stroke { stroke: currentColor; }
-[data-tsix-chat-rail] [data-tsix-chat-toggle][aria-expanded="true"] { color: var(--tsix-chrome-accent); background: var(--tsix-control-hover); }
+[data-tsix-chat-rail] [data-tsix-chat-toggle][aria-expanded="true"] { color: var(--tsix-chrome-accent); background: var(--tsix-control-selected); }
 [data-tsix-chat-rail] [data-tsix-chat-toggle]:hover { color: var(--tsix-chrome-text); background: var(--tsix-control-hover); }
 /* With the rail to itself (no preview-tray toggle or pagination), the chat
  * control is a full-height edge strip instead of a small floating square. */
-[data-tsix-chat-host]:not(:has(> :is([data-tsix-tray-toggle],.tsv-pagination))) > [data-tsix-chat-rail] { top: 4px; bottom: 4px; height: auto; }
+[data-tsix-chat-host]:not(:has(> :is([data-tsix-tray-toggle],.tsv-pagination))) > [data-tsix-chat-rail] { top: var(--tsix-stage-inset, 6px); bottom: var(--tsix-stage-inset, 6px); height: auto; }
 [data-tsix-chat-host]:not(:has(> :is([data-tsix-tray-toggle],.tsv-pagination))) > [data-tsix-chat-rail] [data-tsix-chat-toggle] { height: 100%; }
 [data-tsix-chat-host]:not(:has(> :is([data-tsix-tray-toggle],.tsv-pagination))) > [data-tsix-chat-rail] [data-tsix-chat-toggle][aria-expanded="true"]:not(:hover) { background: var(--tsix-control-bg); }
 /* Shared feedback stays within each button; it never enlarges a video hit area. */

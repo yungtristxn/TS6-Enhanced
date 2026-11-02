@@ -39,9 +39,9 @@ try {
    return kind==='text'?{...base,isSystem:false,isPoke:false,i18nPath:undefined,text:'Hello there',...extra}:{...base,isSystem:true,isPoke:false,i18nPath:paths[kind],text:`User ${kind}`,...extra}};
   const Row={_scopeId:'data-v-5c102790',props:['legacyEvent'],render(h){const m=this.legacyEvent;
    if(!m.isSystem)return h('div',{staticClass:'ts-chat-room-event-detailed',attrs:{'data-id':m.id}},[h('div',{staticClass:'ts-chat-room-event-bubble'},m.text)]);
-   return h('div',{staticClass:'ts-chat-room-event-detailed is-system',attrs:{'data-id':m.id}},[h('div',{staticClass:'ts-chat-message-system-body compact'},[h('div',{staticClass:'ts-chat-message-system-body-icon'}),h('div',{staticClass:'ts-chat-message-system-body-contents ts-chat-message-system-body-contents-spaced'},[h('span',{staticClass:'ts-font-small'},m.text)]),h('span',{staticClass:'ts-font-minimal ts-style-caption ts-chat-message-system-time'},'20:0'+(m.index%10))])])}};
+   return h('div',{staticClass:'ts-chat-room-event-detailed is-system',attrs:{'data-id':m.id}},[h('div',{staticClass:'ts-chat-message-system-body compact'},[h('div',{staticClass:'ts-chat-message-system-body-icon'}),h('div',{staticClass:'ts-chat-message-system-body-contents ts-chat-message-system-body-contents-spaced'},[h('span',{staticClass:'ts-font-small'},m.text)]),h('span',{staticClass:'ts-font-minimal ts-style-caption ts-chat-message-system-time'},'20:0'+(m.index%10)+' - Sat')])])}};
   const chat=new Chat();
-  const vm=new Vue({data:()=>({item:chat}),computed:{isLegacy:()=>true},render(h){return h('div',{staticClass:'ts-chat-container tsv-view is-detailed'},[h('div',{staticClass:'rows'},this.item.filteredMessages.map(m=>h(Row,{key:m.id,props:{legacyEvent:m}})))])}}).$mount('#mount');
+  const vm=new Vue({data:()=>({item:chat}),computed:{isLegacy:()=>true},render(h){return h('div',{staticClass:'ts-chat-container tsv-view is-detailed'},[h('div',{staticClass:'rows'},this.item.filteredMessages.map(m=>h('div',{key:m.id,staticClass:'vl-row'},[h('div',{staticClass:'vl-content'},[h(Row,{props:{legacyEvent:m}})])])))])}}).$mount('#mount');
   const push=(...kinds)=>{for(const kind of kinds){vm.item.messages.push(typeof kind==='string'?message(kind):kind);vm.item.updateFilteredMessagesAfterPush()}};
   window.lab={vm,chat:vm.item,message,push,Chat,
    ids:()=>vm.item.filteredMessages.map(m=>m.id),
@@ -58,6 +58,22 @@ try {
  checks.push('Runs of three or more joins, leaves, disconnects and timeouts fold into their latest line; pairs, text and kicks stay visible');
  const pair=await page.evaluate(()=>{const fold=__tsixChat.fold;const m=lab.message;const yesterday=m('join',-1440),today=[m('left',1),m('drop',2)];return fold([yesterday,...today]).list.length});
  assert.equal(pair,3);checks.push('A run never crosses a day boundary, so day separators stay correct');
+ // Day separators: the first message of each day carries the day, and times drop TeamSpeak's day suffix.
+ const days=()=>page.evaluate(()=>({days:[...document.querySelectorAll('[data-tsix-day]')].map(e=>[e.dataset.id,e.dataset.tsixDay]),times:[...document.querySelectorAll('.ts-chat-message-system-time')].map(e=>[e.textContent.trim(),e.getAttribute('data-tsix-time')])}));
+ const expectedDay=await page.evaluate(()=>new Intl.DateTimeFormat(undefined,{weekday:'long',day:'numeric',month:'long',...(new Date().getFullYear()===2026?{}:{year:'numeric'})}).format(new Date(2026,9,31)));
+ let marked=await days();
+ assert.deepEqual(marked.days,[['chan#0',expectedDay]]);
+ assert.ok(marked.times.length&&marked.times.every(([text,full])=>/^20:0[0-9]$/.test(text)&&full===text+' - Sat'),JSON.stringify(marked.times));
+ await page.evaluate(()=>{const first=lab.chat.messages[0];lab.push({...first,id:'next-day',time:new Date(first.time.getTime()+86400000)})});await page.evaluate(()=>lab.settle());
+ marked=await days();assert.equal(marked.days.length,2);assert.equal(marked.days[1][0],await page.evaluate(()=>lab.ids().at(-1)));
+ const separator=await page.evaluate(()=>{const e=document.querySelector('[data-tsix-day]'),s=getComputedStyle(e,'::before');return {content:s.content,border:s.borderTopWidth,display:s.display}});
+ assert.equal(separator.content,JSON.stringify(expectedDay));assert.equal(separator.border,'1px');
+ await page.evaluate(()=>__tsixFeatures.set('chatDays',false));await page.evaluate(()=>lab.settle());
+ marked=await days();assert.equal(marked.days.length,0);assert.ok(marked.times.every(([text,full])=>full===null&&/ - Sat$/.test(text)),JSON.stringify(marked.times));
+ await page.evaluate(()=>__tsixFeatures.set('chatDays',true));await page.evaluate(()=>lab.settle());
+ marked=await days();assert.equal(marked.days.length,2);
+ await page.evaluate(()=>{const c=lab.chat;c.messages.pop();c.updateFilteredMessages(true)});await page.evaluate(()=>lab.settle());
+ checks.push('Day separators mark the first message of each day, times drop the day suffix, and the switch restores TeamSpeak’s text');
  // Expand and fold with the keyboard; focus follows the same run.
  await page.locator('[data-tsix-chat-run]').first().focus();await page.keyboard.press('Enter');await page.evaluate(()=>lab.settle());
  assert.deepEqual(await page.evaluate(()=>lab.ids().slice(4,9)),['chan#4','chan#5','chan#6','chan#7','chan#8']);
@@ -92,8 +108,22 @@ try {
  assert.equal(await page.evaluate(()=>lab.chat.filteredMessages===lab.chat.messages),true);assert.equal(await page.evaluate(()=>lab.runs().length),0);
  await page.evaluate(()=>__tsixFeatures.set('chatGroupEvents',true));await page.evaluate(()=>lab.settle());assert.equal(await page.evaluate(()=>lab.runs().length),2);
  checks.push('The grouping switch restores TeamSpeak’s own list immediately and regroups when turned back on');
+ // A short history sits on the message box; a long one still starts at the top and scrolls to every row.
+ const anchoring=await page.evaluate(()=>{
+  const host=document.createElement('div');host.className='ts-chat-container';host.style.cssText='position:fixed;left:0;top:0;width:600px;height:400px;display:flex;flex-direction:column';
+  host.innerHTML='<div class="vl-root" style="flex:1 1 auto;overflow-y:scroll"><div class="vl-hover" style="position:sticky;top:0;height:0"></div><div class="vl-width" style="position:absolute"></div><div class="vl-leading"></div><div class="vl-canvas" style="position:relative;height:120px"></div><div class="vl-trailing" style="height:40px"></div></div>';
+  document.body.append(host);
+  const root=host.querySelector('.vl-root'),canvas=host.querySelector('.vl-canvas'),trailing=host.querySelector('.vl-trailing');
+  const short={gap:Math.round(root.getBoundingClientRect().bottom-trailing.getBoundingClientRect().bottom),scrolls:root.scrollHeight>root.clientHeight};
+  canvas.style.height='2000px';
+  const long={top:Math.round(canvas.getBoundingClientRect().top-root.getBoundingClientRect().top),scrollHeight:root.scrollHeight};
+  root.scrollTop=root.scrollHeight;const end=Math.round(root.getBoundingClientRect().bottom-trailing.getBoundingClientRect().bottom);
+  host.remove();return {short,long,end};
+ });
+ assert.deepEqual(anchoring.short,{gap:0,scrolls:false});assert.equal(anchoring.long.top,0);assert.equal(anchoring.long.scrollHeight,2040);assert.equal(anchoring.end,0);
+ checks.push('A short chat history sits on the message box; a long one starts at the top and scrolls to its end');
  await page.evaluate(()=>__tsixChat.dispose());await page.evaluate(()=>lab.settle());
- assert.deepEqual(await page.evaluate(()=>({own:['updateFilteredMessages','updateFilteredMessagesAfterPush','updateFilteredMessagesAfterUnshift'].filter(k=>Object.hasOwn(lab.chat,k)),same:lab.chat.filteredMessages===lab.chat.messages,buttons:lab.runs().length})),{own:[],same:true,buttons:0});
+ assert.deepEqual(await page.evaluate(()=>({own:['updateFilteredMessages','updateFilteredMessagesAfterPush','updateFilteredMessagesAfterUnshift'].filter(k=>Object.hasOwn(lab.chat,k)),same:lab.chat.filteredMessages===lab.chat.messages,buttons:lab.runs().length,days:document.querySelectorAll('[data-tsix-day],[data-tsix-time]').length,suffix:[...document.querySelectorAll('.ts-chat-message-system-time')].every(e=>/ - Sat$/.test(e.textContent.trim()))})),{own:[],same:true,buttons:0,days:0,suffix:true});
  await page.evaluate(()=>lab.push('join'));assert.equal(await page.evaluate(()=>lab.chat.filteredMessages.at(-1).id),'chan#20');
  checks.push('Disposal removes the per-chat methods and buttons; TeamSpeak’s native push path continues');
  assert.deepEqual(errors,[]);

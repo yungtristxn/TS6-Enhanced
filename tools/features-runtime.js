@@ -36,6 +36,12 @@
       detail: 'Folds three or more consecutive events into one expandable line.'
     },
     {
+      id: 'chatDays',
+      group: 'Chat',
+      label: 'Day separators',
+      detail: 'Starts each day with a dated line, so message times show only the hour.'
+    },
+    {
       id: 'chatWidth',
       group: 'Chat',
       label: 'Limit chat line length',

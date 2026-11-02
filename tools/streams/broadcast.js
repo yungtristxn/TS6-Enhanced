@@ -594,6 +594,9 @@ function createBroadcast() {
           list = host.querySelector('[data-tsix-viewer-list]');
         setText(host.querySelector('[data-tsix-viewer-count]'), `${state.people.length} watching`);
         labelViewers();
+        // Live alone says it all until someone watches; the count appears with them.
+        toggle.hidden = !state.people.length;
+        if (toggle.hidden && !list.hidden) setOpen(false);
         toggle.title = state.people.length ? state.people.map(p => p.name).join('\n') : 'Nobody is watching yet';
         icons.replaceChildren(...state.people.slice(0, 3).map(avatar));
         if (state.people.length > 3) {

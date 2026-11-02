@@ -131,12 +131,15 @@ try{
   });
   assert.equal(imageLoads,0,'Chat image loads must not trigger stream reconciliation');
  });
- await check('join, leave, rename, overflow and zero viewers update reactively',async()=>{
+ await check('join, leave, rename, overflow and zero viewers update reactively; the count hides with no viewers',async()=>{
   await page.evaluate(()=>lab.viewers([1,2,3,4,5,6]));await page.waitForFunction(()=>document.querySelector('[data-tsix-viewer-count]').textContent==='6 watching');
   await toggle.click();assert.equal(await list.locator('li').count(),6);assert.equal(await list.locator('[data-tsix-viewer-icon]').count(),6);await page.keyboard.press('Escape');
   await page.evaluate(()=>{lab.clients.get(1).displayName='A <script> Name';lab.tick()});await page.waitForFunction(()=>document.querySelector('[data-tsix-viewer-toggle]').getAttribute('title').includes('A <script> Name'));
-  assert.equal(await bar.locator('script').count(),0);await page.evaluate(()=>lab.viewers([]));await page.waitForFunction(()=>document.querySelector('[data-tsix-viewer-count]').textContent==='0 watching');
-  await toggle.click();assert.match(await list.innerText(),/Nobody is watching yet/);await page.keyboard.press('Escape');
+  assert.equal(await bar.locator('script').count(),0);await toggle.click();assert.ok(await list.isVisible());
+  // Live alone until someone watches: the count and an open list go away with the last viewer.
+  await page.evaluate(()=>lab.viewers([]));await page.waitForFunction(()=>document.querySelector('[data-tsix-viewer-toggle]').hidden);
+  assert.equal(await toggle.isVisible(),false);assert.equal(await list.isVisible(),false);assert.equal(await bar.locator('[data-tsix-broadcast-state]').isVisible(),true);
+  await page.evaluate(()=>lab.viewers([1]));await page.waitForFunction(()=>document.querySelector('[data-tsix-viewer-count]').textContent==='1 watching');assert.ok(await toggle.isVisible());
  });
  await check('replacing a native split menu restores detached controls and removes their keyboard handlers',async()=>{
   await page.evaluate(()=>{

@@ -31,7 +31,7 @@ try{
  assert.equal(await entry.locator('svg path').count(),3);assert.equal(await entry.locator('svg[name="settings"],svg.tsv-icon-settings').count(),0);
  checks.push('The toolbar entry uses its own sparkle artwork instead of a copy of the TeamSpeak settings cog');
  const boost=p.getByRole('switch',{name:'Stream volume up to 300%'}),memory=p.getByRole('switch',{name:'Remember volume per streamer'});
- assert.equal(await p.getByRole('switch').count(),6);assert.ok(await boost.isChecked());assert.ok(await memory.isEnabled());
+ assert.equal(await p.getByRole('switch').count(),7);assert.ok(await boost.isChecked());assert.ok(await memory.isEnabled());
  assert.equal(await p.getByRole('heading',{name:'Features'}).count(),1);
  await boost.focus();await p.keyboard.press('Space');
  assert.equal(await boost.isChecked(),false);assert.ok(await memory.isDisabled());assert.match(await memory.getAttribute('aria-describedby').then(id=>p.locator('#'+id).innerText()),/Requires “Stream volume up to 300%”/);

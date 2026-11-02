@@ -143,6 +143,71 @@
     return null;
   }
   const summary = run => `${run.count} join and leave events`;
+  // Day separators: the first message of each day carries the day's name, so
+  // times drop TeamSpeak's " - Thu" / " - 10/25/2026" suffix.
+  const days = () => themeActive() && feature('chatDays');
+  const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long' }),
+    yearFormat = new Intl.DateTimeFormat(undefined, {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  function dayLabel(date) {
+    const today = new Date(),
+      yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return (date.getFullYear() === today.getFullYear() ? dayFormat : yearFormat).format(date);
+  }
+  function timedMessage(element) {
+    for (let vm = element.__vue__; vm; vm = vm.$children?.find(child => child.$el === element)) {
+      const message = vm.legacyEvent ?? vm.event;
+      if (message?.time instanceof Date) return message;
+    }
+    return null;
+  }
+  // Vue owns the time's text node and rewrites it only when its own value
+  // changes, so the node is shortened in place and restored on cleanup.
+  const textNode = element => [...element.childNodes].find(node => node.nodeType === 3 && node.data.trim());
+  function restoreTime(time) {
+    const node = textNode(time),
+      full = time.getAttribute('data-tsix-time');
+    if (node && full && node.data.trim() === full.split(' - ')[0].trim()) node.data = full;
+    time.removeAttribute('data-tsix-time');
+  }
+  function markDays(container, chat) {
+    const marked = new Set();
+    const list = days() && Array.isArray(chat?.filteredMessages) ? chat.filteredMessages : null;
+    if (list) {
+      const index = new Map(list.map((message, i) => [message, i]));
+      for (const element of container.querySelectorAll('.vl-row > .vl-content > *')) {
+        const message = timedMessage(element),
+          i = index.get(message);
+        if (i === undefined) continue;
+        if (i === 0 || list[i - 1]?.time?.toDateString?.() !== message.time.toDateString()) {
+          const label = dayLabel(message.time);
+          if (element.getAttribute('data-tsix-day') !== label) element.setAttribute('data-tsix-day', label);
+          marked.add(element);
+        }
+        for (const time of element.querySelectorAll('.ts-chat-message-system-time, .ts-chat-timestamp')) {
+          const node = textNode(time);
+          if (!node) continue;
+          const current = node.data.trim(),
+            stored = time.getAttribute('data-tsix-time');
+          const full = stored && current === stored.split(' - ')[0].trim() ? stored : current;
+          const short = full.split(' - ')[0].trim();
+          if (!short || short === full) continue;
+          if (stored !== full) time.setAttribute('data-tsix-time', full);
+          if (current !== short) node.data = short;
+          marked.add(time);
+        }
+      }
+    }
+    for (const node of container.querySelectorAll('[data-tsix-day]'))
+      if (!marked.has(node)) node.removeAttribute('data-tsix-day');
+    for (const node of container.querySelectorAll('[data-tsix-time]')) if (!marked.has(node)) restoreTime(node);
+  }
   function decorate(container, state) {
     const seen = new Set();
     if (state?.runs.size)
@@ -199,9 +264,19 @@
       if (!vm || vm._isDestroyed || !vm.isLegacy || typeof vm.$watch !== 'function') continue;
       live.add(vm);
       if (!views.has(vm)) {
-        const view = { chat: null, container, observer: new MutationObserver(schedule) };
-        view.observer.observe(container, { childList: true, subtree: true });
-        view.unwatch = vm.$watch(() => vm.item, schedule);
+        // Typing in the message box is not a chat change.
+        const changed = changes =>
+          changes.some(change => {
+            const node = change.target.nodeType === 1 ? change.target : change.target.parentElement;
+            return !node?.closest('.ts-chat-input-container');
+          });
+        const view = {
+          chat: null,
+          container,
+          observer: new MutationObserver(changes => changed(changes) && schedule())
+        };
+        view.observer.observe(container, { childList: true, subtree: true, characterData: true });
+        view.unwatch = vm.$watch(() => [vm.item, vm.item?.filteredMessages], schedule);
         views.set(vm, view);
       }
       const view = views.get(vm);
@@ -212,6 +287,7 @@
         reconcile(vm.item, chats.get(vm.item));
       }
       decorate(container, chats.get(vm.item));
+      markDays(container, vm.item);
     }
     for (const [vm, view] of views)
       if (!live.has(vm)) {
@@ -253,6 +329,8 @@
         view.observer.disconnect();
         view.unwatch();
         for (const button of view.container.querySelectorAll('[data-tsix-chat-run]')) button.remove();
+        for (const node of view.container.querySelectorAll('[data-tsix-day]')) node.removeAttribute('data-tsix-day');
+        for (const node of view.container.querySelectorAll('[data-tsix-time]')) restoreTime(node);
       }
       views.clear();
       for (const [chat, state] of chats) detach(chat, state);
