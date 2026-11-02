@@ -199,7 +199,9 @@ async function startNativeEnhanced() {
   const runSessionJob = job => {
     if (!job || typeof job.id !== 'string') return;
     const adapter = window.__tsixUpdateSession;
-    if (!adapter || !['capture', 'prepare', 'cancel', 'restore'].includes(job.stage)) return;
+    if (!adapter || !['capture', 'prepare', 'cancel', 'restore', 'disconnect'].includes(job.stage)) return;
+    // TeamSpeak closes right after this stage: never reconnect to the helper.
+    if (job.stage === 'disconnect') stopped = true;
     let entry = sessionJobs.get(job.id);
     const send = () => {
       if (!entry.response || entry.sending) return;

@@ -108,20 +108,23 @@ try {
  assert.equal(await page.evaluate(()=>lab.chat.filteredMessages===lab.chat.messages),true);assert.equal(await page.evaluate(()=>lab.runs().length),0);
  await page.evaluate(()=>__tsixFeatures.set('chatGroupEvents',true));await page.evaluate(()=>lab.settle());assert.equal(await page.evaluate(()=>lab.runs().length),2);
  checks.push('The grouping switch restores TeamSpeak’s own list immediately and regroups when turned back on');
- // A short history sits on the message box; a long one still starts at the top and scrolls to every row.
+ // By default a short history starts at the top. With the option on it sits on
+ // the message box; a long one still starts at the top and scrolls to every row.
  const anchoring=await page.evaluate(()=>{
   const host=document.createElement('div');host.className='ts-chat-container';host.style.cssText='position:fixed;left:0;top:0;width:600px;height:400px;display:flex;flex-direction:column';
   host.innerHTML='<div class="vl-root" style="flex:1 1 auto;overflow-y:scroll"><div class="vl-hover" style="position:sticky;top:0;height:0"></div><div class="vl-width" style="position:absolute"></div><div class="vl-leading"></div><div class="vl-canvas" style="position:relative;height:120px"></div><div class="vl-trailing" style="height:40px"></div></div>';
   document.body.append(host);
   const root=host.querySelector('.vl-root'),canvas=host.querySelector('.vl-canvas'),trailing=host.querySelector('.vl-trailing');
+  const top=Math.round(canvas.getBoundingClientRect().top-root.getBoundingClientRect().top);
+  __tsixFeatures.set('chatBottom',true);
   const short={gap:Math.round(root.getBoundingClientRect().bottom-trailing.getBoundingClientRect().bottom),scrolls:root.scrollHeight>root.clientHeight};
   canvas.style.height='2000px';
   const long={top:Math.round(canvas.getBoundingClientRect().top-root.getBoundingClientRect().top),scrollHeight:root.scrollHeight};
   root.scrollTop=root.scrollHeight;const end=Math.round(root.getBoundingClientRect().bottom-trailing.getBoundingClientRect().bottom);
-  host.remove();return {short,long,end};
+  __tsixFeatures.set('chatBottom',false);host.remove();return {top,short,long,end};
  });
- assert.deepEqual(anchoring.short,{gap:0,scrolls:false});assert.equal(anchoring.long.top,0);assert.equal(anchoring.long.scrollHeight,2040);assert.equal(anchoring.end,0);
- checks.push('A short chat history sits on the message box; a long one starts at the top and scrolls to its end');
+ assert.equal(anchoring.top,0,'A short history starts at the top by default');assert.deepEqual(anchoring.short,{gap:0,scrolls:false});assert.equal(anchoring.long.top,0);assert.equal(anchoring.long.scrollHeight,2040);assert.equal(anchoring.end,0);
+ checks.push('Chat starts at the top by default; with the option on a short history sits on the message box and a long one still scrolls to its end');
  await page.evaluate(()=>__tsixChat.dispose());await page.evaluate(()=>lab.settle());
  assert.deepEqual(await page.evaluate(()=>({own:['updateFilteredMessages','updateFilteredMessagesAfterPush','updateFilteredMessagesAfterUnshift'].filter(k=>Object.hasOwn(lab.chat,k)),same:lab.chat.filteredMessages===lab.chat.messages,buttons:lab.runs().length,days:document.querySelectorAll('[data-tsix-day],[data-tsix-time]').length,suffix:[...document.querySelectorAll('.ts-chat-message-system-time')].every(e=>/ - Sat$/.test(e.textContent.trim()))})),{own:[],same:true,buttons:0,days:0,suffix:true});
  await page.evaluate(()=>lab.push('join'));assert.equal(await page.evaluate(()=>lab.chat.filteredMessages.at(-1).id),'chan#20');

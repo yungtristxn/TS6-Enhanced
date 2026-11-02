@@ -33,7 +33,16 @@ try {
         Assert-LayoutNativeInstall $root $client $pending.version
         # A newer download must never be removed by this operation.
         $current=Get-Content -LiteralPath $pendingPath -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
-        if($current -and $current.sha256 -eq $pending.sha256){Remove-Item -LiteralPath $pendingPath}
+        if($current -and $current.sha256 -eq $pending.sha256){Remove-Item -LiteralPath $pendingPath;$current=$null}
+        # Downloaded installers are only needed until they are installed. Keep
+        # one that a newer queue still references; housekeeping never fails here.
+        try{
+            $updates=Join-Path $root 'updates'
+            $keep=if($current -and $current.path){[IO.Path]::GetFullPath([string]$current.path)}else{''}
+            foreach($old in @(Get-ChildItem -LiteralPath $updates -File -ErrorAction Stop | Where-Object { $_.Name -match '^TS6-Enhanced-[0-9A-Za-z.-]+-(Setup|Update)\.exe(\..+)?$' -and $_.FullName -ine $keep -and !($_.Attributes -band [IO.FileAttributes]::ReparsePoint) })){
+                Remove-Item -LiteralPath $old.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }catch{}
         return
     }
     $state=$null

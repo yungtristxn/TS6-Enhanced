@@ -93,12 +93,17 @@ export async function createNativeManager({
   client,
   applyMaintenance,
   journal = null,
+  // Close the UI connection once TeamSpeak is about to quit for an update.
+  detachUi = true,
   fetcher = fetch,
   onStatus = async () => {}
 }) {
   if (!/^[a-f0-9]{64}$/.test(token || '')) throw Error('Invalid native session token');
   let busy = false,
     closing = false,
+    // Set once TeamSpeak is about to close for an update: the UI connection is
+    // closed before shutdown and not accepted again for this process.
+    detached = false,
     revision = 0,
     started = false,
     pendingReady = null,
@@ -172,7 +177,7 @@ export async function createNativeManager({
       sessionJob = job;
       job.timer = setTimeout(
         () => job.finish(null, 'TeamSpeak did not finish saving or restoring the session'),
-        stage === 'restore' ? 180000 : stage === 'prepare' ? 30000 : 20000
+        stage === 'restore' ? 180000 : stage === 'prepare' ? 30000 : stage === 'disconnect' ? 8000 : 20000
       );
       publish({});
     });
@@ -305,6 +310,16 @@ export async function createNativeManager({
                 if (prepared?.ok !== true) throw Error('TeamSpeak did not confirm restart preparation');
                 await journal.arm(id);
                 publish({ message: 'Restarting TeamSpeak and applying the update…' });
+                // Leave servers cleanly before TeamSpeak quits: if its own shutdown
+                // then fails, the server has no lingering session (a "Name1"
+                // rejoin). Restoration reconnects from the saved snapshot. The UI
+                // connection is closed too, so no helper socket is open during
+                // TeamSpeak's network teardown. Best effort; never blocks the update.
+                await sessionRequest('disconnect').catch(() => {});
+                if (detachUi) {
+                  detached = true;
+                  for (const socket of sockets.clients) socket.close(1000, 'restarting');
+                }
               }
             });
           } catch (error) {
@@ -339,6 +354,7 @@ export async function createNativeManager({
       expected = Buffer.from(`tsix.v1.${token}`);
     if (
       closing ||
+      detached ||
       request.url !== '/' ||
       request.headers.origin !== 'tsui://default' ||
       sockets.clients.size >= 4 ||

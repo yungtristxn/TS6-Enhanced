@@ -1,7 +1,7 @@
 /* TS6 beta5 / 1791901251. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 2.4.1;
+  --tsix-layout-version: 2.4.2;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
@@ -91,12 +91,12 @@
 [data-tsix-chat-run] { flex: 0 0 auto; align-self: center; box-sizing: border-box; height: 18px; margin: 0 0 0 8px; padding: 0 7px; border: 1px solid var(--tsix-control-border); border-radius: var(--tsix-chrome-radius); background: var(--tsix-control-bg); color: var(--tsix-chrome-muted); font: inherit; font-size: var(--tsix-type-caption); line-height: 16px; white-space: nowrap; cursor: pointer; }
 [data-tsix-chat-run]:hover { background: var(--tsix-control-hover); color: var(--tsix-chrome-text); }
 [data-tsix-chat-run]:active { background: var(--tsix-control-pressed); }
-/* A short history sits on the message box, like other chat apps, instead of
- * hanging from the header. Margin-top auto only takes the space left over: a
+/* Optional (feature chatBottom, off by default): a short history sits on the
+ * message box, like other chat apps, instead of hanging from the header. Margin-top auto only takes the space left over: a
  * full history scrolls normally. The sticky hover menu moves with the rows. */
-.ts-chat-container .vl-root { display: flex; flex-direction: column; }
-.ts-chat-container .vl-root > * { flex-shrink: 0; }
-.ts-chat-container .vl-root > :first-child { margin-top: auto; }
+:root[data-tsix-on~="chatBottom"] .ts-chat-container .vl-root { display: flex; flex-direction: column; }
+:root[data-tsix-on~="chatBottom"] .ts-chat-container .vl-root > * { flex-shrink: 0; }
+:root[data-tsix-on~="chatBottom"] .ts-chat-container .vl-root > :first-child { margin-top: auto; }
 /* Day separators (chat helper): a rule with the day above its first message. */
 .ts-chat-container [data-tsix-day]::before {
   content: attr(data-tsix-day); display: block; flex: 0 0 auto; box-sizing: border-box;

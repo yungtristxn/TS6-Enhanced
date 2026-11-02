@@ -36,7 +36,12 @@ class Fixture { static int Main(string[] args) { File.WriteAllLines(Environment.
     & (Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') /nologo /target:exe ("/out:$stub") $stubSource
     if($LASTEXITCODE){throw 'Fixture installer compilation failed'}
     @{schema=2;mode='next-launch';fromVersion=$release.version;version=$release.version;path=$stub;sha256=(Get-FileHash -LiteralPath $stub).Hash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dataRoot 'pending-update.json')
+    $older=Join-Path $updates 'TS6-Enhanced-1.0.0-Setup.exe';'old' | Set-Content -LiteralPath $older
+    $rejected=Join-Path $updates 'TS6-Enhanced-1.0.1-Update.exe.0f.rejected';'bad' | Set-Content -LiteralPath $rejected
+    $unrelated=Join-Path $updates 'notes.txt';'keep' | Set-Content -LiteralPath $unrelated
     & $setup -Action ApplyPending
+    Check (!(Test-Path -LiteralPath $stub) -and !(Test-Path -LiteralPath $older) -and !(Test-Path -LiteralPath $rejected)) 'Installed and older update installers were not removed'
+    Check (Test-Path -LiteralPath $unrelated) 'Update cleanup removed an unrelated file'
     $arguments=Get-Content -LiteralPath $env:TSIX_NATIVE_FIXTURE_RECORD
     Check ($arguments[0] -eq $dataRoot -and '/TSIXDEFERRED=1' -in $arguments -and '/TSIXNOOPEN=1' -in $arguments) 'Deferred native installer did not leave the client closed or used its payload directory'
     Check (!(Test-Path -LiteralPath (Join-Path $dataRoot 'pending-update.json'))) 'Successful deferred update retained its queue'

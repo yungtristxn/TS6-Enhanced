@@ -18,14 +18,28 @@
     [data-tsix-manager-open]:hover,[data-tsix-manager-open][aria-expanded=true]{background:var(--tsix-control-hover,#344b64);color:var(--tsix-chrome-text,#edf2f7)}
     [data-tsix-manager-open]:active{background:var(--tsix-control-pressed,#3e5873)}
     [data-tsix-manager-open][data-update]::after{content:'';position:absolute;top:2px;right:2px;width:6px;height:6px;border-radius:50%;background:var(--tsix-chrome-accent,#8bc4ff);box-shadow:0 0 0 2px var(--tsix-chrome-bg,#18212e)}
-    #tsix-manager dialog{font:inherit;width:380px;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px);overflow:auto;overscroll-behavior:contain;box-sizing:border-box;margin:auto;padding:24px;border:1px solid var(--tsix-chrome-border,#3b4c61);border-radius:var(--tsix-surface-radius,8px);background:var(--tsix-content-bg,#202936);color:inherit;box-shadow:var(--tsix-surface-shadow,0 8px 24px #0005)}
+    #tsix-manager dialog{font:inherit;width:440px;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px);box-sizing:border-box;margin:auto;padding:0;border:1px solid var(--tsix-chrome-border,#3b4c61);border-radius:var(--tsix-surface-radius,8px);background:var(--tsix-content-bg,#202936);color:inherit;box-shadow:var(--tsix-surface-shadow,0 8px 24px #0005);overflow:hidden}
+    #tsix-manager dialog[open]{display:flex;flex-direction:column}
+    #tsix-manager [data-header]{display:flex;align-items:center;gap:8px;flex:none;padding:16px 16px 12px 20px}
+    #tsix-manager [data-close]{margin-left:auto;width:32px;height:32px;min-height:32px;padding:0;display:inline-grid;place-items:center;border-color:transparent;background:transparent;color:var(--tsix-muted)}
+    #tsix-manager [data-close]::before,#tsix-manager [data-close]::after{content:"";grid-area:1/1;width:14px;height:1.5px;border-radius:1px;background:currentColor;transform:rotate(45deg)}
+    #tsix-manager [data-close]::after{transform:rotate(-45deg)}
+    #tsix-manager [data-close]:hover:not(:disabled){color:var(--tsix-chrome-text,#edf2f7)}
+    #tsix-manager [role=tablist]{display:flex;flex:none;margin:0 20px;border-radius:var(--tsix-chrome-radius,4px);background:var(--tsix-control-bg,#27374b)}
+    #tsix-manager [role=tab]{flex:1 1 0;min-height:32px;padding:0 12px;border:0;border-radius:var(--tsix-chrome-radius,4px);background:transparent;color:var(--tsix-muted)}
+    #tsix-manager [role=tab][aria-selected=true],#tsix-manager [role=tab][aria-selected=true]:hover{background:var(--tsix-control-selected,var(--tsix-control-pressed,#3e5873));color:var(--tsix-chrome-text,#edf2f7)}
+    #tsix-manager [role=tab][data-update]::after{content:"";display:inline-block;width:6px;height:6px;margin:0 0 1px 6px;border-radius:50%;background:var(--tsix-chrome-accent,#8bc4ff);vertical-align:middle}
+    #tsix-manager [role=tabpanel]{min-height:0;overflow:auto;overscroll-behavior:contain;padding:4px 20px 16px}
+    #tsix-manager [role=tabpanel]:focus-visible{outline:2px solid var(--tsix-chrome-accent,#8bc4ff);outline-offset:-2px}
     #tsix-manager dialog::backdrop{background:#0006}
     #tsix-manager h2{margin:0;font-size:18px;line-height:24px;font-weight:600}
-    #tsix-manager [data-version]{display:block;margin-top:2px;color:var(--tsix-muted);font-size:12px;line-height:18px}
+    #tsix-manager [data-version]{margin-top:3px;color:var(--tsix-muted);font-size:12px;line-height:18px}
     #tsix-manager p{margin:0;line-height:20px;font-weight:400;overflow-wrap:anywhere}
-    #tsix-manager [data-overview]{margin-top:20px}
+    #tsix-manager [data-overview]{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
     #tsix-manager [data-status]{color:var(--tsix-muted)}
-    #tsix-manager [data-update-action]{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    #tsix-manager [data-update-action]{display:flex;gap:8px;flex-wrap:wrap}
+    #tsix-manager [data-update-panel]{display:flex;flex-direction:column;gap:12px;padding-top:12px}
+    #tsix-manager [data-uninstall-row]{margin-top:4px;padding-top:12px;border-top:1px solid var(--tsix-chrome-border,#3b4c61)}
     #tsix-manager button{font:inherit;line-height:20px;min-height:34px;cursor:pointer;border:1px solid var(--tsix-control-border,#526780);border-radius:var(--tsix-chrome-radius,4px);padding:6px 12px;color:inherit;background:var(--tsix-control-bg,#27374b)}
     #tsix-manager button:hover:not(:disabled){background:var(--tsix-control-hover,#344b64)}
     #tsix-manager button:active:not(:disabled){background:var(--tsix-control-pressed,#3e5873)}
@@ -38,16 +52,13 @@
     #tsix-manager [data-destructive]:hover:not(:disabled){background:var(--tsix-danger-hover,#964454)}
     #tsix-manager [data-destructive]:active:not(:disabled){background:var(--tsix-danger-bg,#803b48)}
     #tsix-manager [data-remove]{margin-left:-8px;padding-left:8px;padding-right:8px;border-color:transparent;background:transparent;color:var(--tsix-danger-text,#ffb7c1)}
-    #tsix-manager [data-footer]{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid var(--tsix-chrome-border,#3b4c61)}
-    #tsix-manager [data-confirm]{margin-top:16px}
+    #tsix-manager [data-confirm]{padding:4px 20px 20px}
     #tsix-manager [data-consequence]{margin-top:10px;color:var(--tsix-muted)}
     #tsix-manager [data-confirm-actions]{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:20px}
-    #tsix-manager details{margin-top:12px;color:var(--tsix-muted);font-size:12px}
+    #tsix-manager details{color:var(--tsix-muted);font-size:12px}
     #tsix-manager summary{width:fit-content;cursor:pointer;border-radius:var(--tsix-chrome-radius,4px)}#tsix-manager summary:focus-visible{outline:2px solid var(--tsix-chrome-accent,#8bc4ff);outline-offset:2px}#tsix-manager details p{margin-top:8px;max-height:100px;overflow:auto;white-space:pre-wrap}
-    #tsix-manager [data-features]{margin-top:20px;padding-top:16px;border-top:1px solid var(--tsix-chrome-border,#3b4c61)}
-    #tsix-manager h3{margin:0;font-size:14px;line-height:20px;font-weight:600}
-    #tsix-manager [data-feature-group]{margin:12px 0 0;color:var(--tsix-muted);font-size:12px;line-height:16px;font-weight:600}
-    #tsix-manager [data-feature]{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 16px;padding:6px 0;cursor:pointer}
+    #tsix-manager [data-feature]{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 16px;padding:12px 0;border-bottom:1px solid var(--tsix-chrome-border,#3b4c61);cursor:pointer}
+    #tsix-manager [data-feature]:last-child{border-bottom:0}
     #tsix-manager [data-feature] small{grid-column:1;color:var(--tsix-muted);font-size:12px;line-height:16px}
     #tsix-manager [data-feature] input{grid-column:2;grid-row:1/span 2;appearance:none;position:relative;width:34px;height:20px;margin:0;border:1px solid var(--tsix-control-border,#526780);border-radius:10px;background:var(--tsix-control-bg,#27374b);cursor:pointer;transition:background-color .12s}
     #tsix-manager [data-feature] input::before{content:'';position:absolute;top:3px;left:3px;width:12px;height:12px;border-radius:50%;background:var(--tsix-chrome-muted,#b6c5d8);transition:transform .12s}
@@ -62,7 +73,7 @@
     #tsix-manager [data-toast-actions]{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
     #tsix-manager [hidden]{display:none!important}
     @media(max-width:420px){#tsix-manager dialog{padding:20px}}
-    @media(forced-colors:active){#tsix-manager dialog,#tsix-manager [data-toast]{border-color:CanvasText}#tsix-manager button,[data-tsix-manager-open]{border:1px solid ButtonText}#tsix-manager [data-remove]{color:ButtonText}#tsix-manager button:disabled{opacity:1;color:GrayText;border-color:GrayText}#tsix-manager button:focus-visible,#tsix-manager summary:focus-visible,[data-tsix-manager-open]:focus-visible{outline-color:Highlight}#tsix-manager [data-status],#tsix-manager [data-version],#tsix-manager [data-consequence],#tsix-manager [data-feature] small{color:CanvasText}[data-tsix-manager-open][data-update]::after{background:Highlight}#tsix-manager [data-feature] input{border-color:ButtonText}#tsix-manager [data-feature] input::before{background:ButtonText}#tsix-manager [data-feature] input:checked{background:Highlight}#tsix-manager [data-feature] input:checked::before{background:HighlightText}}
+    @media(forced-colors:active){#tsix-manager dialog,#tsix-manager [data-toast]{border-color:CanvasText}#tsix-manager button,[data-tsix-manager-open]{border:1px solid ButtonText}#tsix-manager [data-remove]{color:ButtonText}#tsix-manager button:disabled{opacity:1;color:GrayText;border-color:GrayText}#tsix-manager button:focus-visible,#tsix-manager summary:focus-visible,[data-tsix-manager-open]:focus-visible{outline-color:Highlight}#tsix-manager [data-status],#tsix-manager [data-version],#tsix-manager [data-consequence],#tsix-manager [data-feature] small{color:CanvasText}[data-tsix-manager-open][data-update]::after{background:Highlight}#tsix-manager [role=tab][aria-selected=true]{outline:1px solid Highlight;outline-offset:-1px}#tsix-manager [data-feature] input{border-color:ButtonText}#tsix-manager [data-feature] input::before{background:ButtonText}#tsix-manager [data-feature] input:checked{background:Highlight}#tsix-manager [data-feature] input:checked::before{background:HighlightText}}
   `;
   const make = (tag, attribute, text) => {
     const node = document.createElement(tag);
@@ -121,22 +132,78 @@
     errorText = make('p');
   details.append(summary, errorText);
   details.hidden = true;
-  // Escape hatches for individual helpers. Changes apply immediately.
-  const features = make('section', 'data-features');
-  features.setAttribute('aria-labelledby', 'tsix-manager-features');
+  // Tabs keep the dialog short: one panel per feature group, plus updates.
+  // Switches apply immediately; the last tab is remembered.
+  const tabKey = 'tsix.layout.managerTab';
+  const tablist = make('div');
+  tablist.setAttribute('role', 'tablist');
+  tablist.setAttribute('aria-label', 'TS6 Enhanced settings');
+  const tabs = new Map(),
+    panels = new Map();
+  for (const [key, label] of [
+    ['streams', 'Streams'],
+    ['chat', 'Chat'],
+    ['updates', 'Updates']
+  ]) {
+    const tab = action(label),
+      panel = make('div');
+    tab.setAttribute('role', 'tab');
+    tab.id = 'tsix-manager-tab-' + key;
+    panel.id = 'tsix-manager-panel-' + key;
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', tab.id);
+    panel.tabIndex = 0;
+    tab.setAttribute('aria-controls', panel.id);
+    tab.onclick = () => select(key);
+    tablist.append(tab);
+    tabs.set(key, tab);
+    panels.set(key, panel);
+  }
+  let selected = 'streams';
+  try {
+    if (tabs.has(localStorage.getItem(tabKey))) selected = localStorage.getItem(tabKey);
+  } catch {
+    /* Storage is optional. */
+  }
+  function select(key, focus = false) {
+    selected = key;
+    for (const [name, tab] of tabs) {
+      const active = name === key;
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+      panels.get(name).hidden = !active;
+    }
+    if (focus) tabs.get(key).focus();
+    try {
+      localStorage.setItem(tabKey, key);
+    } catch {
+      /* Storage is optional. */
+    }
+  }
+  tablist.addEventListener('keydown', event => {
+    const keys = [...tabs.keys()],
+      index = keys.indexOf(selected);
+    const next =
+      event.key === 'ArrowRight'
+        ? keys[(index + 1) % keys.length]
+        : event.key === 'ArrowLeft'
+          ? keys[(index + keys.length - 1) % keys.length]
+          : event.key === 'Home'
+            ? keys[0]
+            : event.key === 'End'
+              ? keys.at(-1)
+              : null;
+    if (!next) return;
+    event.preventDefault();
+    select(next, true);
+  });
   const renderFeatures = () => {
     const api = window.__tsixFeatures;
-    features.hidden = !api;
-    if (!api) return;
-    const heading = make('h3', null, 'Features');
-    heading.id = 'tsix-manager-features';
-    const nodes = [heading];
-    let group = '';
-    for (const feature of api.definitions()) {
-      if (feature.group !== group) {
-        group = feature.group;
-        nodes.push(make('p', 'data-feature-group', group));
-      }
+    const groups = new Map([
+      ['Streams', []],
+      ['Chat', []]
+    ]);
+    for (const feature of api ? api.definitions() : []) {
       const row = make('label', 'data-feature'),
         text = make('span', null, feature.label),
         detail = make('small', null, feature.detail),
@@ -156,22 +223,30 @@
         api.set(feature.id, input.checked);
       };
       row.append(text, detail, input);
-      nodes.push(row);
+      (groups.get(feature.group) ?? groups.get('Streams')).push(row);
     }
     // Rebuilding would drop keyboard focus from the switch that was toggled.
     const focused = document.activeElement?.dataset?.featureId;
-    features.replaceChildren(...nodes);
-    if (focused) features.querySelector(`[data-feature-id="${focused}"]`)?.focus();
+    panels.get('streams').replaceChildren(...groups.get('Streams'));
+    panels.get('chat').replaceChildren(...groups.get('Chat'));
+    tabs.get('streams').hidden = tabs.get('chat').hidden = !api;
+    if (focused) dialog.querySelector('[data-feature-id="' + focused + '"]')?.focus();
   };
   const onFeatures = () => {
     if (dialog.open) renderFeatures();
   };
   window.addEventListener('tsix-features', onFeatures);
-  const footer = make('div', 'data-footer'),
-    remove = action('Uninstall…', 'data-remove'),
-    close = action('Close');
-  footer.append(remove, close);
-  overview.append(status, updateActions, details, features, footer);
+  const remove = action('Uninstall…', 'data-remove'),
+    close = action('', 'data-close');
+  close.setAttribute('aria-label', 'Close');
+  close.title = 'Close';
+  const updatePanel = make('div', 'data-update-panel'),
+    uninstallRow = make('div', 'data-uninstall-row');
+  uninstallRow.append(remove);
+  updatePanel.append(status, updateActions, details, uninstallRow);
+  panels.get('updates').append(updatePanel);
+  overview.append(tablist, ...panels.values());
+  const header = make('div', 'data-header');
   const confirm = make('div', 'data-confirm');
   confirm.hidden = true;
   const warning = make('p', null, 'TeamSpeak will restart and end any calls or streams.'),
@@ -189,18 +264,29 @@
   const toastTitle = make('strong', null, 'Update available'),
     message = make('p'),
     toastActions = make('div', 'data-toast-actions'),
-    review = action('View update', 'data-primary'),
+    review = action('Update', 'data-primary'),
     dismiss = action('Later');
   toastActions.append(review, dismiss);
   toast.append(toastTitle, message, toastActions);
-  dialog.append(title, version, overview, confirm);
+  header.append(title, version, close);
+  dialog.append(header, overview, confirm);
   host.append(style, dialog, toast);
   root.append(host);
   let state = {},
     nonce = '',
     pending = null,
     notified = '',
-    initiator = null;
+    initiator = null,
+    // The popup's Update button starts the update directly; the popup then
+    // shows its progress, and only a stopped update offers Close.
+    toastRunning = false;
+  const showToast = () => {
+    toastTitle.textContent = toastRunning ? 'Updating TS6 Enhanced' : 'Update available';
+    if (toastRunning) message.textContent = state.detail ? `${state.message} ${state.detail}` : state.message || '';
+    review.hidden = toastRunning;
+    dismiss.textContent = toastRunning ? 'Close' : 'Later';
+    toastActions.hidden = toastRunning && !!state.busy;
+  };
   const send = action => {
     if (typeof window.__tsixMaintenanceRequest === 'function' && nonce)
       window.__tsixMaintenanceRequest(JSON.stringify({ action, nonce }));
@@ -217,6 +303,8 @@
     toast.hidden = true;
     reset();
     renderFeatures();
+    // A waiting update opens on its tab; otherwise the last tab used.
+    select(state.available || state.pending || !window.__tsixFeatures ? 'updates' : selected);
     if (!dialog.open) dialog.showModal();
     button.setAttribute('aria-expanded', 'true');
     close.focus();
@@ -226,8 +314,18 @@
     initiator?.focus();
   };
   button.onclick = open;
-  review.onclick = open;
-  dismiss.onclick = () => (toast.hidden = true);
+  review.onclick = e => {
+    if (!e.isTrusted || state.busy || !state.available) return;
+    toastRunning = true;
+    state = { ...state, busy: true, message: 'Downloading the update…', detail: null };
+    showToast();
+    send('update');
+  };
+  dismiss.onclick = () => {
+    toast.hidden = true;
+    toastRunning = false;
+    showToast();
+  };
   close.onclick = () => dialog.close();
   check.onclick = e => {
     if (e.isTrusted && !state.busy && state.configured) send('check');
@@ -332,12 +430,18 @@
       errorText.textContent = state.detail || '';
       if (!state.detail) details.open = false;
       button.toggleAttribute('data-update', !!state.available);
+      tabs.get('updates').toggleAttribute('data-update', !!(state.available || state.pending));
       button.title = state.available ? 'TS6 Enhanced — update available' : 'TS6 Enhanced';
       button.setAttribute('aria-label', button.title);
+      if (toastRunning) {
+        showToast();
+        return;
+      }
       if (!state.available) toast.hidden = true;
       if (state.available && state.available !== notified) {
         notified = state.available;
-        message.textContent = `TS6 Enhanced ${state.available}`;
+        message.textContent = `TS6 Enhanced ${state.available}. TeamSpeak restarts briefly and restores your session.`;
+        showToast();
         toast.hidden = dialog.open;
       }
     },

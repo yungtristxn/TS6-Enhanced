@@ -31,18 +31,26 @@ try{
  assert.equal(await entry.locator('svg path').count(),3);assert.equal(await entry.locator('svg[name="settings"],svg.tsv-icon-settings').count(),0);
  checks.push('The toolbar entry uses its own sparkle artwork instead of a copy of the TeamSpeak settings cog');
  const boost=p.getByRole('switch',{name:'Stream volume up to 300%'}),memory=p.getByRole('switch',{name:'Remember volume per streamer'});
- assert.equal(await p.getByRole('switch').count(),7);assert.ok(await boost.isChecked());assert.ok(await memory.isEnabled());
- assert.equal(await p.getByRole('heading',{name:'Features'}).count(),1);
+ assert.equal(await p.getByRole('switch').count(),3);assert.ok(await boost.isChecked());assert.ok(await memory.isEnabled());
+ // Tabs: Streams, Chat and Updates. Arrow keys move between tabs; each shows only its own switches.
+ assert.deepEqual(await p.getByRole('tab').allInnerTexts(),['Streams','Chat','Updates']);assert.equal(await p.getByRole('tab',{name:'Streams'}).getAttribute('aria-selected'),'true');
+ await p.getByRole('tab',{name:'Streams'}).focus();await p.keyboard.press('ArrowRight');
+ assert.equal(await p.getByRole('tab',{name:'Chat'}).getAttribute('aria-selected'),'true');assert.ok(await p.getByRole('tab',{name:'Chat'}).evaluate(e=>e===document.activeElement));
+ assert.equal(await p.getByRole('switch').count(),5);await capture('manager-chat');
+ const bottom=p.getByRole('switch',{name:'Messages start at the bottom'});assert.equal(await bottom.isChecked(),false,'Chat starts at the top by default');
+ await bottom.click();assert.equal(await p.evaluate(()=>document.documentElement.getAttribute('data-tsix-on')),'chatBottom');
+ await bottom.click();assert.equal(await p.evaluate(()=>document.documentElement.hasAttribute('data-tsix-on')),false);
+ await p.getByRole('tab',{name:'Chat'}).focus();await p.keyboard.press('Home');assert.equal(await p.getByRole('tab',{name:'Streams'}).getAttribute('aria-selected'),'true');
  await boost.focus();await p.keyboard.press('Space');
  assert.equal(await boost.isChecked(),false);assert.ok(await memory.isDisabled());assert.match(await memory.getAttribute('aria-describedby').then(id=>p.locator('#'+id).innerText()),/Requires “Stream volume up to 300%”/);
  assert.equal(await p.evaluate(()=>document.documentElement.getAttribute('data-tsix-off')),'volumeBoost volumeMemory');
  assert.ok(await boost.evaluate(e=>e===document.activeElement));
  await p.keyboard.press('Space');assert.ok(await boost.isChecked());assert.ok(await memory.isEnabled());assert.equal(await p.evaluate(()=>document.documentElement.hasAttribute('data-tsix-off')),false);
  const dialogBox=await dialog.boundingBox();assert.ok(dialogBox.height<=700-32);
- checks.push('Feature switches toggle by keyboard, keep focus, disable dependent switches with an explanation and fit the dialog');
+ checks.push('Settings use Streams/Chat/Updates tabs with arrow-key navigation; switches toggle by keyboard, keep focus, disable dependent switches with an explanation, a default-off switch stores only its change, and the dialog fits');
  const unchanged=await p.evaluate(()=>new Promise(resolve=>{let count=0;const observer=new MutationObserver(entries=>count+=entries.length);observer.observe(document.getElementById('tsix-manager'),{attributes:true,childList:true,subtree:true});for(let i=0;i<25;i++)__tsixManager.setState({version:'1.0',configured:false,busy:false,available:null,detail:null,message:'Updates aren’t configured.'},'fixture-token');queueMicrotask(()=>{observer.disconnect();resolve(count)})}));assert.equal(unchanged,0);
  checks.push('Manager styling remains usable without the theme; shared tokens preserve its geometry; unchanged status polls perform no DOM writes');
- await p.getByRole('button',{name:'Uninstall…',exact:true}).click();assert.equal(await p.getByRole('heading',{level:2}).innerText(),'Uninstall TS6 Enhanced?');assert.match(await dialog.innerText(),/TeamSpeak will restart and end any calls or streams/);assert.match(await dialog.innerText(),/Your accounts and chats stay/);
+ await p.getByRole('tab',{name:'Updates'}).click();await capture('manager-updates');await p.getByRole('button',{name:'Uninstall…',exact:true}).click();assert.equal(await p.getByRole('heading',{level:2}).innerText(),'Uninstall TS6 Enhanced?');assert.match(await dialog.innerText(),/TeamSpeak will restart and end any calls or streams/);assert.match(await dialog.innerText(),/Your accounts and chats stay/);
  assert.equal(await p.evaluate(()=>document.activeElement.textContent),'Cancel');await capture('manager-uninstall');
  await p.getByRole('button',{name:'Cancel',exact:true}).press('Enter');assert.equal(await p.evaluate(()=>requests.length),0);assert.equal(await p.evaluate(()=>document.activeElement.textContent),'Uninstall…');
  await p.getByRole('button',{name:'Uninstall…',exact:true}).click();await p.keyboard.press('Escape');assert.ok(await dialog.isVisible());assert.equal(await p.getByRole('heading',{level:2}).innerText(),'TS6 Enhanced');await p.keyboard.press('Escape');assert.equal(await dialog.isVisible(),false);assert.ok(await entry.evaluate(e=>e===document.activeElement));assert.equal(await p.evaluate(()=>requests.length),0);
@@ -53,6 +61,16 @@ try{
  await set({configured:true,available:'0.11.0',message:'Version 0.11.0 is available.'});
  assert.ok(await p.locator('[data-toast]').isVisible());assert.deepEqual(await entry.boundingBox(),normal);assert.match(await entry.getAttribute('aria-label'),/update available/);await p.getByRole('button',{name:'Later',exact:true}).click();
  await set({configured:true,available:'0.11.0',message:'Version 0.11.0 is available.'});assert.equal(await p.locator('[data-toast]').isVisible(),false);
+ // The popup's Update starts the update at once and shows its progress; only a stopped update offers Close.
+ await set({configured:true,available:'0.12.0',message:'Version 0.12.0 is available.'});
+ const popup=p.locator('[data-toast]');assert.ok(await popup.isVisible());assert.match(await popup.innerText(),/restarts briefly/);
+ const before=await p.evaluate(()=>requests.length);await popup.getByRole('button',{name:'Update',exact:true}).click();
+ assert.deepEqual(await p.evaluate(n=>requests.slice(n),before),[{action:'update',nonce:'fixture-token'}]);
+ assert.match(await popup.innerText(),/Updating TS6 Enhanced/);assert.equal(await popup.getByRole('button').count(),0);
+ await set({configured:true,busy:true,available:'0.12.0',message:'Downloading version 0.12.0…'});assert.match(await popup.innerText(),/Downloading version 0.12.0/);
+ await set({configured:true,busy:false,available:'0.12.0',message:'Update stopped.',detail:'Network error'});assert.match(await popup.innerText(),/Update stopped. Network error/);
+ await popup.getByRole('button',{name:'Close',exact:true}).click();assert.equal(await popup.isVisible(),false);
+ checks.push('The update popup starts the update directly, shows its progress, and offers Close only when it stops');
  await entry.click();
  await set({configured:true,version:'2.2',pending:'2.2.1',message:'Ready to restart and restore your session.'});
  const beforeRestart=await p.evaluate(()=>requests.length);

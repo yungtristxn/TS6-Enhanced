@@ -467,6 +467,24 @@
       throw error;
     }
   }
+  // Final restart step, after the session is armed: leave every connected
+  // server with TeamSpeak's own quit path (no auto-reconnect), bounded.
+  async function disconnect() {
+    const { api } = native();
+    const handlers = [...(api.connectedServerConnectionHandlers || api.serverConnectionHandlers || [])];
+    await Promise.allSettled(
+      handlers.map(handler =>
+        bounded(
+          typeof handler.DisconnectForModalQuit === 'function'
+            ? handler.DisconnectForModalQuit()
+            : handler.Disconnect?.(''),
+          'Server did not disconnect',
+          3000
+        )
+      )
+    );
+    return { ok: true };
+  }
   async function cancel(snapshot) {
     try {
       await restoreClosePolicy(native().api, snapshot);
@@ -989,6 +1007,7 @@
     capture,
     prepare,
     cancel,
+    disconnect,
     restore,
     userIntent() {
       return currentFence?.userIntent() ?? true;

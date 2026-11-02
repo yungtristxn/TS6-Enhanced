@@ -1,5 +1,6 @@
 // Optional TS6 Enhanced features. Stored in this renderer's local storage only;
-// a missing, unknown or unreadable value leaves the feature enabled.
+// a missing, unknown or unreadable value leaves the feature at its default
+// (on, unless the definition says `default: false`). Only changes are stored.
 (() => {
   window.__tsixFeatures?.dispose();
   const storageKey = 'tsix.layout.features';
@@ -42,6 +43,13 @@
       detail: 'Starts each day with a dated line, so message times show only the hour.'
     },
     {
+      id: 'chatBottom',
+      group: 'Chat',
+      label: 'Messages start at the bottom',
+      detail: 'A short chat history sits on the message box, as in most chat apps.',
+      default: false
+    },
+    {
       id: 'chatWidth',
       group: 'Chat',
       label: 'Limit chat line length',
@@ -58,17 +66,25 @@
   } catch {
     values = {};
   }
-  const own = id => values[id] !== false;
+  const fallback = id => definitions.find(definition => definition.id === id)?.default !== false;
+  const own = id => (id in values ? values[id] : fallback(id));
   const enabled = id => {
     const definition = definitions.find(item => item.id === id);
     if (!definition) return true;
     return own(id) && (!definition.requires || enabled(definition.requires));
   };
-  // CSS-only features read this attribute; JavaScript features call enabled().
+  // CSS-only features read these attributes; JavaScript features call enabled().
+  // data-tsix-off lists disabled features; data-tsix-on lists enabled features
+  // that are off by default, so their CSS stays inactive without this runtime.
   const paint = () => {
-    const off = definitions.filter(definition => !enabled(definition.id)).map(definition => definition.id);
-    if (off.length) document.documentElement.setAttribute('data-tsix-off', off.join(' '));
-    else document.documentElement.removeAttribute('data-tsix-off');
+    for (const [name, ids] of [
+      ['data-tsix-off', definitions.filter(definition => definition.default !== false && !enabled(definition.id))],
+      ['data-tsix-on', definitions.filter(definition => definition.default === false && enabled(definition.id))]
+    ]) {
+      const value = ids.map(definition => definition.id).join(' ');
+      if (value) document.documentElement.setAttribute(name, value);
+      else document.documentElement.removeAttribute(name);
+    }
   };
   paint();
   window.__tsixFeatures = {
@@ -77,8 +93,8 @@
     enabled,
     set(id, value) {
       if (!known.has(id) || typeof value !== 'boolean') throw Error('Unknown feature');
-      if (value) delete values[id];
-      else values[id] = false;
+      if (value === fallback(id)) delete values[id];
+      else values[id] = value;
       try {
         if (Object.keys(values).length) localStorage.setItem(storageKey, JSON.stringify(values));
         else localStorage.removeItem(storageKey);
@@ -90,6 +106,7 @@
     },
     dispose() {
       document.documentElement.removeAttribute('data-tsix-off');
+      document.documentElement.removeAttribute('data-tsix-on');
       delete window.__tsixFeatures;
     }
   };

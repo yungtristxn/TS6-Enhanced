@@ -5,7 +5,7 @@ import {createNativeManager} from '../tools/native-manager.mjs';
 import {createSessionJournal} from '../tools/session-state.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const snapshot=()=>({schema:1,build:1791901251,capturedAt:Date.now(),workflow:{restoreOpenedActivities:true,autoConnectSkipActivityCheck:1},defaults:{inputMuted:false,outputMuted:false},activeServer:'',captureServer:'',connections:[],drafts:[]});
-async function fixture({prepareFails=false,protectFails=false,restore=null,sameVersion=false,targetAlreadyInstalled=false,withdrawn=false,corruptInstaller=false,retainedDrafts=false,changedDuringWorker=false,cancelFails=false}={}){
+async function fixture({prepareFails=false,protectFails=false,restore=null,sameVersion=false,targetAlreadyInstalled=false,withdrawn=false,corruptInstaller=false,retainedDrafts=false,changedDuringWorker=false,cancelFails=false,detachUi=true}={}){
  const base=resolve(import.meta.dirname,'../.local/session-update-tests');await mkdir(base,{recursive:true});const root=await mkdtemp(join(base,'flow-')),client=join(root,'client');
  await mkdir(join(client,'html/client_ui'),{recursive:true});const resource=Buffer.from('fixture resource'),resourceHashes={};
  for(const name of ['html/client_ui/main.js','html/client_ui/main.css']){await writeFile(join(client,name),resource);resourceHashes[name]=digest(resource)}
@@ -31,10 +31,11 @@ async function fixture({prepareFails=false,protectFails=false,restore=null,sameV
   journal.arm=async id=>{events.push('arm');return arm(id)};
   journal.retainDrafts=async(id,indices)=>{events.push('retain');return retain(id,indices)};
  }
- const host=await createNativeManager({token:'a'.repeat(64),release,root,client,journal,onStatus:async patch=>statuses.push(patch),
+ const host=await createNativeManager({token:'a'.repeat(64),release,root,client,journal,detachUi,onStatus:async patch=>statuses.push(patch),
   fetcher:async url=>new Response(url.includes('api.github.com')?JSON.stringify(withdrawn?[]:[published]):url.endsWith('release.json')?metadata:corruptInstaller?'tampered':installer),
   applyMaintenance:async(action,handoff)=>{events.push('worker-ready');assert.equal(action,'update');if(changedDuringWorker)events.push('user-muted');await handoff.beforeClose();events.push('install');assert.ok(saved);assert.ok(events.indexOf('arm')<events.indexOf('install'))}});
  const socket=new WebSocket('ws://127.0.0.1:'+host.port,'tsix.v1.'+'a'.repeat(64),{headers:{Origin:'tsui://default'}});
+ let closed=false;socket.on('close',()=>{closed=true});
  let sequence=0;const pending=new Map(),seen=new Set();
  const request=(path,data)=>new Promise((resolve,reject)=>{const id=++sequence;pending.set(id,{resolve,reject});socket.send(JSON.stringify({id,path,data}))});
  socket.on('message',async bytes=>{
@@ -51,22 +52,25 @@ async function fixture({prepareFails=false,protectFails=false,restore=null,sameV
  const baseline={schema:1,owner:'tsix-install-baseline',appearance:{user_style:null},storage:{'tsix.layout.chatVisible':null,'tsix.layout.streamTrayCollapsed':null}};
  const wait=async predicate=>{const end=Date.now()+8000;while(Date.now()<end){if(predicate())return;await new Promise(r=>setTimeout(r,10))}throw Error('Fixture flow timed out: '+JSON.stringify({events,states}))};
  await request('/action',{action:'ready',baseline});await wait(()=>states.at(-1)?.busy===false);
- return{events,states,jobs,statuses,request,wait,root,journal,recoveryId,close:async()=>{socket.terminate();await host.close()}};
+ return{events,states,jobs,statuses,request,wait,root,journal,recoveryId,host,closed:()=>closed,close:async()=>{socket.terminate();await host.close()}};
 }
 test('confirmed update verifies download, saves and prepares the current session, then immediately installs',async()=>{
  const f=await fixture();try{
-  await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('install')&&f.states.at(-1)?.busy===false);
-  assert.deepEqual(f.events,['capture','save','worker-ready','prepare','arm','install']);
-  assert.equal(JSON.parse(await readFile(join(f.root,'pending-update.json'),'utf8')).version,'2.2.1');
   assert.equal((await f.request('/session-result',{id:'stale',result:{ok:true}})).ok,false);
+  await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('install')&&f.closed());
+  // Servers are left before TeamSpeak quits, and the UI connection is closed and not accepted again.
+  assert.deepEqual(f.events,['capture','save','worker-ready','prepare','arm','disconnect','install']);
+  assert.equal(JSON.parse(await readFile(join(f.root,'pending-update.json'),'utf8')).version,'2.2.1');
+  const {WebSocket:Client}=await import('ws');const again=new Client('ws://127.0.0.1:'+f.host.port,'tsix.v1.'+'a'.repeat(64),{headers:{Origin:'tsui://default'}});
+  await assert.rejects(new Promise((resolve,reject)=>{again.once('open',resolve);again.once('error',reject)}));
  }finally{await f.close()}
 });
 
 test('same-version repair confirmation verifies the published installer and immediately enters maintenance',async()=>{
  const f=await fixture({sameVersion:true});try{
   assert.equal(f.states.at(-1).pending,'2.2.1');
-  await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('install')&&f.states.at(-1)?.busy===false);
-  assert.deepEqual(f.events,['capture','save','worker-ready','prepare','arm','install']);
+  await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('install')&&f.closed());
+  assert.deepEqual(f.events,['capture','save','worker-ready','prepare','arm','disconnect','install']);
   const receipt=JSON.parse(await readFile(join(f.root,'pending-update.json'),'utf8'));
   assert.equal(receipt.fromVersion,receipt.version);assert.equal(digest(await readFile(receipt.path)),receipt.sha256);
  }finally{await f.close()}
@@ -83,7 +87,7 @@ test('same-version repairs cannot restart from a withdrawn release or tampered d
 });
 
 test('offline draft recovery remains independent across the next confirmed update and acknowledgements',async()=>{
- const f=await fixture({retainedDrafts:true});try{
+ const f=await fixture({retainedDrafts:true,detachUi:false});try{
   assert.deepEqual(f.events,['restore','retain','restore']);assert.equal(f.jobs[1].payload.draftOnly,true);
   await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('install')&&f.states.at(-1)?.busy===false);
   const active=JSON.parse(await readFile(join(f.root,'update-session.json'),'utf8'));
@@ -119,8 +123,8 @@ test('final preparation happens after worker verification and refuses a newly ch
 test('a partially installed target keeps the source-version repair queue visible and actionable',async()=>{
  const f=await fixture({targetAlreadyInstalled:true});try{
   assert.equal(f.states.at(-1).pending,'2.2.1');assert.equal(f.states.at(-1).detail,'Interrupted installation');
-  await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('install')&&f.states.at(-1)?.busy===false);
-  assert.deepEqual(f.events,['capture','save','worker-ready','prepare','arm','install']);
+  await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('install')&&f.closed());
+  assert.deepEqual(f.events,['capture','save','worker-ready','prepare','arm','disconnect','install']);
  }finally{await f.close()}
 });
 test('encryption failure stops before preference changes or restart',async()=>{

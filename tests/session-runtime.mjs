@@ -81,6 +81,14 @@ try{
  await page.evaluate(value=>__tsixUpdateSession.cancel(value),snapshot);
  assert.deepEqual(await page.evaluate(()=>lab.app.workflowSettings),snapshot.workflow);
  checks.push('Captures channel, voice, sources, watched streams, focus and drafts; preparation and cancellation leave the live session and saved preferences unchanged');
+ // Final restart step: leave every established server through TeamSpeak's quit path, bounded even if one never answers.
+ const left=await page.evaluate(async()=>{const calls=[];const handlers=lab.api.serverConnectionHandlers;
+  handlers[0].DisconnectForModalQuit=()=>{calls.push('quit');return Promise.resolve()};
+  const stuck={isEstablished:true,DisconnectForModalQuit:()=>{calls.push('stuck');return new Promise(()=>{})}};handlers.push(stuck);
+  const started=performance.now();const result=await __tsixUpdateSession.disconnect();handlers.splice(handlers.indexOf(stuck),1);
+  return {result,calls,elapsed:performance.now()-started}});
+ assert.deepEqual(left.result,{ok:true});assert.deepEqual(left.calls,['quit','stuck']);assert.ok(left.elapsed<4500,'A server that never answers does not hold up the restart: '+left.elapsed);
+ checks.push('Before quitting for an update, every established server is left through TeamSpeak’s own quit path within a bounded time');
  await setup({restarted:true});let result=await page.evaluate(snapshot=>__tsixUpdateSession.restore({snapshot,restoreSession:true}),snapshot);
  assert.deepEqual(result,{warnings:[],preferencesRestored:true,draftsRestored:true,recoveredDrafts:[0]});
  let events=await page.evaluate(()=>lab.events);
