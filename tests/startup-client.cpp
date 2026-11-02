@@ -13,7 +13,13 @@ static std::string Utf8(const std::wstring& value){
 int wmain(int count,wchar_t** args){
     wchar_t path[32768]{};GetModuleFileNameW(nullptr,path,ARRAYSIZE(path));
     const auto directory=std::filesystem::path(path).parent_path();
-    if(RetryStartupUpdate(directory.wstring()))return 0;
+    if(RetryStartupUpdate(directory.wstring())){
+        // "hang": agreed to exit for the update but never finishes exiting.
+        wchar_t root[32768]{};GetEnvironmentVariableW(L"TSIX_STARTUP_TEST_ROOT",root,ARRAYSIZE(root));
+        std::ifstream mode(std::filesystem::path(root)/L"client-mode.txt");std::string value;std::getline(mode,value);
+        if(value=="hang")Sleep(INFINITE);
+        return 0;
+    }
     wchar_t record[32768]{};GetEnvironmentVariableW(L"TSIX_STARTUP_TEST_RECORD",record,ARRAYSIZE(record));
     if(!record[0])return 3;
     std::ofstream output(std::filesystem::path(record),std::ios::app);

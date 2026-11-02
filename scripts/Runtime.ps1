@@ -152,10 +152,11 @@ function Exit-LayoutOperation($Operation) {
     if($Operation){$Operation.Lease.Dispose();$env:TSIX_OPERATION_TOKEN=$Operation.Previous}
 }
 
-# Relaunch without inheriting the maintenance worker's standard handles. In
-# particular, a GUI child must not retain Node's stderr pipe for its lifetime.
-function Start-LayoutClient([string]$ClientPath,[string]$Arguments='') {
-    Assert-LayoutPlainPath $ClientPath
+# Start without inheriting the maintenance worker's standard handles or its
+# hidden window state. In particular, a GUI child must not retain Node's stderr
+# pipe for its lifetime, and its first window must not inherit SW_HIDE.
+function Start-LayoutProcess([string]$Path,[string]$Arguments='',[hashtable]$Set=@{}) {
+    Assert-LayoutPlainPath $Path
     if(!('TS6Enhanced.ClientLauncher' -as [type])){
         Add-Type -TypeDefinition @'
 using System;using System.ComponentModel;using System.Runtime.InteropServices;
@@ -185,21 +186,54 @@ namespace TS6Enhanced {
     foreach($entry in [Environment]::GetEnvironmentVariables().GetEnumerator()){
         if($entry.Key -notin @('TSIX_NATIVE_TOKEN','TSIX_NATIVE_ENDPOINT','TSIX_OPERATION_TOKEN','TSIX_SESSION_RESUME')){$variables[$entry.Key]=[string]$entry.Value}
     }
-    $variables['TSIX_SKIP_STARTUP_RETRY']='1'
+    foreach($key in $Set.Keys){$variables[$key]=[string]$Set[$key]}
     $block=(@($variables.GetEnumerator()|ForEach-Object {$_.Key+'='+$_.Value}) -join [char]0)+[char]0+[char]0
-    [void][TS6Enhanced.ClientLauncher]::Start($ClientPath,$Arguments,(Split-Path -Parent $ClientPath),$block)
+    return [TS6Enhanced.ClientLauncher]::Start($Path,$Arguments,(Split-Path -Parent $Path),$block)
+}
+function Start-LayoutClient([string]$ClientPath,[string]$Arguments='') {
+    [void](Start-LayoutProcess $ClientPath $Arguments @{TSIX_SKIP_STARTUP_RETRY='1'})
+}
+# A small "Updating TS6 Enhanced" window while TeamSpeak is closed for an
+# update. It closes once the worker has finished and TeamSpeak is back.
+# Purely informational: a failure to show it never affects the update.
+function Start-LayoutProgress([string]$ClientPath) {
+    if($env:TSIX_UPDATE_PROGRESS -eq '0'){return}
+    try{
+        $script=Join-Path $PSScriptRoot 'Update-Progress.ps1'
+        if(!(Test-Path -LiteralPath $script -PathType Leaf)){return}
+        $powershell=Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
+        [void](Start-LayoutProcess $powershell ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$script+'" -WatchProcessId '+$PID+' -ClientPath "'+$ClientPath+'"'))
+    }catch{}
+}
+function Test-LayoutClientWindow([string]$ClientPath) {
+    return [bool](@(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ClientPath -and [long]$_.MainWindowHandle -ne 0 }).Count)
 }
 
-function Stop-LayoutClient([string]$ClientPath) {
-    $running=@(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ClientPath })
+# Closes TeamSpeak through its window. -EndHungProcesses (update restart only,
+# after the session adapter has disabled Hide on Close): processes still
+# running without any window after the timeout are a client stuck in its own
+# shutdown. They are ended, or every later launch would be handed to them.
+function Stop-LayoutClient([string]$ClientPath,[switch]$EndHungProcesses) {
+    $timeout=60
+    if($env:TSIX_CLOSE_TIMEOUT_SECONDS -match '^\d{1,3}$'){$timeout=[Math]::Max(1,[Math]::Min(120,[int]$env:TSIX_CLOSE_TIMEOUT_SECONDS))}
+    $find={@(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ClientPath })}
+    $running=& $find
     $windows=@($running | Where-Object { [long]$_.MainWindowHandle -ne 0 })
-    if($running.Count -and !$windows.Count){throw 'Open the TeamSpeak window, then retry. Background renderer processes were left alone.'}
+    if($running.Count -and !$windows.Count){throw 'Open the TeamSpeak window, then retry. If TeamSpeak is not open, end TeamSpeak in Task Manager first. Background processes were left alone.'}
     foreach($process in $windows) {
         if (!$process.CloseMainWindow()) { throw 'TeamSpeak could not close normally. Exit it yourself, then retry. No process was killed.' }
     }
-    $deadline=[DateTime]::UtcNow.AddSeconds(20)
-    while(Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ClientPath }) {
-        if([DateTime]::UtcNow -gt $deadline){throw 'TeamSpeak is still running. Finish its dialog or exit it yourself, then retry. No process was killed.'}
+    $deadline=[DateTime]::UtcNow.AddSeconds($timeout)
+    while((& $find).Count -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 200}
+    $left=& $find
+    if(!$left.Count){return}
+    if(!$EndHungProcesses -or @($left | Where-Object { [long]$_.MainWindowHandle -ne 0 }).Count){
+        throw 'TeamSpeak is still running. Finish its dialog or exit it yourself, then retry. No process was killed.'
+    }
+    foreach($process in $left){try{$process.Kill()}catch{}}
+    $deadline=[DateTime]::UtcNow.AddSeconds(10)
+    while((& $find).Count){
+        if([DateTime]::UtcNow -gt $deadline){throw 'TeamSpeak did not exit, even after its window-less processes were ended. End TeamSpeak in Task Manager, then start it again.'}
         Start-Sleep -Milliseconds 200
     }
 }

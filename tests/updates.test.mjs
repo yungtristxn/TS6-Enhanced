@@ -125,3 +125,26 @@ test('full-package updates retain the installed version and replace only verifie
  const previousReleases=published;published=[];assert.match((await session.download()).message,/no longer published/);assert.deepEqual(await readFile(receipt),current);published=previousReleases;
  publish('1.0.11',0);const before=downloads;await assert.rejects(session.download(),/does not support session restoration/);assert.equal(downloads,before);assert.deepEqual(await readFile(receipt),current);
 });
+test('the slim update package is chosen only for an exactly matching installed runtime',async t=>{
+ const {writeFile,rm}=await import('node:fs/promises');
+ const {chooseInstaller}=await import('../tools/updates.mjs');
+ const root=await mkdtemp(join(tmpdir(),'tsix-slim-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const runtime=Buffer.from('pinned node runtime');const runtimeHash=createHash('sha256').update(runtime).digest('hex');
+ const slimBody=Buffer.concat([body,Buffer.from('slim')]);
+ const slimManifest={...manifest,runtime:{node:{version:'22.23.3',sha256:runtimeHash}}};const slimMetadata=Buffer.from(JSON.stringify(slimManifest));
+ const withSlim={...release,assets:[asset('release.json',slimMetadata),asset('TS6-Enhanced-1.1.0-Setup.exe',body),asset('TS6-Enhanced-1.1.0-Update.exe',slimBody)]};
+ const fetchFrom=published=>async url=>new Response(url.includes('api.github.com')?JSON.stringify([published]):url.endsWith('release.json')?(published===release?metadata:slimMetadata):url.endsWith('-Update.exe')?slimBody:body,{status:200});
+ const found=await checkUpdate('1.0.0',config,{fetcher:fetchFrom(withSlim)});
+ assert.equal(found.slim.name,'TS6-Enhanced-1.1.0-Update.exe');assert.equal(found.installer.name,'TS6-Enhanced-1.1.0-Setup.exe');
+ const node=join(root,'node.exe');
+ await writeFile(node,runtime);assert.equal(await chooseInstaller(found,node),found.slim);
+ await writeFile(node,'a different runtime');assert.equal(await chooseInstaller(found,node),found.installer);
+ assert.equal(await chooseInstaller(found,join(root,'missing.exe')),found.installer);assert.equal(await chooseInstaller(found,null),found.installer);
+ // Releases without runtime metadata or without the slim asset only offer the full setup.
+ assert.equal((await checkUpdate('1.0.0',config,{fetcher:fetchFrom(release)})).slim,null);
+ const noAsset={...withSlim,assets:withSlim.assets.slice(0,2)};assert.equal((await checkUpdate('1.0.0',config,{fetcher:fetchFrom(noAsset)})).slim,null);
+ await writeFile(node,runtime);
+ const path=await stageUpdate(found,join(root,'updates'),{fetcher:fetchFrom(withSlim),asset:found.slim});
+ assert.ok(path.endsWith('TS6-Enhanced-1.1.0-Update.exe'));assert.deepEqual(await readFile(path),slimBody);
+ await assert.rejects(stageUpdate(found,join(root,'updates'),{fetcher:fetchFrom(withSlim),asset:{...found.slim,name:'other.exe'}}),/Unexpected update package/);
+});

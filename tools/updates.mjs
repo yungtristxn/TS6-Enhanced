@@ -173,7 +173,13 @@ export async function checkUpdate(current, config, { fetcher = fetch, fresh = fa
   )
     throw Error('Invalid TeamSpeak compatibility metadata');
   const installer = releaseAsset(selected, `TS6-Enhanced-${v}-Setup.exe`, config.repository, 512 * 1024 * 1024);
-  return { version: v, manifest, installer };
+  // Optional slim package without the Node runtime. Older releases have none.
+  const slimName = `TS6-Enhanced-${v}-Update.exe`;
+  const slim =
+    /^[a-f0-9]{64}$/.test(manifest.runtime?.node?.sha256 || '') && selected.assets?.some(a => a.name === slimName)
+      ? releaseAsset(selected, slimName, config.repository, 512 * 1024 * 1024)
+      : null;
+  return { version: v, manifest, installer, slim };
 }
 export async function compatible(update, client) {
   for (const [file, hash] of Object.entries(update.manifest.supportedClient.resourceHashes)) {
@@ -199,7 +205,27 @@ export async function compatible(update, client) {
 }
 // An update notice is informational. Resolve and validate the release again at
 // download time; a failed check must never fall back to an earlier offer.
-export async function stageLatestUpdate(current, config, client, root, { onSelected = () => {}, ...options } = {}) {
+// The slim package installs only over a runtime with exactly the release's
+// Node hash. Anything else (missing, changed, unreadable) gets the full setup.
+export async function chooseInstaller(update, runtimePath) {
+  const expected = update.manifest.runtime?.node?.sha256;
+  if (!update.slim || !runtimePath || !/^[a-f0-9]{64}$/.test(expected || '')) return update.installer;
+  try {
+    const actual = createHash('sha256')
+      .update(await readFile(runtimePath))
+      .digest('hex');
+    return actual === expected ? update.slim : update.installer;
+  } catch {
+    return update.installer;
+  }
+}
+export async function stageLatestUpdate(
+  current,
+  config,
+  client,
+  root,
+  { onSelected = () => {}, runtimePath = null, ...options } = {}
+) {
   const update = await checkUpdate(current, config, { ...options, fresh: true });
   if (!update) return null;
   if (update.manifest.updates?.deferredInstall !== 1) throw Error('This release requires a manual installation');
@@ -209,13 +235,17 @@ export async function stageLatestUpdate(current, config, client, root, { onSelec
     );
   if (!(await compatible(update, client))) throw Error('The latest release needs a different TeamSpeak version');
   await onSelected(update);
-  return { update, path: await stageUpdate(update, root, options) };
+  const asset = await chooseInstaller(update, runtimePath);
+  return { update, asset, path: await stageUpdate(update, root, { ...options, asset }) };
 }
-export async function stageUpdate(update, root, options = {}) {
+export async function stageUpdate(update, root, { asset = update.installer, ...options } = {}) {
   await plainPath(root);
   await mkdir(root, { recursive: true });
-  const name = `TS6-Enhanced-${version(update.version).text}-Setup.exe`,
+  if (asset !== update.installer && asset !== update.slim) throw Error('Unexpected update package');
+  const name = asset.name,
     path = join(root, name);
+  if (name !== `TS6-Enhanced-${version(update.version).text}-${asset === update.slim ? 'Update' : 'Setup'}.exe`)
+    throw Error('Unexpected update package name');
   await plainPath(path);
   let cached;
   try {
@@ -225,17 +255,14 @@ export async function stageUpdate(update, root, options = {}) {
   }
   if (cached) {
     try {
-      verifyInstaller(verifyBytes(cached, update.installer));
+      verifyInstaller(verifyBytes(cached, asset));
       return path;
     } catch {
       await rename(path, `${path}.${randomUUID()}.rejected`);
     }
   }
   const bytes = verifyInstaller(
-    verifyBytes(
-      await fetchBytes(update.installer.browser_download_url, { ...options, limit: update.installer.size }),
-      update.installer
-    )
+    verifyBytes(await fetchBytes(asset.browser_download_url, { ...options, limit: asset.size }), asset)
   );
   const partial = `${path}.${randomUUID()}.partial`;
   try {
@@ -313,6 +340,7 @@ export async function createUpdateSession(release, client, root, { fetcher = fet
       const selected = await stageLatestUpdate(release.version, release.updates, client, join(root, 'updates'), {
         fetcher,
         allowCurrent: repair,
+        runtimePath: join(root, 'app', 'runtime', 'node.exe'),
         onSelected: update => {
           if (compareVersions(update.version, newest()) < 0)
             throw Error('The downloaded release is no longer published. Check again later.');
@@ -323,14 +351,14 @@ export async function createUpdateSession(release, client, root, { fetcher = fet
         return snapshot().pending
           ? { ...snapshot(), message: 'The downloaded release is no longer published. Check again later.' }
           : snapshot();
-      const { update, path } = selected;
+      const { update, asset, path } = selected;
       const next = {
         schema: 2,
         mode: 'next-launch',
         fromVersion: release.version,
         path,
         version: update.version,
-        sha256: update.installer.sha256,
+        sha256: asset.sha256,
         resourceHashes: update.manifest.supportedClient.resourceHashes
       };
       // Keep the previous queue intact until the replacement is fully verified

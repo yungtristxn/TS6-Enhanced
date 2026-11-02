@@ -6,7 +6,7 @@ $ErrorActionPreference='Stop'
 $root=Join-Path $env:LOCALAPPDATA 'TS6-Layout'
 $client=Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak\TeamSpeak.exe'
 $operation=Enter-LayoutOperation
-$closed=$false
+$closed=$false;$closing=$false
 try {
     $metadata=Get-Content -LiteralPath (Join-Path $root 'update-session.json') -Raw|ConvertFrom-Json
     if($metadata.schema -ne 1 -or $metadata.id -ne $SessionId.ToString() -or $metadata.phase -notin @('captured','armed') -or $metadata.expiresAt -lt [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()){throw 'Update session was not prepared or has expired'}
@@ -20,7 +20,10 @@ try {
     try{$commit=$inputReader.ReadLineAsync();if(!$commit.Wait(45000) -or $commit.Result -cne 'commit'){throw 'Restart was not committed; the client was left running'}}finally{$inputReader.Dispose()}
     $metadata=Get-Content -LiteralPath (Join-Path $root 'update-session.json') -Raw|ConvertFrom-Json
     if($metadata.id -ne $SessionId.ToString() -or $metadata.phase -ne 'armed' -or $metadata.expiresAt -lt [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()){throw 'Update session changed before shutdown'}
-    Stop-LayoutClient $client
+    # From here TeamSpeak's window goes away; show progress until it returns.
+    Start-LayoutProgress $client
+    $closing=$true
+    Stop-LayoutClient $client -EndHungProcesses
     $closed=$true
     & (Join-Path $PSScriptRoot 'Native-Setup.ps1') -Action ApplyPending | Out-Null
 } catch {
@@ -28,7 +31,9 @@ try {
     throw
 } finally {
     Exit-LayoutOperation $operation
-    if($closed){
+    # Reopen whenever the window went away, even if installing failed. A client
+    # that kept its window (for example an open dialog) is never duplicated.
+    if($closed -or ($closing -and !(Test-LayoutClientWindow $client))){
         Start-LayoutClient $client
     }
 }

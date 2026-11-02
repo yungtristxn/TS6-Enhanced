@@ -21,7 +21,7 @@ async function fixture(name){
  const installer=join(data,'updates/TS6-Enhanced-2.2.1-Setup.exe');await copyFile(installerFixture,installer);
  const pending={schema:2,mode:'next-launch',fromVersion:'2.2.0',version:'2.2.1',path:installer,sha256:await hash(installer)};
  const queue=()=>writeFile(join(data,'pending-update.json'),JSON.stringify(pending));await queue();
- const env={...process.env,LOCALAPPDATA:profile,TSIX_STARTUP_TEST_ROOT:root,TSIX_NATIVE_TOKEN:'a'.repeat(64),TSIX_NATIVE_ENDPOINT:'fixture-only'};delete env.TSIX_OPERATION_TOKEN;delete env.TSIX_SKIP_STARTUP_RETRY;
+ const env={...process.env,LOCALAPPDATA:profile,TSIX_STARTUP_TEST_ROOT:root,TSIX_NATIVE_TOKEN:'a'.repeat(64),TSIX_NATIVE_ENDPOINT:'fixture-only',TSIX_UPDATE_PROGRESS:'0',TSIX_CLOSE_TIMEOUT_SECONDS:'3'};delete env.TSIX_OPERATION_TOKEN;delete env.TSIX_SKIP_STARTUP_RETRY;
  const journal=createSessionJournal(data,{protect:(path,value)=>writeFile(path,value,{flag:'wx'}),unprotect:path=>readFile(path,'utf8')});
  const snapshot={schema:1,build:1791901251,capturedAt:Date.now(),workflow:{restoreOpenedActivities:true,autoConnectSkipActivityCheck:1},defaults:{inputMuted:false,outputMuted:false},closePolicy:{ignoreExit:true},activeServer:'',captureServer:'',connections:[]};
  let sessionId=await journal.save(snapshot,pending.version);
@@ -94,6 +94,22 @@ await scenario('interrupted',async f=>{
  await assert.rejects(running,/Queued update failed/);await wait(async()=>(await f.opened()).length===1,'Interrupted update did not reopen');
  assert.equal(await exists(join(f.data,'pending-update.json')),true);assert.ok(alive((await f.opened())[0]));
  checks.push('Terminating the disposable installer preserves the queue and reopens the previous client');
+});
+await scenario('hung-exit',async f=>{
+ await writeFile(join(f.root,'client-mode.txt'),'hang');await f.run();
+ await wait(async()=>(await f.opened()).length===1,'A client stuck in shutdown blocked the reopen');
+ assert.equal(alive(f.old.pid),false,'The window-less stuck client must be ended');assert.ok(alive((await f.opened())[0]));
+ assert.equal(await exists(join(f.data,'pending-update.json')),false);assert.equal(await readFile(join(f.client,'version.dll'),'utf8'),'new DLL');
+ await writeFile(join(f.root,'client-mode.txt'),'normal');
+ checks.push('A client whose window closed but whose process never exits is ended after the timeout; the update installs and TeamSpeak reopens once');
+});
+await scenario('progress-window',async f=>{
+ // The informational window closes once its worker is gone and TeamSpeak's window is back.
+ const gone=spawn(process.execPath,['-e','0']);await once(gone,'exit');
+ const progress=spawn(join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',join(project,'scripts/Update-Progress.ps1'),'-WatchProcessId',String(gone.pid),'-ClientPath',join(f.client,'TeamSpeak.exe')],{stdio:'ignore'});
+ const started=Date.now();const [code]=await once(progress,'exit',{signal:AbortSignal.timeout(15000)});
+ assert.equal(code,0);assert.ok(Date.now()-started<15000);
+ checks.push('The update progress window closes by itself once the worker has finished and TeamSpeak is open');
 });
 await scenario('refused-close',async f=>{
  await writeFile(join(f.root,'client-mode.txt'),'refuse');await assert.rejects(f.run(),/TeamSpeak is still running/);

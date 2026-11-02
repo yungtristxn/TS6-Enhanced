@@ -109,7 +109,10 @@ static cef_browser_view_t* BrowserView(cef_client_t* client,const cef_string_t* 
     // Duplicate launches that redirect to an existing client need no helper.
     if(main&&InterlockedCompareExchange(&hostStarted,1,0)==0){
         try{std::wstring directory(clientDllPath);directory.resize(directory.find_last_of(L"\\"));
-            if(RetryStartupUpdate(directory))ExitProcess(0);
+            // CEF's threads and child processes already run here. ExitProcess
+            // would run DLL detach code after killing those threads, which can
+            // deadlock and leave a window-less client receiving every launch.
+            if(RetryStartupUpdate(directory))TerminateProcess(GetCurrentProcess(),0);
             TSIX_NATIVE_STATUS.connectionReady=StartEnhancedHost(directory);}
         catch(...){TSIX_NATIVE_STATUS.protectError=ERROR_NOT_ENOUGH_MEMORY;}
     }

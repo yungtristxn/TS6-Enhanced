@@ -8,7 +8,7 @@ $manifest = Get-Content (Join-Path $project 'release.json') -Raw | ConvertFrom-J
 $prefix = 'TS6-Enhanced-'+$manifest.version+'-windows-x64/'
 $expectedFiles = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE','README.md','SHA256SUMS.txt','runtime/node.exe','runtime/LICENSE','runtime/version.dll',
     'scripts/Bootstrap.ps1','scripts/Runtime.ps1','scripts/Complete-Setup.ps1','scripts/Maintenance.ps1',
-    'scripts/Native-Setup.ps1','scripts/Startup-Update.ps1','scripts/Restart-Update.ps1','scripts/Session-State.ps1','scripts/Start-Inspection.ps1',
+    'scripts/Native-Setup.ps1','scripts/Startup-Update.ps1','scripts/Restart-Update.ps1','scripts/Update-Progress.ps1','scripts/Session-State.ps1','scripts/Start-Inspection.ps1',
     'scripts/Restore-LegacyShortcut.ps1','scripts/Remove-LegacyTheme.ps1',
     'tools/cdp.mjs','tools/appearance.mjs','tools/install-state.mjs','tools/restore.mjs','tools/updates.mjs','tools/native-manager.mjs','tools/session-state.mjs',
     'native/CEF-LICENSE.txt')+@($manifest.nativeLoader.dependencies)
@@ -56,14 +56,25 @@ if ($Installer) {
     if ((Get-FileHash -LiteralPath $metadata).Hash -ne (Get-FileHash -LiteralPath (Join-Path $root 'release.json')).Hash) {
         throw 'Release metadata differs from the packaged metadata'
     }
-    $exe = Join-Path $directory ('TS6-Enhanced-'+$manifest.version+'-Setup.exe')
-    $bytes = [IO.File]::ReadAllBytes($exe)
-    $offset = if ($bytes.Length -ge 64) { [BitConverter]::ToUInt32($bytes,60) } else { 0 }
-    if ($offset -lt 64 -or $offset+6 -gt $bytes.Length -or $bytes[0] -ne 77 -or $bytes[1] -ne 90 -or
-        [BitConverter]::ToUInt32($bytes,$offset) -ne 0x4550 -or [BitConverter]::ToUInt16($bytes,$offset+4) -notin @(0x14c,0x8664)) {
-        throw 'Release EXE is not a Windows x86/x64 installer'
+    # Full installer plus the slim update package (no Node), which the updater
+    # uses only when the installed runtime matches runtime.node.sha256.
+    $node = $packagedRelease.runtime.node
+    if ($node.version -cne (Get-Content -LiteralPath (Join-Path $project 'runtime-lock.json') -Raw | ConvertFrom-Json).node.version -or
+        $node.sha256 -cnotmatch '^[a-f0-9]{64}$' -or (Get-FileHash -LiteralPath (Join-Path $root 'runtime\node.exe')).Hash -ne $node.sha256) {
+        throw 'Release runtime metadata does not match the packaged Node runtime'
     }
-    $artifacts += $exe
+    $full = Join-Path $directory ('TS6-Enhanced-'+$manifest.version+'-Setup.exe')
+    $slim = Join-Path $directory ('TS6-Enhanced-'+$manifest.version+'-Update.exe')
+    foreach ($exe in @($full,$slim)) {
+        $bytes = [IO.File]::ReadAllBytes($exe)
+        $offset = if ($bytes.Length -ge 64) { [BitConverter]::ToUInt32($bytes,60) } else { 0 }
+        if ($offset -lt 64 -or $offset+6 -gt $bytes.Length -or $bytes[0] -ne 77 -or $bytes[1] -ne 90 -or
+            [BitConverter]::ToUInt32($bytes,$offset) -ne 0x4550 -or [BitConverter]::ToUInt16($bytes,$offset+4) -notin @(0x14c,0x8664)) {
+            throw 'Release EXE is not a Windows x86/x64 installer'
+        }
+        $artifacts += $exe
+    }
+    if ((Get-Item -LiteralPath $slim).Length -ge (Get-Item -LiteralPath $full).Length / 4) { throw 'The update package unexpectedly contains the Node runtime' }
 }
 foreach ($artifact in $artifacts) {
     $checksum = (Get-Content -LiteralPath ($artifact+'.sha256') -Raw).TrimEnd()

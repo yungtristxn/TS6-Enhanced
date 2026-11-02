@@ -7,6 +7,12 @@
 #ifndef AppDisplayVersion
   #define AppDisplayVersion AppVersion
 #endif
+#ifndef RuntimeSize
+  #error RuntimeSize (bytes of the packaged runtime\node.exe) is required
+#endif
+#ifndef RuntimeVersion
+  #error RuntimeVersion (file version a.b.c.d of the packaged runtime\node.exe) is required
+#endif
 [Setup]
 AppId={{AB06CE8F-2DB9-4F7A-96C5-A4D5874C3562}
 AppName=TS6 Enhanced
@@ -27,7 +33,11 @@ MinVersion=10.0
 WizardStyle=modern
 Compression=lzma2
 SolidCompression=yes
+#ifdef SlimUpdate
+OutputBaseFilename=TS6-Enhanced-{#AppVersion}-Update
+#else
 OutputBaseFilename=TS6-Enhanced-{#AppVersion}-Setup
+#endif
 UninstallDisplayName=TS6 Enhanced
 UninstallDisplayIcon={localappdata}\Programs\TeamSpeak\TeamSpeak.exe
 CloseApplications=no
@@ -38,8 +48,16 @@ AllowCancelDuringInstall=no
 UninstallLogging=yes
 
 [Files]
-Source: "{#Payload}\*"; DestDir: "{tmp}\tsix-setup"; Flags: dontcopy recursesubdirs createallsubdirs
-Source: "{#Payload}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Node rarely changes between releases. It is stored first, in its own
+; compressed block, and installed only when the app's copy differs, so setup
+; neither decompresses nor rewrites 87 MB on an ordinary update. The slim
+; update package omits it and requires the matching copy to be present.
+#ifndef SlimUpdate
+Source: "{#Payload}\runtime\node.exe"; DestDir: "{app}\runtime"; Flags: ignoreversion; Check: RuntimeNeeded
+Source: "{#Payload}\runtime\node.exe"; DestDir: "{tmp}\tsix-setup\runtime"; Flags: dontcopy
+#endif
+Source: "{#Payload}\*"; Excludes: "\runtime\node.exe"; DestDir: "{tmp}\tsix-setup"; Flags: dontcopy recursesubdirs createallsubdirs solidbreak
+Source: "{#Payload}\*"; Excludes: "\runtime\node.exe"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{userprograms}\Uninstall TS6 Enhanced"; Filename: "{uninstallexe}"
@@ -168,6 +186,34 @@ begin
     'TeamSpeak will restart. Finish any calls or streams before clicking Install.';
 end;
 
+// A cheap identity test (exact size and file version). Hashing 87 MB in
+// setup's script engine costs about as much as unpacking it; the post-install
+// bootstrap verifies every file's SHA-256 against SHA256SUMS before anything
+// is activated, so a mismatched runtime still stops the update safely.
+function InstalledRuntimeMatches: Boolean;
+var Path, Version: String; Size: Integer;
+begin
+  Path := ExpandConstant('{localappdata}\TS6-Layout\app\runtime\node.exe');
+  Result := FileExists(Path) and FileSize(Path, Size) and (Size = {#RuntimeSize});
+  // 'none' is used only by test fixtures whose stand-in has no version resource.
+  if Result and ('{#RuntimeVersion}' <> 'none') then
+    Result := GetVersionNumbersString(Path, Version) and (Version = '{#RuntimeVersion}');
+end;
+
+function RuntimeNeeded: Boolean;
+begin
+  Result := not InstalledRuntimeMatches;
+end;
+
+#ifdef SlimUpdate
+function InitializeSetup: Boolean;
+begin
+  Result := (ExpandConstant('{param:TSIXDEFERRED|0}') = '1') and InstalledRuntimeMatches;
+  if not Result then
+    SuppressibleMsgBox('This is an update package for an existing TS6 Enhanced installation. Use TS6-Enhanced-{#AppVersion}-Setup.exe instead.', mbError, MB_OK, IDOK);
+end;
+#endif
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var Arguments: String;
 begin
@@ -176,6 +222,11 @@ begin
     Result := 'Another TS6 Enhanced operation is running, or its recovery path is unavailable. Finish it and retry.';
     exit;
   end;
+  // A queued update was verified against this release (installer checksum,
+  // TeamSpeak resource and native image hashes) before TeamSpeak closed, and
+  // the post-install step repeats every check before activating anything.
+  // Skip the separate preparation pass and its temporary package copy.
+  if ExpandConstant('{param:TSIXDEFERRED|0}') = '1' then exit;
   ExtractTemporaryFiles('{tmp}\tsix-setup\*');
   Arguments := '-Prepare';
   if ExpandConstant('{param:TSIXDEFERRED|0}') = '1' then Arguments := Arguments + ' -DeferredUpdate';

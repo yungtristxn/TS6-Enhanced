@@ -30,7 +30,9 @@ class RestartClientFixture {
    DestroyWindow(hwnd);return IntPtr.Zero;
   }
   if(message==0x113&&(File.Exists(Path.Combine(root,"exit-"+pid+".txt"))||DateTime.UtcNow>deadline)){DestroyWindow(hwnd);return IntPtr.Zero;}
-  if(message==2){PostQuitMessage(0);return IntPtr.Zero;}
+  // "hang": the window closes but the process never finishes exiting, like a
+  // client stuck in its own shutdown.
+  if(message==2){if(Read("client-mode.txt")!="hang")PostQuitMessage(0);return IntPtr.Zero;}
   return DefWindowProc(hwnd,message,w,l);
  }
  [STAThread] static int Main(){

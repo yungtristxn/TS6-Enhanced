@@ -26,9 +26,10 @@ $tag = 'v'+$release.version
 $displayVersion=$release.version -replace '^(\d+\.\d+)\.0$','$1'
 $zip = Join-Path $Directory ('TS6-Enhanced-'+$release.version+'-windows-x64.zip')
 $exe = Join-Path $Directory ('TS6-Enhanced-'+$release.version+'-Setup.exe')
+$slim = Join-Path $Directory ('TS6-Enhanced-'+$release.version+'-Update.exe')
 & (Join-Path $project 'tests/release.ps1') -ArchivePath $zip -PackageOnly -Installer -ExpectedRepository $repository
 # Explicit files only: never upload logs, other builds or private files alongside them.
-$assets = @($exe,($exe+'.sha256'),$zip,($zip+'.sha256'),(Join-Path $Directory 'release.json'))
+$assets = @($exe,($exe+'.sha256'),$slim,($slim+'.sha256'),$zip,($zip+'.sha256'),(Join-Path $Directory 'release.json'))
 Write-Output "$repository / $tag"
 $assets | ForEach-Object { Write-Output ([IO.Path]::GetFileName($_)) }
 if (!$PSCmdlet.ShouldProcess("github.com/$repository / $tag",'Create a draft release and upload the release files')) { return }

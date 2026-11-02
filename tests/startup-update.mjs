@@ -25,7 +25,7 @@ async function fixture(name){
  const pending={schema:2,mode:'next-launch',fromVersion:'2.1.3',version:'2.1.4',path:installer,sha256:await hash(installer)};
  const queue=()=>writeFile(join(data,'pending-update.json'),JSON.stringify(pending));
  const launch=async(args=[])=>{
-  const child=spawn(join(client,'TeamSpeak.exe'),args,{windowsHide:true,stdio:'ignore',env:{...process.env,LOCALAPPDATA:profile,TSIX_STARTUP_TEST_ROOT:root,TSIX_STARTUP_TEST_RECORD:join(root,'opened.txt')}});
+  const child=spawn(join(client,'TeamSpeak.exe'),args,{windowsHide:true,stdio:'ignore',env:{...process.env,LOCALAPPDATA:profile,TSIX_STARTUP_TEST_ROOT:root,TSIX_STARTUP_TEST_RECORD:join(root,'opened.txt'),TSIX_UPDATE_PROGRESS:'0'}});
   const [code]=await once(child,'exit',{signal:AbortSignal.timeout(25000)});assert.equal(code,0);return child;
  };
  return{root,data,client,pkg,pending,queue,launch,opened:()=>readFile(join(root,'opened.txt'),'utf8').then(s=>s.replace(/\r\n/g,'\n'),()=>''),attempts:()=>readFile(join(root,'attempts.txt'),'utf8').then(s=>s.trim().split('\n').length,()=>0)};
@@ -69,5 +69,15 @@ for(const kind of ['hash','path','base']){
  await f.launch(['second']);assert.equal(await f.attempts(),1);assert.ok((await f.opened()).includes('second'));
  await writeFile(join(f.root,'mode.txt'),'success');await wait(async()=>!await exists(join(f.data,'pending-update.json')),'First retry never completed');
  checks.push('Concurrent launch cannot start a second installer while the lifecycle lease is held');
+}
+{
+ const f=await fixture('stuck-startup');await f.queue();await writeFile(join(f.root,'client-mode.txt'),'hang');
+ const started=Date.now();
+ const child=spawn(join(f.client,'TeamSpeak.exe'),[],{windowsHide:true,stdio:'ignore',env:{...process.env,LOCALAPPDATA:join(f.root,'profile'),TSIX_STARTUP_TEST_ROOT:f.root,TSIX_STARTUP_TEST_RECORD:join(f.root,'opened.txt'),TSIX_UPDATE_PROGRESS:'0'}});
+ await once(child,'exit',{signal:AbortSignal.timeout(40000)});
+ await wait(async()=>!!await f.opened(),'A startup client that never exits blocked the update');
+ assert.ok(Date.now()-started<40000);assert.equal(await f.attempts(),1);
+ assert.equal(await readFile(join(f.client,'version.dll'),'utf8'),'new DLL');assert.equal(await exists(join(f.data,'pending-update.json')),false);
+ checks.push('A startup client that agreed to exit but never finishes is ended after 10 s; the update installs and TeamSpeak reopens');
 }
 console.log(JSON.stringify({result:'PASS',checks,scope:'Production startup gate and scripts with disposable native client/installer fixtures; real TeamSpeak untouched'},null,2));

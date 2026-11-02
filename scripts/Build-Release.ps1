@@ -27,7 +27,7 @@ for ($cursor=$OutputDirectory; $cursor; $cursor=Split-Path -Parent $cursor) {
 if($release.nativeLoader.schema -ne 1){throw 'This build requires native loader metadata.'}
 $files = @('Install.cmd','Uninstall.cmd','Install.ps1','Uninstall.ps1','release.json','LICENSE',
     'scripts\Bootstrap.ps1','scripts\Runtime.ps1','scripts\Complete-Setup.ps1','scripts\Maintenance.ps1',
-    'scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Restart-Update.ps1','scripts\Session-State.ps1','scripts\Start-Inspection.ps1',
+    'scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Restart-Update.ps1','scripts\Update-Progress.ps1','scripts\Session-State.ps1','scripts\Start-Inspection.ps1',
     'scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1',
     'tools\cdp.mjs','tools\appearance.mjs','tools\install-state.mjs','tools\restore.mjs','tools\updates.mjs','tools\native-manager.mjs','tools\session-state.mjs',
     'native\CEF-LICENSE.txt')
@@ -39,7 +39,8 @@ $zipPath = Join-Path $OutputDirectory ($packageName+'.zip')
 $hashPath = $zipPath+'.sha256'
 $metadataPath=Join-Path $OutputDirectory 'release.json'
 $exe=Join-Path $OutputDirectory ('TS6-Enhanced-'+$release.version+'-Setup.exe')
-foreach($target in @($zipPath,$hashPath,$metadataPath)+$(if($Installer){@($exe,($exe+'.sha256'))}else{@()})){
+$slimExe=Join-Path $OutputDirectory ('TS6-Enhanced-'+$release.version+'-Update.exe')
+foreach($target in @($zipPath,$hashPath,$metadataPath)+$(if($Installer){@($exe,($exe+'.sha256'),$slimExe,($slimExe+'.sha256'))}else{@()})){
     if(Test-Path -LiteralPath $target){throw 'Release already exists. Use a new version or output directory; artifacts are never overwritten.'}
 }
 $stage = Join-Path $project ('.local\release-staging\'+[guid]::NewGuid().ToString('N')+'\'+$packageName)
@@ -52,7 +53,6 @@ foreach ($file in $files) {
     Copy-Item -LiteralPath $source -Destination $destination
 }
 Copy-Item -LiteralPath (Join-Path $project 'docs\release-readme.md') -Destination (Join-Path $stage 'README.md')
-$release | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stage 'release.json') -Encoding utf8
 # Download only on the build machine. Ship just Node and its license, without npm.
 $nodeSpec=(Get-Content -LiteralPath (Join-Path $project 'runtime-lock.json') -Raw | ConvertFrom-Json).node
 if($nodeSpec.version -notmatch '^\d+\.\d+\.\d+$' -or $nodeSpec.sha256 -notmatch '^[a-f0-9]{64}$'){throw 'Invalid Node runtime lock'}
@@ -84,6 +84,14 @@ try {
         [IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0],(Join-Path $runtimeDirectory $name))
     }
 }finally{$archive.Dispose()}
+# The updater downloads the slim package (without Node) only when the
+# installed runtime already has exactly this hash.
+$runtimeFile=Get-Item -LiteralPath (Join-Path $runtimeDirectory 'node.exe')
+$runtimeSha256=(Get-FileHash -LiteralPath $runtimeFile.FullName).Hash.ToLowerInvariant()
+$runtimeInfo=$runtimeFile.VersionInfo
+$runtimeVersion=($runtimeInfo.FileMajorPart,$runtimeInfo.FileMinorPart,$runtimeInfo.FileBuildPart,$runtimeInfo.FilePrivatePart) -join '.'
+$release | Add-Member -NotePropertyName runtime -NotePropertyValue ([pscustomobject]@{node=[pscustomobject]@{version=$nodeSpec.version;sha256=$runtimeSha256}}) -Force
+$release | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stage 'release.json') -Encoding utf8
 # Each release owns its build intermediates; earlier verification processes or
 # checkout permissions must not make a later release overwrite shared outputs.
 $nativeBuild=Join-Path (Split-Path -Parent $stage) 'native-build'
@@ -102,9 +110,11 @@ Write-Output "SHA256: $zipHash"
 Copy-Item -LiteralPath (Join-Path $stage 'release.json') -Destination $metadataPath
 if($Installer){
     $displayVersion=$release.version -replace '^(\d+\.\d+)\.0$','$1'
-    & $Compiler /Qp ("/DPayload=$stage") ("/DAppVersion=$($release.version)") ("/DAppDisplayVersion=$displayVersion") ("/O$OutputDirectory") (Join-Path $project 'installer\Setup.iss')
-    if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
-    ((Get-FileHash -LiteralPath $exe).Hash.ToLowerInvariant()+'  '+[IO.Path]::GetFileName($exe)) | Set-Content -LiteralPath ($exe+'.sha256') -Encoding utf8
-    Write-Output $exe
+    foreach($variant in @(@{Path=$exe;Define=@()},@{Path=$slimExe;Define=@('/DSlimUpdate')})){
+        & $Compiler /Qp ("/DPayload=$stage") ("/DAppVersion=$($release.version)") ("/DAppDisplayVersion=$displayVersion") ("/DRuntimeSize=$($runtimeFile.Length)") ("/DRuntimeVersion=$runtimeVersion") @($variant.Define) ("/O$OutputDirectory") (Join-Path $project 'installer\Setup.iss')
+        if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
+        ((Get-FileHash -LiteralPath $variant.Path).Hash.ToLowerInvariant()+'  '+[IO.Path]::GetFileName($variant.Path)) | Set-Content -LiteralPath ($variant.Path+'.sha256') -Encoding utf8
+        Write-Output $variant.Path
+    }
 }
 & (Join-Path $project 'tests/release.ps1') -ArchivePath $zipPath -PackageOnly -Installer:$Installer -ExpectedRepository $Repository

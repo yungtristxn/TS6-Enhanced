@@ -27,7 +27,14 @@ try {
     [Console]::Out.WriteLine('retry');[Console]::Out.Flush()
     if(!$accept.WaitOne(5000)){throw 'Startup retry was not acknowledged; the client was left running'}
     $accepted=$true
-    if(!$startup.WaitForExit(30000)){throw 'Startup client did not exit; the update remains queued'}
+    Start-LayoutProgress $client
+    # The startup client agreed to exit before showing any window or connecting.
+    # If it does not finish exiting, end exactly that verified process: left
+    # running without a window, it would receive every later launch.
+    if(!$startup.WaitForExit(10000)){
+        try{$startup.Kill()}catch{}
+        if(!$startup.WaitForExit(5000)){throw 'Startup client did not exit; the update remains queued'}
+    }
     & (Join-Path $PSScriptRoot 'Native-Setup.ps1') -Action ApplyPending | Out-Null
 } catch {
     try{Write-LayoutJSON (Join-Path $root 'native-error.json') @{at=[datetime]::UtcNow.ToString('o');message=$_.Exception.Message;

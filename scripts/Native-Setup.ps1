@@ -62,7 +62,7 @@ try {
             if((Get-FileHash -LiteralPath (Join-Path $client $resource.Name)).Hash -ine $resource.Value){throw 'Unsupported or modified TS6 UI resources'}
         }
         $payload=@('release.json','native\CEF-LICENSE.txt','runtime\node.exe','runtime\LICENSE','tools\native-manager.mjs','tools\session-state.mjs','tools\updates.mjs','tools\install-state.mjs',
-            'scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Restart-Update.ps1','scripts\Session-State.ps1','scripts\Runtime.ps1','scripts\Maintenance.ps1','scripts\Start-Inspection.ps1','scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1',
+            'scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Restart-Update.ps1','scripts\Update-Progress.ps1','scripts\Session-State.ps1','scripts\Runtime.ps1','scripts\Maintenance.ps1','scripts\Start-Inspection.ps1','scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1',
             'tools\restore.mjs','tools\appearance.mjs','tools\cdp.mjs')
         foreach($dependency in $release.nativeLoader.dependencies){
             if($dependency -notmatch '^node_modules/ws/(lib/[a-z-]+\.js|index\.js|wrapper\.mjs|package\.json|LICENSE)$'){throw 'Unexpected bundled dependency'}
@@ -96,12 +96,22 @@ try {
     }
     $stage=Join-Path $transaction 'new-payload'
     New-Item -ItemType Directory -Path $stage | Out-Null
+    # Files unchanged since the verified installation (above all the 87 MB Node
+    # runtime) are hard-linked instead of copied: no rewrite, no rescan, and the
+    # rollback copy in native-history shares the data instead of duplicating it.
+    $installed=@{};if($state){foreach($entry in $state.files){$installed[[string]$entry.path]=[string]$entry.sha256}}
     $inventory=@(foreach($file in $payload){
         $source=Join-Path $project $file;$target=Join-Path $stage $file
         New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
-        Copy-Item -LiteralPath $source -Destination $target
         $hash=(Get-FileHash -LiteralPath $source).Hash
-        if((Get-FileHash -LiteralPath $target).Hash -cne $hash){throw "Native payload copy failed: $file"}
+        $current=Join-Path $destination $file;$linked=$false
+        if($installed.ContainsKey($file) -and $installed[$file] -ieq $hash -and (Test-Path -LiteralPath $current -PathType Leaf)){
+            try{New-Item -ItemType HardLink -Path $target -Target $current -ErrorAction Stop | Out-Null;$linked=$true}catch{if(Test-Path -LiteralPath $target){Remove-Item -LiteralPath $target}}
+        }
+        if(!$linked){
+            Copy-Item -LiteralPath $source -Destination $target
+            if((Get-FileHash -LiteralPath $target).Hash -cne $hash){throw "Native payload copy failed: $file"}
+        }
         [pscustomobject]@{path=$file;sha256=$hash}
     })
     $hadPayload=Test-Path -LiteralPath $destination
@@ -154,5 +164,21 @@ try {
         Write-LayoutJSON $oldState $legacy
         }
     }
+    # Keep the newest rollback copies only. Entries holding legacy shortcut
+    # recovery files are never pruned. Pruning is housekeeping and cannot fail
+    # the installation.
+    try{
+        $history=Join-Path $root 'native-history'
+        $removable=@(Get-ChildItem -LiteralPath $history -Directory -ErrorAction Stop | Where-Object {
+            $_.FullName -ine $transaction -and !(($_.Attributes -band [IO.FileAttributes]::ReparsePoint)) -and
+            !@(Get-ChildItem -LiteralPath $_.FullName -Force | Where-Object { $_.Name -notin @('payload','version.dll','native-install.json','new-payload','failed-payload') }).Count
+        } | Sort-Object CreationTimeUtc -Descending | Select-Object -Skip 2)
+        foreach($old in $removable){
+            if(!($old.FullName+'').StartsWith(($history+''),[StringComparison]::OrdinalIgnoreCase)){continue}
+            # Windows PowerShell can follow junctions while deleting; skip any entry that has one.
+            if(@(Get-ChildItem -LiteralPath $old.FullName -Recurse -Force -Attributes ReparsePoint -ErrorAction Stop).Count){continue}
+            Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }catch{}
     Write-Output "TS6 Enhanced $($release.version) installed. Launch TeamSpeak normally."
 }finally{Exit-LayoutOperation $operation}

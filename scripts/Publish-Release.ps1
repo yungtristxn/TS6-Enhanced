@@ -56,8 +56,9 @@ try {
     $directory = Join-Path $project "dist/$version"
     $assets = Get-ChildItem -LiteralPath $directory -File | Where-Object Name -in @(
         "TS6-Enhanced-$version-Setup.exe", "TS6-Enhanced-$version-Setup.exe.sha256",
+        "TS6-Enhanced-$version-Update.exe", "TS6-Enhanced-$version-Update.exe.sha256",
         "TS6-Enhanced-$version-windows-x64.zip", "TS6-Enhanced-$version-windows-x64.zip.sha256", 'release.json')
-    if ($assets.Count -ne 5) { throw "Expected five release files in $directory." }
+    if ($assets.Count -ne 7) { throw "Expected seven release files in $directory." }
     $local = @{}
     foreach ($asset in $assets) { $local[$asset.Name] = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
 

@@ -6,8 +6,10 @@ $project=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'Runtime.ps1')
 function Assert-UpdateInstaller($Pending,[string]$Root) {
     if($Pending.schema -ne 2 -or $Pending.mode -ne 'next-launch' -or $Pending.version -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$' -or $Pending.sha256 -notmatch '^[a-fA-F0-9]{64}$'){throw 'Invalid pending update receipt'}
-    $expected=[IO.Path]::GetFullPath((Join-Path $Root ('updates\TS6-Enhanced-'+$Pending.version+'-Setup.exe')))
-    if([IO.Path]::GetFullPath($Pending.path) -cne $expected){throw 'Update installer escaped its managed location'}
+    # The full setup, or the slim update package chosen for a matching runtime.
+    $requested=[IO.Path]::GetFullPath($Pending.path)
+    $expected=@('Setup','Update') | ForEach-Object {[IO.Path]::GetFullPath((Join-Path $Root ('updates\TS6-Enhanced-'+$Pending.version+'-'+$_+'.exe')))} | Where-Object {$_ -ceq $requested} | Select-Object -First 1
+    if(!$expected){throw 'Update installer escaped its managed location'}
     Assert-LayoutPlainPath $expected
     if((Get-FileHash -LiteralPath $expected).Hash -ne $Pending.sha256){throw 'Update installer checksum changed; check for updates again'}
     return $expected

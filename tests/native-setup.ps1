@@ -11,7 +11,7 @@ try{
     $env:LOCALAPPDATA=Join-Path $scratch 'profile'
     $client=Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak'
     $release=Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw | ConvertFrom-Json
-    $paths=@('release.json','native\CEF-LICENSE.txt','runtime\node.exe','runtime\LICENSE','runtime\version.dll','tools\native-manager.mjs','tools\session-state.mjs','tools\updates.mjs','tools\install-state.mjs','scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Restart-Update.ps1','scripts\Session-State.ps1','scripts\Runtime.ps1','scripts\Maintenance.ps1','scripts\Start-Inspection.ps1','scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1','tools\restore.mjs','tools\appearance.mjs','tools\cdp.mjs')+@($release.nativeLoader.dependencies)
+    $paths=@('release.json','native\CEF-LICENSE.txt','runtime\node.exe','runtime\LICENSE','runtime\version.dll','tools\native-manager.mjs','tools\session-state.mjs','tools\updates.mjs','tools\install-state.mjs','scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Restart-Update.ps1','scripts\Update-Progress.ps1','scripts\Session-State.ps1','scripts\Runtime.ps1','scripts\Maintenance.ps1','scripts\Start-Inspection.ps1','scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1','tools\restore.mjs','tools\appearance.mjs','tools\cdp.mjs')+@($release.nativeLoader.dependencies)
     foreach($file in $paths){$target=Join-Path $source $file;New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null;'fixture' | Set-Content -LiteralPath $target}
     foreach($file in @('Native-Setup.ps1','Runtime.ps1','Maintenance.ps1')){Copy-Item -LiteralPath (Join-Path $project ('scripts\'+$file)) -Destination (Join-Path $source ('scripts\'+$file)) -Force}
     foreach($property in $release.supportedClient.nativeImages.PSObject.Properties){$file=Join-Path $client $property.Name;New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force | Out-Null;'client-fixture' | Set-Content -LiteralPath $file;$property.Value.sha256=(Get-FileHash -LiteralPath $file).Hash}
@@ -42,7 +42,21 @@ class Fixture { static int Main(string[] args) { File.WriteAllLines(Environment.
     Check (!(Test-Path -LiteralPath (Join-Path $dataRoot 'pending-update.json'))) 'Successful deferred update retained its queue'
     $receipt=Join-Path $env:LOCALAPPDATA 'TS6-Layout\native-install.json'
     Check (Test-Path -LiteralPath $receipt) 'Native ownership receipt missing'
+    # Unchanged files are hard-linked from the verified installation; changed
+    # files are copied. History keeps the newest copies, never legacy recovery.
+    $history=Join-Path $dataRoot 'native-history'
+    $legacy=Join-Path $history 'legacy-recovery-fixture';New-Item -ItemType Directory -Path $legacy -Force | Out-Null;'{}' | Set-Content -LiteralPath (Join-Path $legacy 'legacy-state.json')
+    'changed tool' | Set-Content -LiteralPath (Join-Path $source 'tools\updates.mjs')
     & $setup
+    $node=Get-Item -LiteralPath (Join-Path $client 'TS6-Enhanced\runtime\node.exe')
+    Check ($node.LinkType -eq 'HardLink') 'An unchanged runtime file was copied instead of hard-linked'
+    Check ([string](Get-Item -LiteralPath (Join-Path $client 'TS6-Enhanced\tools\updates.mjs')).LinkType -ne 'HardLink') 'A changed file was linked to its previous version'
+    Check ((Get-Content -LiteralPath (Join-Path $client 'TS6-Enhanced\tools\updates.mjs') -Raw).Trim() -eq 'changed tool') 'A changed file was not installed'
+    foreach($i in 1..3){Start-Sleep -Milliseconds 20;& $setup}
+    $kept=@(Get-ChildItem -LiteralPath $history -Directory | Where-Object Name -ne 'legacy-recovery-fixture')
+    Check ($kept.Count -le 3) "Update history was not pruned ($($kept.Count) entries)"
+    Check (Test-Path -LiteralPath (Join-Path $legacy 'legacy-state.json')) 'Legacy recovery history was pruned'
+    Check (((Get-Content -LiteralPath (Join-Path $client 'TS6-Enhanced\runtime\node.exe') -Raw).Trim()) -eq 'fixture') 'Pruning damaged the installed runtime'
     $extra=Join-Path $client 'TS6-Enhanced\user-file.txt';'keep' | Set-Content -LiteralPath $extra
     $refused=$false;try{& $setup -Action Uninstall}catch{$refused=$_.Exception.Message.Contains('Unowned files')}
     Check ($refused -and (Test-Path -LiteralPath $dll) -and (Test-Path -LiteralPath $extra)) 'Removal did not preserve unowned files'
