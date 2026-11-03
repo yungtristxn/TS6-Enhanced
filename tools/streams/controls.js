@@ -286,19 +286,22 @@ function syncFocusActions(record, enabled, state) {
             record.vm.inDragStream
           )
             return;
-          if (vm._dblClickTimeout) {
-            clearTimeout(vm._dblClickTimeout);
-            vm._dblClickTimeout = null;
-          }
+          // A native delayed focus (from a tile this helper does not wrap) must
+          // not land after this choice and focus a different stream.
+          cancelDelayedFocus(record);
           // An immediate focus change can put a different tile under the second
           // click of a double-click. Remember this click so that one is ignored.
           record.focusClick =
             e?.isTrusted && e.type === 'click' && e.detail === 1
               ? { time: performance.now(), x: e.clientX, y: e.clientY }
               : null;
+          const leaving = !!layoutState(record.vm)?.tiles.find(t => t.node?.contains(node))?.focused;
           // Same as native and the keyboard: a preview gains focus, and the
           // focused stream returns to the grid.
           vm.$emit('enter-focus-mode', vm.session);
+          // Returning to the grid is the user's choice. Until they click or
+          // press a key again, a focus that arrives on its own is undone.
+          record.gridIntent = leaving ? { at: performance.now() } : null;
           // Commit destination geometry in the click turn, before Vue paints
           // the native layout, rather than correcting it a frame afterward.
           update(record, true);
@@ -376,7 +379,38 @@ function releaseFocus(record, node, r) {
   for (const [key, value] of Object.entries(r.before)) setAttr(node, key, value);
   record.focusActions.delete(node);
 }
+function cancelDelayedFocus(record) {
+  for (const node of record.element.querySelectorAll('.video-stream')) {
+    const vm = node.__vue__;
+    if (vm?._dblClickTimeout) {
+      clearTimeout(vm._dblClickTimeout);
+      vm._dblClickTimeout = null;
+    }
+  }
+}
+// Called from update(): keep the grid the user returned to. A later click or
+// key press (not the second click of a double-click) ends the guard, so every
+// deliberate focus change still applies.
+const gridIntentWindow = 700;
+function holdGridIntent(record) {
+  const intent = record.gridIntent,
+    vm = record.vm;
+  if (!intent) return;
+  if (performance.now() - intent.at > gridIntentWindow || (record.inputAt ?? 0) > intent.at) {
+    record.gridIntent = null;
+    return;
+  }
+  if (vm.item?.layoutMode?.kind !== 'focus') return;
+  cancelDelayedFocus(record);
+  vm.item.layoutMode = { kind: 'auto' };
+}
 function installFocusGestures(record) {
+  // A new deliberate input ends the return-to-grid guard.
+  record.captureInput = e => {
+    if (e.isTrusted && (e.type === 'keydown' || e.detail <= 1)) record.inputAt = performance.now();
+  };
+  document.addEventListener('mousedown', record.captureInput, true);
+  document.addEventListener('keydown', record.captureInput, true);
   const nearby = (saved, e) =>
     saved && performance.now() - saved.time < 400 && Math.hypot(e.clientX - saved.x, e.clientY - saved.y) <= 5;
   record.captureClick = e => {
@@ -530,6 +564,10 @@ function release(record) {
   syncChatVisibility(record, null, false);
   document.removeEventListener('click', record.captureClick, true);
   document.removeEventListener('dblclick', record.captureDouble, true);
+  document.removeEventListener('mousedown', record.captureInput, true);
+  document.removeEventListener('keydown', record.captureInput, true);
+  record.gridIntent = null;
+  releaseEvenGrid(record);
   for (const [node, r] of record.focusActions) releaseFocus(record, node, r);
   restoreLayoutNodes(record);
   clearTray(record);

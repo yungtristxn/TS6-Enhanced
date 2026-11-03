@@ -192,6 +192,27 @@ function syncStageChrome(record, active, state) {
     element.style.removeProperty('--tsix-footer-height');
     setAttr(element, 'data-tsix-footer-align', null);
   }
+  // Several streams: the shared view-actions strip sits below the grid. When
+  // chat is hidden and the stage reaches the window's bottom edge, it takes the
+  // side footer's height, so its divider continues their footer line. Decide
+  // from the stage area, never from the strip itself: its own height (and the
+  // grid's height transition) moves its edge and would make this oscillate.
+  const strip = record.actionDock?.footer?.hasAttribute('data-tsix-footer-grid') ? record.actionDock.footer : null;
+  const area = vm.$refs.fullArea?.getBoundingClientRect();
+  const value =
+    strip &&
+    a?.height &&
+    area?.height &&
+    element.getAttribute('data-tsix-chat') !== 'shown' &&
+    Math.abs(a.bottom - area.bottom) < 2
+      ? `${Math.round(a.height)}px`
+      : '';
+  if (strip && strip.style.getPropertyValue('--tsix-footer-height') !== value) {
+    if (value) strip.style.setProperty('--tsix-footer-height', value);
+    else strip.style.removeProperty('--tsix-footer-height');
+    // The video budget subtracts the strip's measured height.
+    schedule();
+  }
 }
 function clearChatRail(record) {
   record.chatResize?.disconnect();
@@ -242,9 +263,86 @@ function syncChatRail(record, enabled) {
   const top = Math.round(Math.max(4, Math.min(y, r.height - 32))) + 'px';
   if (bar.style.getPropertyValue('--tsix-chat-top') !== top) bar.style.setProperty('--tsix-chat-top', top);
 }
+// beta5's card grid maximises tile area. Once the stage is taller than one
+// full-width 16:9 tile plus a minimum row (which happens here because hidden
+// chat gives the stage the whole height; natively it stops at 66%), it puts
+// one stream across the full width and shrinks the others to a thin row, so
+// the grid looks like that stream is focused. In the grid (auto) only, keep
+// the rows even: lay out at the tallest height that does, centred vertically.
+// Focus, fullscreen and pop-outs keep the native result.
+const evenRows = result => {
+  const heights = result.blocks.flatMap(b =>
+    b.positioned.flatMap(p => p.tiles.filter(t => t.tile?.payload?.kind === 'video').map(t => t.h))
+  );
+  return heights.length < 2 || Math.max(...heights) <= Math.min(...heights) * 1.5;
+};
+function installEvenGrid(record) {
+  const { vm } = record;
+  if (record.evenGrid || typeof vm.runLayout !== 'function') return;
+  const original = vm.runLayout;
+  let cache = null;
+  const layout = function (box) {
+    const result = original.call(this, box);
+    if (
+      !themeActive() ||
+      box?.popout ||
+      this.isPopout ||
+      (this.item?.layoutMode?.kind ?? 'auto') !== 'auto' ||
+      !(box?.h > 0) ||
+      evenRows(result)
+    )
+      return result;
+    const key = [
+      box.w,
+      box.h,
+      box.page,
+      box.gapX,
+      box.gapY,
+      ...result.blocks.flatMap(b => b.positioned.flatMap(p => p.tiles.map(t => t.tile?.id)))
+    ].join('|');
+    let height = cache?.key === key ? cache.height : 0;
+    if (!height) {
+      // Step down to an even layout, then search for the tallest one.
+      let good = 0,
+        bad = box.h;
+      for (let h = box.h * 0.9; h >= box.h * 0.3; h *= 0.9)
+        if (evenRows(original.call(this, { ...box, h }))) {
+          good = h;
+          break;
+        } else bad = h;
+      if (!good) return result;
+      for (let i = 0; i < 8 && bad - good > 2; i++) {
+        const h = (good + bad) / 2;
+        if (evenRows(original.call(this, { ...box, h }))) good = h;
+        else bad = h;
+      }
+      height = good;
+      cache = { key, height };
+    }
+    const even = original.call(this, { ...box, h: height });
+    const bottom = Math.max(0, ...even.blocks.map(b => b.origin.y + b.size.h));
+    const offset = Math.floor(Math.max(0, box.h - bottom) / 2);
+    for (const block of even.blocks) block.origin = { ...block.origin, y: block.origin.y + offset };
+    return even;
+  };
+  vm.runLayout = layout;
+  record.evenGrid = { original, layout };
+  if (vm.maximumWidth > 0 && vm.maximumHeight > 0 && !document.fullscreenElement) vm.doUpdateGrid();
+}
+function releaseEvenGrid(record) {
+  const entry = record.evenGrid;
+  if (!entry) return;
+  if (record.vm.runLayout === entry.layout) record.vm.runLayout = entry.original;
+  record.evenGrid = null;
+  if (!record.vm._isDestroyed && !document.fullscreenElement) record.vm.doUpdateGrid();
+}
 function update(record, enabled) {
   const { element, vm } = record;
   syncChatLayout(record, enabled);
+  if (enabled) {
+    holdGridIntent(record);
+    installEvenGrid(record);
+  }
   const state = layoutState(vm);
   const active =
     enabled &&

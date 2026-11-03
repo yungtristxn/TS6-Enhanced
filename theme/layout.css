@@ -1,7 +1,7 @@
 /* TS6 beta5 / 1791901251. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 2.4.2;
+  --tsix-layout-version: 2.4.3;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
@@ -386,7 +386,13 @@
   height: var(--tsix-control-height); min-height: var(--tsix-control-height); padding: 0 6px;
   background: var(--tsix-chrome-bg); border-top: 1px solid var(--tsix-chrome-border);
 }
-[data-tsix-stream-footer][data-tsix-footer-grid] { margin: 0 38px; }
+/* Several streams: one view-actions strip across the whole stage. At the
+ * window's bottom edge the helper gives it the side footer's height, so its
+ * divider continues their footer line without a gap or step. */
+[data-tsix-stream-footer][data-tsix-footer-grid] {
+  margin: 0; padding: 0 8px;
+  height: var(--tsix-footer-height, var(--tsix-control-height)); min-height: var(--tsix-footer-height, var(--tsix-control-height));
+}
 /* An unopened player has no playback controls, only view actions. Float them
  * over the preview's bottom edge on hover or focus instead of reserving a
  * mostly empty strip. The player box is unchanged, so opening the stream
@@ -598,7 +604,8 @@
   .tsv-screenshare .screen-video-wrapper,
   .tsv-screenshare .screen-tile-wrapper,
   .tsv-screenshare .screen-small-bar,
-  .main-pane-layout .tsv-resize-handle-info {
+  .main-pane-layout .tsv-resize-handle-info,
+  .tsv-window .tsv-resize-handle::before {
     transition: none !important;
   }
 }
@@ -892,6 +899,24 @@
 /* An action button, bare like AFK; only toggle groups get a filled surface. */
 [data-tsix-manager-open] { border-radius: var(--tsix-chrome-radius); color: var(--tsix-chrome-muted); }
 :root [data-tsix-manager-open][aria-expanded="true"] { background: var(--tsix-control-selected); color: var(--tsix-chrome-text); }
+/* The theme rounds the content area's top-left corner below the window bar.
+ * Columns here meet edge to edge, so that corner reads as a notch. */
+.tsv-activity-main .tsv-header > .tsv-window-bar::after { content: none; display: none; }
+/* Column splitters: a faint divider at rest shows where to drag; it turns
+ * into an accent line on hover and while dragging. Both anchors draw on the
+ * column's last pixel (handles are 9px wide, offset 5.5px past the edge), so
+ * the line coincides with an existing pane border instead of doubling it. */
+.tsv-window .tsv-resize-handle:is(.tsv-resize-handle-left,.tsv-resize-handle-right):not(.tsv-resize-handle-section, .tsv-resize-handle-section *)::before {
+  left: 2.5px; width: 1px; opacity: 1; background: var(--tsix-chrome-border); transition: background-color 120ms ease-out, width 120ms ease-out;
+}
+.tsv-window .tsv-resize-handle.tsv-resize-handle-left:not(.tsv-resize-handle-section, .tsv-resize-handle-section *)::before { left: 4.5px; }
+.tsv-window .tsv-resize-handle:is(.tsv-resize-handle-left,.tsv-resize-handle-right):not(.tsv-resize-handle-section, .tsv-resize-handle-section *):is(:hover,.tsv-active)::before {
+  width: 2px; background: var(--tsix-chrome-accent);
+}
+@media (forced-colors: active) {
+  .tsv-window .tsv-resize-handle:is(.tsv-resize-handle-left,.tsv-resize-handle-right)::before { background: CanvasText; }
+  .tsv-window .tsv-resize-handle:is(.tsv-resize-handle-left,.tsv-resize-handle-right):is(:hover,.tsv-active)::before { background: Highlight; }
+}
 /* Remove the native 55px flex basis so both 48px footers actually align. */
 .sidebar-pane-layout > .tsv-footer,
 .main-pane-layout > .tsv-body > .tsv-item-view > .tsv-footer {
