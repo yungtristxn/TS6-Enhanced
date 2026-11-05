@@ -14,6 +14,7 @@ for (const [name, file] of [
   ['attachFeatures', 'features-runtime.js'],
   ['attachWorkspace', 'workspace-runtime.js'],
   ['attachChat', 'chat-runtime.js'],
+  ['attachPokes', 'poke-runtime.js'],
   ['attachStreams', streamsRuntime],
   ['attachManager', 'manager-runtime.js'],
   ['attachSession', 'session-runtime.js'],

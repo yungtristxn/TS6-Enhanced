@@ -50,6 +50,18 @@
       default: false
     },
     {
+      id: 'pokeSound',
+      group: 'Chat',
+      label: 'Poke sound',
+      detail: 'Plays the poke sound even when message sounds are off, you are away or your speakers are muted.'
+    },
+    {
+      id: 'pokeFlash',
+      group: 'Chat',
+      label: 'Flash taskbar on any poke',
+      detail: 'Flashes TeamSpeak in the taskbar when a poke arrives in the background, from any server tab.'
+    },
+    {
       id: 'chatWidth',
       group: 'Chat',
       label: 'Limit chat line length',

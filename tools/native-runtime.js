@@ -1,5 +1,5 @@
 // Bundled into the DLL inside a closure with connection, release, css and
-// attachFeatures/attachWorkspace/attachChat/attachStreams/attachManager. Never opens a debugging port.
+// attachFeatures/attachWorkspace/attachChat/attachPokes/attachStreams/attachManager. Never opens a debugging port.
 async function startNativeEnhanced() {
   if (
     window !== window.top ||
@@ -181,6 +181,7 @@ async function startNativeEnhanced() {
   if (!window.__tsixFeatures) attachFeatures();
   if (!window.__tsixWorkspace) attachWorkspace();
   if (!window.__tsixChat) attachChat();
+  if (!window.__tsixPokes) attachPokes();
   if (!window.__tsixStreams) attachStreams();
   attachManager();
   if (release.updates?.sessionRestore === 1 && typeof attachSession === 'function') attachSession();

@@ -13,6 +13,7 @@ Open **TS6 Enhanced** (the sparkle button in the toolbar) to switch individual f
 - **Click to focus a stream**: a click focuses a stream; clicking it again returns to the grid.
 - **Stream volume up to 300%** and **Remember volume per streamer**: your last volume for each person is reapplied when you watch them again. 100% and muting are left to TeamSpeak.
 - **Slim system messages**, **Group repeated join and leave messages** and **Limit chat line length** for server and channel chats. Folded join/leave runs show a **+N more** button; TeamSpeak's own option to hide system messages still applies.
+- **Poke sound** and **Flash taskbar on any poke**: every poke plays TeamSpeak's poke sound, even with message sounds off, while away or with speakers muted, and flashes the taskbar while TeamSpeak is in the background, from any server tab. TeamSpeak's own poke card is unchanged.
 
 ## Update or uninstall
 

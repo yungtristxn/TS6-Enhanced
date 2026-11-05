@@ -36,7 +36,7 @@ try{
  assert.deepEqual(await p.getByRole('tab').allInnerTexts(),['Streams','Chat','Updates']);assert.equal(await p.getByRole('tab',{name:'Streams'}).getAttribute('aria-selected'),'true');
  await p.getByRole('tab',{name:'Streams'}).focus();await p.keyboard.press('ArrowRight');
  assert.equal(await p.getByRole('tab',{name:'Chat'}).getAttribute('aria-selected'),'true');assert.ok(await p.getByRole('tab',{name:'Chat'}).evaluate(e=>e===document.activeElement));
- assert.equal(await p.getByRole('switch').count(),5);await capture('manager-chat');
+ assert.equal(await p.getByRole('switch').count(),7);await capture('manager-chat');
  const bottom=p.getByRole('switch',{name:'Messages start at the bottom'});assert.equal(await bottom.isChecked(),false,'Chat starts at the top by default');
  await bottom.click();assert.equal(await p.evaluate(()=>document.documentElement.getAttribute('data-tsix-on')),'chatBottom');
  await bottom.click();assert.equal(await p.evaluate(()=>document.documentElement.hasAttribute('data-tsix-on')),false);
