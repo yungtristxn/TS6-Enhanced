@@ -20,13 +20,17 @@ export async function nativeSessionProtocol(source,quality,config,handlerId){
   throw Error('Native method boundary not found');
  };
  const outbound=module(20076),types=module(78087),calls=[];
- const audio=new Function('g','return '+method(types,'function r(e,t=!1)'))({INCLUDE_ONLY:0});
+ // Webpack export names are stable across client builds; minified local
+ // aliases are not. Resolve each alias from the module text itself.
+ const exported=name=>{const match=new RegExp('[{,]'+name+':\\(\\)=>([$\\w]+)').exec(types);assert.ok(match,'Missing native export '+name);return match[1]};
+ const imported=id=>{const match=new RegExp('[$\\w]+(?==n\\('+id+'\\))').exec(outbound);assert.ok(match,'Missing native import '+id);return match[0]};
+ const audio=new Function('g','return '+method(types,'function '+exported('Vr')+'(e,t=!1)'))({INCLUDE_ONLY:0});
  class Channel{constructor(){this.sc_handler={id:handlerId}}}
  const backend={VIT:{Ok:0},c3w:Channel,Ay$:{screenshareSupport:{appAudio:{available:true}}}};
  const vm={_published:false,_publishingPromiseData:null,_loading:false,_refreshInFlight:false,_sourceRevision:0,id:-1,_quality:quality,config:structuredClone(config),
   close:()=>Promise.resolve(),updateFromInfo(value){this.id=value.sessionId},maybeDeleteAudioStats(){},drainRefreshQueue(){}};
  const bridge={postMessage(message,callback){calls.push(structuredClone(message));callback({err:0,payload:{session:{sessionId:41}}});if(message.cmd==='publishSession')vm._publishingPromiseData.resolve()}};
  const methods=[method(outbound,'switchSource(e){'),method(outbound,'publish(e){'),method(outbound,'getQualityWithCamOverrides(){')];
- Object.assign(vm,new Function('s','a','o','tsclient_internal','return ({'+methods.join(',')+'})')({Hp:{VOICE:5},Vr:audio,Ou:audio},backend,{warn(){}},bridge));
+ Object.assign(vm,new Function(imported(78087),imported(29239),imported(73065),'tsclient_internal','return ({'+methods.join(',')+'})')({Hp:{VOICE:5},Vr:audio,Ou:audio},backend,{warn(){}},bridge));
  await vm.switchSource(source);await vm.publish(new Channel());return calls;
 }

@@ -1,6 +1,6 @@
 {
   "name": "TS6 Enhanced",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "channel": "stable",
   "updates": {
     "repository": "yungtristxn/TS6-Enhanced",
@@ -8,32 +8,34 @@
     "checkIntervalHours": 6,
     "deferredInstall": 1,
     "nativeInstall": 1,
-    "sessionRestore": 1
+    "sessionRestore": 1,
+    "unverifiedClients": 1
   },
   "supportedClient": {
-    "version": "6.0.0-beta5",
-    "build": 1791901251,
+    "version": "6.0.0-beta5.1",
+    "build": 1793887494,
     "platform": "Windows x64",
     "installation": "per-user default",
+    "cefMajor": 151,
     "resourceHashes": {
-      "html/client_ui/main.js": "9D6BEA2EE5333086555C36584621C1B3462A83042CE746D3229D6766A9B82C39",
-      "html/client_ui/main.css": "BC700401D04954D07F82570B060335E2278166DB4F618F6CF3DCF8FDE1834ADF"
+      "html/client_ui/main.js": "352683C3EB1D674C6B0FE098EC8BA132B696739A33424080C9266B751DE41537",
+      "html/client_ui/main.css": "AE349AA2F33DA6AE6E638C211E758E9A6CD1DA2D07399701453A52ED7A2AC72D"
     },
     "nativeImages": {
       "TeamSpeak.exe": {
         "timestamp": 1785797781,
         "imageSize": 4370432,
-        "sha256": "268b7f95e30de1334ce391cc07b2432bbde90f24041649246a7598d157a6e103"
+        "sha256": "521b6cb991dc34f00748237ec465689cfb418e4d56d1f99cc5f1ab6d0eaab9a8"
       },
       "TeamSpeak.dll": {
-        "timestamp": 1791902716,
-        "imageSize": 58236928,
-        "sha256": "b4888a71b8e7a029e7124950737874e124aff7404f126ed8140b55273113edcb"
+        "timestamp": 1793888863,
+        "imageSize": 58499072,
+        "sha256": "cd8f7eba5f048609bb30943fc56154756ba2e73909f2947d9fa7c29322cbdf4b"
       },
       "libcef.dll": {
         "timestamp": 1785797781,
         "imageSize": 286162944,
-        "sha256": "950da5a66b1cfb3432eac7a094fdd550c3d2de7f16e2bc72ee6df68468fc37aa"
+        "sha256": "cedee620a59a27185cfa9f1be1565c09d6bae3d2738e1fe6b1197f61bcbfdd08"
       }
     }
   },

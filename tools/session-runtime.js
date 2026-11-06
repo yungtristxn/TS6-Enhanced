@@ -1,9 +1,25 @@
-// Exact beta5 adapter for a confirmed update. It uses the same controller,
-// connection methods and IPC payloads as the supported native client.
+// Exact adapter for a confirmed update on the verified client. It uses the same
+// controller, connection methods and IPC payloads as the supported native client.
+// On any other TeamSpeak build only preferences survive the restart: TeamSpeak
+// then reopens its saved tabs itself, and nothing touches voice or media.
 (() => {
   window.__tsixUpdateSession?.dispose?.();
   const recoveryWatches = new Map();
   let currentFence = null;
+  // Set by the native runtime before this adapter attaches. Anything else,
+  // including a missing marker, fails closed to preferences-only.
+  const client = () => {
+    const state = window.__tsixNative;
+    return {
+      verified: state?.compatibility === 'verified' && Number.isSafeInteger(state.build),
+      build: Number.isSafeInteger(state?.build) ? state.build : 0
+    };
+  };
+  // The minimum a preferences-only restart needs; every part is optional.
+  const loose = () => {
+    const vm = document.querySelector('main')?.__vue__?.$root;
+    return { app: vm?.appController || null, api: vm?._vm?.tsapi || null };
+  };
   const clone = value => JSON.parse(JSON.stringify(value));
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
   const wait = async (test, message, timeout = 15000) => {
@@ -261,6 +277,8 @@
   }
   async function restoreClosePolicy(api, snapshot) {
     if (!snapshot.closePolicy) return;
+    if (typeof api?.preferences?.getValue !== 'function' || typeof api.preferences.setValue !== 'function')
+      throw Error('Window-close preferences are unavailable');
     const value = snapshot.closePolicy.ignoreExit;
     if (api.preferences.getValue('application.ignore_exit_request') === value) return;
     api.preferences.setValue('application.ignore_exit_request', value);
@@ -294,7 +312,43 @@
     }
     throw Error('TeamSpeak could not confirm saved startup preferences');
   }
-  async function capture() {
+  // Preferences-only snapshot: the window-close preference (so Hide on Close
+  // cannot keep TeamSpeak running) and startup workflow. Nothing to replay.
+  function capturePreferences(build) {
+    const { app, api } = loose();
+    const preferences =
+      typeof api?.preferences?.getValue === 'function' && typeof api.preferences.setValue === 'function'
+        ? api.preferences
+        : null;
+    const saved = app?.workflowSettings;
+    return {
+      schema: 1,
+      build,
+      scope: 'preferences',
+      capturedAt: Date.now(),
+      workflow: {
+        restoreOpenedActivities: saved ? !!saved.restoreOpenedActivities : true,
+        autoConnectSkipActivityCheck: [0, 1, 2].includes(saved?.autoConnectSkipActivityCheck)
+          ? saved.autoConnectSkipActivityCheck
+          : 1
+      },
+      ...(preferences
+        ? { closePolicy: { ignoreExit: !!preferences.getValue('application.ignore_exit_request') } }
+        : {}),
+      defaults: {
+        inputMuted: !!api?.defaultClientSelfProperties?.inputMuted,
+        outputMuted: !!api?.defaultClientSelfProperties?.outputMuted
+      },
+      activeServer: '',
+      captureServer: '',
+      connections: [],
+      drafts: [],
+      views: []
+    };
+  }
+  async function capture(options = null) {
+    const { verified, build } = client();
+    if (!verified || options?.scope === 'preferences') return capturePreferences(build);
     const { app, api } = native();
     if (!window.__tsixSessionGuard?.supported || !window.__tsixSessionGuard.early)
       throw Error('Safe startup session restoration is unavailable');
@@ -310,7 +364,8 @@
       throw Error('Window-close preferences are unavailable');
     const snapshot = {
       schema: 1,
-      build: 1791901251,
+      build,
+      scope: 'full',
       capturedAt: Date.now(),
       workflow: workflow(app),
       closePolicy: { ignoreExit: !!api.preferences.getValue('application.ignore_exit_request') },
@@ -438,13 +493,14 @@
     return JSON.stringify(value);
   };
   async function prepare(snapshot) {
-    const { api } = native(),
+    const preferencesOnly = snapshot.scope === 'preferences';
+    const { api } = preferencesOnly ? loose() : native(),
       fence = activityFence('shutdown', api);
     const stillPreparing = () => {
       if (currentFence !== fence) throw Error('Restart preparation was cancelled');
     };
     try {
-      if (fingerprint(await capture()) !== fingerprint(snapshot))
+      if (fingerprint(await capture(snapshot)) !== fingerprint(snapshot))
         throw Error('Your session changed while preparing the update. Please try again');
       stillPreparing();
       // WM_CLOSE must actually exit even for Hide on Close profiles. The
@@ -457,7 +513,7 @@
           5000
         );
       }
-      const latest = await capture();
+      const latest = await capture(snapshot);
       latest.closePolicy = snapshot.closePolicy;
       stillPreparing();
       if (fingerprint(latest) !== fingerprint(snapshot))
@@ -470,8 +526,8 @@
   // Final restart step, after the session is armed: leave every connected
   // server with TeamSpeak's own quit path (no auto-reconnect), bounded.
   async function disconnect() {
-    const { api } = native();
-    const handlers = [...(api.connectedServerConnectionHandlers || api.serverConnectionHandlers || [])];
+    const { api } = loose();
+    const handlers = [...(api?.connectedServerConnectionHandlers || api?.serverConnectionHandlers || [])];
     await Promise.allSettled(
       handlers.map(handler =>
         bounded(
@@ -487,7 +543,7 @@
   }
   async function cancel(snapshot) {
     try {
-      await restoreClosePolicy(native().api, snapshot);
+      await restoreClosePolicy(loose().api, snapshot);
     } finally {
       currentFence?.dispose();
     }
@@ -613,8 +669,50 @@
       }
     };
   }
+  // Window-close preference and startup workflow only. TeamSpeak's own startup
+  // reopens saved tabs; voice, streams and drafts are left untouched (drafts
+  // stay encrypted for a later verified recovery).
+  async function restorePreferences(job, reason) {
+    const { snapshot } = job;
+    const warnings = reason ? [reason] : [];
+    const drafts = snapshot.drafts?.length || 0;
+    if (job.draftOnly) return { warnings, preferencesRestored: true, draftsRestored: !drafts, recoveredDrafts: [] };
+    let preferencesRestored = false;
+    try {
+      const { app, api } = await wait(
+        () => {
+          const value = loose();
+          return value.app && value.api ? value : null;
+        },
+        'TeamSpeak session data did not finish loading',
+        30000
+      ).catch(() => loose());
+      await restoreClosePolicy(api, snapshot);
+      if (window.__tsixSessionGuard?.active) {
+        if (!app?.applyWorkflowSettings) window.__tsixSessionGuard.dispose(true);
+        else await restoreWorkflow(app, snapshot.workflow, true);
+      }
+      preferencesRestored = true;
+    } catch {
+      window.__tsixSessionGuard?.dispose(true);
+      warnings.push('Startup preferences could not be restored; recovery will remain available');
+    }
+    return { warnings, preferencesRestored, draftsRestored: !drafts, recoveredDrafts: [] };
+  }
   async function restore(job) {
     const { snapshot, restoreSession, validateWindow } = job;
+    const current = client();
+    if (snapshot.scope === 'preferences') return restorePreferences(job);
+    if (!current.verified)
+      return restorePreferences(
+        job,
+        'This TeamSpeak version is not verified with TS6 Enhanced yet, so servers, mute state and streams were not restored automatically.'
+      );
+    if (snapshot.build !== current.build)
+      return restorePreferences(
+        job,
+        'TeamSpeak was updated during the restart, so servers, mute state and streams were not restored automatically.'
+      );
     const { app, api } = await wait(
       () => {
         try {

@@ -1,6 +1,6 @@
 # Setup
 
-Requires Windows x64 and TeamSpeak 6.0.0-beta5 (build 1791901251) installed at `%LOCALAPPDATA%\Programs\TeamSpeak`.
+Requires Windows x64 and TeamSpeak 6 installed at `%LOCALAPPDATA%\Programs\TeamSpeak`. This release is verified with TeamSpeak 6.0.0-beta5.1.
 
 Install TeamSpeak first, then run the TS6 Enhanced installer and click **Install**. Finish calls or streams first, as setup restarts TeamSpeak. All required runtimes are included or already part of Windows.
 
@@ -14,6 +14,16 @@ Open **TS6 Enhanced** (the sparkle button in the toolbar) to switch individual f
 - **Stream volume up to 300%** and **Remember volume per streamer**: your last volume for each person is reapplied when you watch them again. 100% and muting are left to TeamSpeak.
 - **Slim system messages**, **Group repeated join and leave messages** and **Limit chat line length** for server and channel chats. Folded join/leave runs show a **+N more** button; TeamSpeak's own option to hide system messages still applies.
 - **Poke sound** and **Flash taskbar on any poke**: every poke plays TeamSpeak's poke sound, even with message sounds off, while away or with speakers muted, and flashes the taskbar while TeamSpeak is in the background, from any server tab. TeamSpeak's own poke card is unchanged.
+
+## When TeamSpeak updates itself
+
+TeamSpeak installs its own updates. If it moves to a build this TS6 Enhanced release wasn't verified with, TS6 Enhanced keeps loading in **compatibility mode** instead of switching itself off:
+
+- Everything that still starts keeps working. A feature that can't start on the new build stays off, and the Updates tab of the TS6 Enhanced dialog lists it.
+- Updates keep working. As soon as a release for the new TeamSpeak build is published, it is offered as usual.
+- A restart for an update keeps your window-close preference and lets TeamSpeak reopen your saved servers as it normally does at startup. Mute state and streams are restored automatically only on a verified build.
+
+Setup also installs on a newer TeamSpeak build in compatibility mode. Only a TeamSpeak build with a different browser engine stops setup before anything changes.
 
 ## Update or uninstall
 

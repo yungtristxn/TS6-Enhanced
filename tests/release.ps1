@@ -92,16 +92,20 @@ $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'TeamSpeak.lnk'
 $before = (Get-FileHash -LiteralPath $shortcut).Hash
 & (Join-Path $root 'Install.ps1') -WhatIf
 if ((Get-FileHash -LiteralPath $shortcut).Hash -ne $before) { throw 'Extracted-package preflight changed the real shortcut' }
-# Prove unsupported resources stop setup before any installer mutation.
+# A different TeamSpeak build of the same CEF engine passes preflight in
+# compatibility mode; a different engine stops setup before any mutation.
 $releaseFile = Join-Path $root 'release.json'
 $bytes = [IO.File]::ReadAllBytes($releaseFile)
 try {
     $bad = Get-Content -LiteralPath $releaseFile -Raw | ConvertFrom-Json
     $bad.supportedClient.resourceHashes.'html/client_ui/main.js' = '0'*64
     $bad | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $releaseFile -Encoding utf8
+    & (Join-Path $root 'Install.ps1') -WhatIf -WarningAction SilentlyContinue
+    $bad.supportedClient.cefMajor = 9999
+    $bad | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $releaseFile -Encoding utf8
     $refused = $false
-    try { & (Join-Path $root 'Install.ps1') -WhatIf } catch { $refused=$_.Exception.Message.Contains('Unsupported or modified TS6 UI resources') }
-    if (!$refused) { throw 'Wrong client resources were not refused' }
+    try { & (Join-Path $root 'Install.ps1') -WhatIf } catch { $refused=$_.Exception.Message.Contains('browser engine') }
+    if (!$refused) { throw 'A client on another CEF engine was not refused' }
     if ((Get-FileHash -LiteralPath $shortcut).Hash -ne $before) { throw 'Failed preflight changed the shortcut' }
 } finally { [IO.File]::WriteAllBytes($releaseFile,$bytes) }
-Write-Output 'PASS: exact package inventory, no private paths/data files, all file/archive hashes, extracted-package preflight, and unsupported-client refusal.'
+Write-Output 'PASS: exact package inventory, no private paths/data files, all file/archive hashes, extracted-package preflight, compatibility-mode preflight and other-engine refusal.'

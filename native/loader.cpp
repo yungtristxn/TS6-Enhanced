@@ -1,15 +1,21 @@
-// Native startup adapter for the supported TeamSpeak build. Vendor files stay
+// Native startup adapter for TeamSpeak's CEF client. Vendor files stay
 // unchanged; CEF callbacks are chained with their original ownership contract.
+// TeamSpeak updates replace TeamSpeak.dll without changing the CEF ABI. Any
+// client built on the SDK's CEF major version loads; every CEF structure is
+// still size-checked before use. Only the exact images this release was tested
+// with are reported as verified; other builds run in compatibility mode.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stddef.h>
 #include <string_view>
 #include "include/capi/cef_app_capi.h"
 #include "include/capi/views/cef_browser_view_capi.h"
+#include "include/cef_version.h"
 #include "runtime.h"
 #include "startup_update.h"
 #include "css_delivery.h"
 #include "compatibility.h"
+static_assert(TSIX_CEF_MAJOR==CEF_VERSION_MAJOR,"release.json cefMajor differs from the CEF SDK");
 static HMODULE ownModule=nullptr;
 static wchar_t clientDllPath[1024]{};
 
@@ -27,7 +33,7 @@ static BrowserCreatedFn originalBrowserCreated=nullptr;
 static BrowserViewFn originalBrowserView=nullptr;
 static LONG patchedClient=0;
 static LONG hostStarted=0;
-struct NativeStatus { volatile LONG pid,attached,loadHook,loadCalls,clientSeen,cefHook,executeCalls,appSize,handlerCalls,handlerSize,contextCalls,frameSize,scripts,protectError,contextSize,apiVersion,evalResult,extraInfoSize,connectionReady,browserViews; };
+struct NativeStatus { volatile LONG pid,attached,loadHook,loadCalls,clientSeen,cefHook,executeCalls,appSize,handlerCalls,handlerSize,contextCalls,frameSize,scripts,protectError,contextSize,apiVersion,evalResult,extraInfoSize,connectionReady,browserViews,verified; };
 extern "C" __declspec(dllexport) NativeStatus TSIX_NATIVE_STATUS={};
 
 static bool Same(const char* a,const char* b) {
@@ -189,7 +195,9 @@ static HMODULE WINAPI Load(LPCWSTR path,HANDLE file,DWORD flags) {
             TSIX_NATIVE_STATUS.clientSeen=1;
             HMODULE cef=GetModuleHandleW(L"libcef.dll");
             auto version=reinterpret_cast<int(*)(int)>(GetProcAddress(cef,"cef_version_info"));
-            if(SupportedImage(module,TSIX_CLIENT_STAMP,TSIX_CLIENT_SIZE)&&SupportedImage(cef,TSIX_CEF_STAMP,TSIX_CEF_SIZE)&&version&&version(0)==151&&Import(module,"libcef.dll","cef_execute_process",reinterpret_cast<void*>(&Execute),reinterpret_cast<void**>(&originalExecute))){
+            const bool verified=SupportedImage(GetModuleHandleW(nullptr),TSIX_EXE_STAMP,TSIX_EXE_SIZE)&&SupportedImage(module,TSIX_CLIENT_STAMP,TSIX_CLIENT_SIZE)&&SupportedImage(cef,TSIX_CEF_STAMP,TSIX_CEF_SIZE);
+            SetClientVerified(verified);TSIX_NATIVE_STATUS.verified=verified;
+            if(NativeImage(module)&&NativeImage(cef)&&version&&version(0)==CEF_VERSION_MAJOR&&Import(module,"libcef.dll","cef_execute_process",reinterpret_cast<void*>(&Execute),reinterpret_cast<void**>(&originalExecute))){
                 TSIX_NATIVE_STATUS.cefHook=1;
                 Import(module,"libcef.dll","cef_browser_view_create",reinterpret_cast<void*>(&BrowserView),reinterpret_cast<void**>(&originalBrowserView));
             }
@@ -203,7 +211,7 @@ BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID) {
         wchar_t executable[1024]{};DWORD length=GetModuleFileNameW(nullptr,executable,ARRAYSIZE(executable));
         wchar_t dll[1024]{};DWORD dllLength=GetModuleFileNameW(instance,dll,ARRAYSIZE(dll));
         auto slash=wcsrchr(executable,L'\\');auto dllSlash=wcsrchr(dll,L'\\');
-        if(length&&length<ARRAYSIZE(executable)&&dllLength&&dllLength<ARRAYSIZE(dll)&&slash&&dllSlash&&SamePath(slash+1,L"TeamSpeak.exe")&&SupportedImage(GetModuleHandleW(nullptr),TSIX_EXE_STAMP,TSIX_EXE_SIZE)){
+        if(length&&length<ARRAYSIZE(executable)&&dllLength&&dllLength<ARRAYSIZE(dll)&&slash&&dllSlash&&SamePath(slash+1,L"TeamSpeak.exe")&&NativeImage(GetModuleHandleW(nullptr))){
             *slash=0;*dllSlash=0;
             if(SamePath(executable,dll)){
                 wcscpy_s(clientDllPath,executable);wcscat_s(clientDllPath,L"\\TeamSpeak.dll");

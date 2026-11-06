@@ -10,22 +10,25 @@ const bundle=await readFile(`${client}/html/client_ui/main.js`,'utf8');
 const release=JSON.parse(await readFile(new URL('../release.json',import.meta.url),'utf8'));
 assert.equal(createHash('sha256').update(bundle).digest('hex').toUpperCase(),release.supportedClient.resourceHashes['html/client_ui/main.js']);
 const checks=[],errors=[];
+// Exact vendor code, except § stands for a minified module alias: those change
+// between client builds while the code itself stays the same.
+const nativeHas=text=>new RegExp(text.split('§').map(part=>part.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('[$\\w]+')).test(bundle);
 // Every connection fires one text-message event; a poke uses target mode 4.
 assert.ok(bundle.includes('e[e.CLIENT=1]="CLIENT",e[e.CHANNEL=2]="CHANNEL",e[e.SERVER=3]="SERVER",e[e.POKE=4]="POKE"'));
-assert.ok(bundle.includes('const l={sc_handler:this,targetMode:t,invoker:a,target:o,message:s};r.Ay$.eventSystem._onTextMessage.fire(l)'));
-assert.ok(bundle.includes('this._onTextMessage=new s.v,this.onTextMessage=this._onTextMessage.event'));
+assert.ok(nativeHas('const l={sc_handler:this,targetMode:t,invoker:a,target:o,message:§};§.Ay$.eventSystem._onTextMessage.fire(l)'));
+assert.ok(nativeHas('this._onTextMessage=new §.v,this.onTextMessage=this._onTextMessage.event'));
 assert.ok(bundle.includes('a={dispose:()=>{'),'Emitter subscriptions are disposable');
 checks.push('The installed client reports pokes from every connection through one disposable event');
 // Sound: TeamSpeak's own file and playback path, recorded in lastPlayed.
 assert.ok(bundle.includes('[a.nA.PokedFromAnotherClient,{soundFile:"you_were_poked"}]'));
-assert.ok(bundle.includes('this.lastPlayed.set(d,h),r.Ay$.audio.playNotificationSound(d)'));
+assert.ok(nativeHas('this.lastPlayed.set(d,h),§.Ay$.audio.playNotificationSound(d)'));
 assert.ok(bundle.includes('get soundNotifications(){return this._soundNotifications}'));
 assert.ok(bundle.includes('playNotificationSound(e){tsclient_internal.playWaveFile(0,e,'));
-assert.ok(bundle.includes('const l=r.Ay$.audio.audioSettings[s.bV.Out].notificationsDevice;if(l&&"none"===l.id)return'));
+assert.ok(nativeHas('const l=§.Ay$.audio.audioSettings[§.bV.Out].notificationsDevice;if(l&&"none"===l.id)return'));
 await access(`${client}/html/client_ui/sound/default/you_were_poked.wav`);
 // Taskbar flash: the native poke notice flashes only for the open server tab.
-assert.ok(bundle.includes('e.sc_handler===this.serverConnectionHandler&&e.targetMode===s.b0b.POKE&&e.target.id===e.sc_handler.ownClient.id&&this.handlePokeNotification('));
-assert.ok(bundle.includes('r.Id.sharedInstance().workflowSettings.flashTaskBarOnPoke&&!document.hasFocus()&&tsclient_internal.tsnotifications_flashTaskbar(()=>{})'));
+assert.ok(nativeHas('e.sc_handler===this.serverConnectionHandler&&e.targetMode===§.b0b.POKE&&e.target.id===e.sc_handler.ownClient.id&&this.handlePokeNotification('));
+assert.ok(nativeHas('§.Id.sharedInstance().workflowSettings.flashTaskBarOnPoke&&!document.hasFocus()&&tsclient_internal.tsnotifications_flashTaskbar(()=>{})'));
 checks.push('The poke sound is TeamSpeak’s own you_were_poked file, played through the same notification path that records lastPlayed');
 const features=await readFile(new URL('../tools/features-runtime.js',import.meta.url),'utf8');
 const runtime=await readFile(new URL('../tools/poke-runtime.js',import.meta.url),'utf8');

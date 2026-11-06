@@ -65,6 +65,28 @@ function Write-LayoutFailure([string]$Path,[string]$Message) {
     }catch{Write-Warning 'Could not write the setup error summary; details remain in the setup log.'}
 }
 
+# 'verified': the exact client files this release was tested with.
+# 'unverified': another TeamSpeak build on the same CEF major version, which the
+# native loader runs in compatibility mode. Anything else cannot load; throw.
+function Get-LayoutClientCompatibility($Release,[string]$Client) {
+    $files=@($Release.supportedClient.resourceHashes.PSObject.Properties | ForEach-Object {@{path=$_.Name;sha256=[string]$_.Value}})
+    $files+=@($Release.supportedClient.nativeImages.PSObject.Properties | ForEach-Object {@{path=$_.Name;sha256=[string]$_.Value.sha256}})
+    if(!$files.Count){throw 'This package has no TeamSpeak compatibility metadata.'}
+    $verified=$true
+    foreach($file in $files){
+        $path=Join-Path $Client $file.path
+        if(!(Test-Path -LiteralPath $path -PathType Leaf)){throw "TeamSpeak is incomplete ($($file.path) is missing). Update or reinstall TeamSpeak, then run setup again. Nothing was installed."}
+        if($verified -and (Get-FileHash -LiteralPath $path).Hash -ine $file.sha256){$verified=$false}
+    }
+    if($verified){return 'verified'}
+    $major=[int]$Release.supportedClient.cefMajor
+    $engine=[string](Get-Item -LiteralPath (Join-Path $Client 'libcef.dll')).VersionInfo.FileVersion
+    if($major -lt 1 -or $engine -notmatch '^(\d+)\.' -or [int]$Matches[1] -ne $major){
+        throw "This TeamSpeak build uses a browser engine ($engine) that this TS6 Enhanced version cannot load; it needs CEF $major. Nothing was installed. Check for a newer TS6 Enhanced release."
+    }
+    return 'unverified'
+}
+
 function Assert-LayoutNativeInstall([string]$Root,[string]$Client,[string]$Version) {
     $receipt=Join-Path $Root 'native-install.json'
     Assert-LayoutPlainPath $receipt

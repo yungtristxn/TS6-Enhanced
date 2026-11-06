@@ -6,7 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { createUpdateSession, displayVersion } from './updates.mjs';
+import { createUpdateSession, displayVersion, compatible } from './updates.mjs';
 import { atomicJSON, readJSON, plainPath, stateRoot, validateBaseline } from './install-state.mjs';
 import { createSessionJournal, validateSessionSnapshot } from './session-state.mjs';
 
@@ -96,7 +96,10 @@ export async function createNativeManager({
   // Close the UI connection once TeamSpeak is about to quit for an update.
   detachUi = true,
   fetcher = fetch,
-  onStatus = async () => {}
+  onStatus = async () => {},
+  // Whether the installed client files are the ones this release was verified
+  // with. Session replay across an update restart needs a verified client.
+  verifyClient = () => compatible({ manifest: release }, client)
 }) {
   if (!/^[a-f0-9]{64}$/.test(token || '')) throw Error('Invalid native session token');
   let busy = false,
@@ -112,6 +115,35 @@ export async function createNativeManager({
     restorationWarning = '';
   const passiveRecovery = new Set(),
     completedRecovery = new Set();
+  // The renderer reports its own view (native images, client build, helpers
+  // that failed to start) when it attaches; the files are checked here.
+  let clientVerified = false,
+    rendererClient = null;
+  const verifying = Promise.resolve()
+    .then(verifyClient)
+    .then(
+      value => {
+        clientVerified = value === true;
+      },
+      () => {
+        clientVerified = false;
+      }
+    );
+  const restartRestore = () => clientVerified && rendererClient?.verified !== false;
+  const validateClient = value => {
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Object.keys(value).some(key => !['build', 'verified', 'failed'].includes(key)) ||
+      !(value.build === null || (Number.isSafeInteger(value.build) && value.build >= 0)) ||
+      typeof value.verified !== 'boolean' ||
+      !Array.isArray(value.failed) ||
+      value.failed.length > 16 ||
+      value.failed.some(name => typeof name !== 'string' || !/^[a-z]{1,32}$/.test(name))
+    )
+      throw Error('Invalid client report');
+    return { build: value.build, verified: value.verified, failed: [...value.failed] };
+  };
   const validateResult = result => {
     if (
       !result ||
@@ -128,7 +160,7 @@ export async function createNativeManager({
   let state = {
     version: displayVersion(release.version),
     configured: !!release.updates?.repository,
-    restartRestore: true,
+    restartRestore: false,
     busy: false,
     available: null,
     message: 'Checking for updates…'
@@ -181,8 +213,13 @@ export async function createNativeManager({
       );
       publish({});
     });
-  const updates = await createUpdateSession(release, client, root, { fetcher });
+  const updates = await createUpdateSession(release, client, root, {
+    fetcher,
+    currentVerified: () => verifying.then(() => clientVerified),
+    restoresSession: () => restartRestore()
+  });
   publish(updates.snapshot());
+  void verifying.then(() => publish({ restartRestore: restartRestore() }));
   const finishOperation = () => {
     busy = false;
     publish({});
@@ -206,8 +243,14 @@ export async function createNativeManager({
       finishOperation();
     }
   };
-  const begin = async baseline => {
+  const begin = async (baseline, report = null) => {
     if (closing) return;
+    if (report) {
+      rendererClient = report;
+      await verifying;
+      publish({ restartRestore: restartRestore() });
+      await onStatus({ client: { ...report, filesVerified: clientVerified } }).catch(() => {});
+    }
     // Reattachment must not interrupt a download/check/restore operation.
     if (busy) {
       pendingReady = { baseline };
@@ -275,9 +318,9 @@ export async function createNativeManager({
     }
     await check();
   };
-  const action = async (action, baseline) => {
+  const action = async (action, baseline, report) => {
     if (action === 'ready') {
-      await begin(baseline);
+      await begin(baseline, report);
       return;
     }
     if (action === 'check') {
@@ -300,7 +343,12 @@ export async function createNativeManager({
         const queued = updates.queued();
         if (journal && downloaded.restartReady && queued) {
           publish({ message: 'Saving your current session…' });
-          const saved = validateSessionSnapshot(await sessionRequest('capture'));
+          // Unverified clients restart with preferences only; nothing is replayed.
+          await verifying;
+          const scope = restartRestore() ? 'full' : 'preferences';
+          const saved = validateSessionSnapshot(await sessionRequest('capture', { scope }));
+          if (scope === 'preferences' && saved.scope !== 'preferences')
+            throw Error('TeamSpeak returned an unexpected session snapshot');
           const id = await journal.save(saved, queued.version);
           try {
             await applyMaintenance('update', {
@@ -446,11 +494,14 @@ export async function createNativeManager({
         if (
           request.path !== '/action' ||
           !['ready', 'check', 'update', 'uninstall'].includes(data.action) ||
-          Object.keys(data).some(k => k !== 'action' && (k !== 'baseline' || data.action !== 'ready'))
+          Object.keys(data).some(
+            k => k !== 'action' && (!['baseline', 'client'].includes(k) || data.action !== 'ready')
+          )
         )
           throw Error('Invalid action');
+        const report = data.client === undefined ? null : validateClient(data.client);
         send(socket, { reply: id, ok: true });
-        void action(data.action, data.baseline).catch(e => publish({ detail: e.message }));
+        void action(data.action, data.baseline, report).catch(e => publish({ detail: e.message }));
       } catch (e) {
         send(socket, { reply: Number.isSafeInteger(id) ? id : null, ok: false, error: e.message });
       }

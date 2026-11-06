@@ -5,7 +5,7 @@ import {createNativeManager} from '../tools/native-manager.mjs';
 import {createSessionJournal} from '../tools/session-state.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const snapshot=()=>({schema:1,build:1791901251,capturedAt:Date.now(),workflow:{restoreOpenedActivities:true,autoConnectSkipActivityCheck:1},defaults:{inputMuted:false,outputMuted:false},activeServer:'',captureServer:'',connections:[],drafts:[]});
-async function fixture({prepareFails=false,protectFails=false,restore=null,sameVersion=false,targetAlreadyInstalled=false,withdrawn=false,corruptInstaller=false,retainedDrafts=false,changedDuringWorker=false,cancelFails=false,detachUi=true}={}){
+async function fixture({prepareFails=false,protectFails=false,restore=null,sameVersion=false,targetAlreadyInstalled=false,withdrawn=false,corruptInstaller=false,retainedDrafts=false,changedDuringWorker=false,cancelFails=false,detachUi=true,clientVerified=true,ignoreScope=false,report=undefined}={}){
  const base=resolve(import.meta.dirname,'../.local/session-update-tests');await mkdir(base,{recursive:true});const root=await mkdtemp(join(base,'flow-')),client=join(root,'client');
  await mkdir(join(client,'html/client_ui'),{recursive:true});const resource=Buffer.from('fixture resource'),resourceHashes={};
  for(const name of ['html/client_ui/main.js','html/client_ui/main.css']){await writeFile(join(client,name),resource);resourceHashes[name]=digest(resource)}
@@ -31,7 +31,7 @@ async function fixture({prepareFails=false,protectFails=false,restore=null,sameV
   journal.arm=async id=>{events.push('arm');return arm(id)};
   journal.retainDrafts=async(id,indices)=>{events.push('retain');return retain(id,indices)};
  }
- const host=await createNativeManager({token:'a'.repeat(64),release,root,client,journal,detachUi,onStatus:async patch=>statuses.push(patch),
+ const host=await createNativeManager({token:'a'.repeat(64),release,root,client,journal,detachUi,onStatus:async patch=>statuses.push(patch),verifyClient:async()=>clientVerified,
   fetcher:async url=>new Response(url.includes('api.github.com')?JSON.stringify(withdrawn?[]:[published]):url.endsWith('release.json')?metadata:corruptInstaller?'tampered':installer),
   applyMaintenance:async(action,handoff)=>{events.push('worker-ready');assert.equal(action,'update');if(changedDuringWorker)events.push('user-muted');await handoff.beforeClose();events.push('install');assert.ok(saved);assert.ok(events.indexOf('arm')<events.indexOf('install'))}});
  const socket=new WebSocket('ws://127.0.0.1:'+host.port,'tsix.v1.'+'a'.repeat(64),{headers:{Origin:'tsui://default'}});
@@ -43,7 +43,7 @@ async function fixture({prepareFails=false,protectFails=false,restore=null,sameV
   if(value.state)states.push(value.state);
   if(value.session&&!seen.has(value.session.id)){
    const job=value.session;seen.add(job.id);jobs.push(job);events.push(job.stage);
-   const result=job.stage==='capture'?snapshot():job.stage==='restore'?{preferencesRestored:true,draftsRestored:!retainedDrafts,recoveredDrafts:[],warnings:[]}:{ok:true};
+   const result=job.stage==='capture'?(job.payload?.scope==='preferences'&&!ignoreScope?{...snapshot(),scope:'preferences',views:[]}:snapshot()):job.stage==='restore'?{preferencesRestored:true,draftsRestored:!retainedDrafts,recoveredDrafts:[],warnings:[]}:{ok:true};
    const failed=(prepareFails||changedDuringWorker)&&job.stage==='prepare'?'Session changed':cancelFails&&job.stage==='cancel'?'Close preference could not be restored':null;
    await request('/session-result',{id:job.id,...(failed?{error:failed}:{result})});
   }
@@ -51,7 +51,7 @@ async function fixture({prepareFails=false,protectFails=false,restore=null,sameV
  await new Promise((resolve,reject)=>{socket.once('open',resolve);socket.once('error',reject)});
  const baseline={schema:1,owner:'tsix-install-baseline',appearance:{user_style:null},storage:{'tsix.layout.chatVisible':null,'tsix.layout.streamTrayCollapsed':null}};
  const wait=async predicate=>{const end=Date.now()+8000;while(Date.now()<end){if(predicate())return;await new Promise(r=>setTimeout(r,10))}throw Error('Fixture flow timed out: '+JSON.stringify({events,states}))};
- await request('/action',{action:'ready',baseline});await wait(()=>states.at(-1)?.busy===false);
+ await request('/action',{action:'ready',baseline,...(report===undefined?{}:{client:report})});await wait(()=>states.at(-1)?.busy===false);
  return{events,states,jobs,statuses,request,wait,root,journal,recoveryId,host,closed:()=>closed,close:async()=>{socket.terminate();await host.close()}};
 }
 test('confirmed update verifies download, saves and prepares the current session, then immediately installs',async()=>{
@@ -139,5 +139,49 @@ test('fresh renderer restores a one-use saved session before normal update polli
   const recorded=f.statuses.find(status=>status.sessionRestore)?.sessionRestore;
   assert.equal(recorded.automaticAttempted,true);assert.deepEqual(recorded.warnings,[]);
   assert.deepEqual(Object.keys(recorded).sort(),['at','automaticAttempted','draftsRestored','preferencesRestored','warnings']);
+ }finally{await f.close()}
+});
+
+test('a verified client captures the full session and reports the client it attached to',async()=>{
+ const f=await fixture({report:{build:1793887000,verified:true,failed:[]}});try{
+  assert.equal(f.states.at(-1).restartRestore,true);
+  assert.deepEqual(f.statuses.find(patch=>patch.client)?.client,{build:1793887000,verified:true,failed:[],filesVerified:true});
+  await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('install')&&f.closed());
+  assert.deepEqual(f.jobs.find(job=>job.stage==='capture').payload,{scope:'full'});
+ }finally{await f.close()}
+});
+
+test('an unverified TeamSpeak build still updates, restarting with preferences only',async()=>{
+ const f=await fixture({clientVerified:false,report:{build:1793887000,verified:false,failed:['chat']}});try{
+  assert.equal(f.states.at(-1).restartRestore,false);
+  assert.deepEqual(f.statuses.find(patch=>patch.client)?.client,{build:1793887000,verified:false,failed:['chat'],filesVerified:false});
+  await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('install')&&f.closed());
+  assert.deepEqual(f.events,['capture','save','worker-ready','prepare','arm','disconnect','install']);
+  assert.deepEqual(f.jobs.find(job=>job.stage==='capture').payload,{scope:'preferences'});
+  assert.equal(f.jobs.find(job=>job.stage==='prepare').payload.scope,'preferences');
+  assert.ok(f.states.some(state=>state.message==='Version 2.2.1 is ready. Restart TeamSpeak to apply it.'),'A waiting update does not promise session restoration');
+  assert.ok(!f.states.some(state=>/restore your session/.test(state.message)));
+ }finally{await f.close()}
+});
+
+test('renderer-reported unverified images also limit the restart to preferences',async()=>{
+ const f=await fixture({report:{build:1793887000,verified:false,failed:[]}});try{
+  assert.equal(f.states.at(-1).restartRestore,false);
+  await f.request('/action',{action:'update'});await f.wait(()=>f.events.includes('install')&&f.closed());
+  assert.deepEqual(f.jobs.find(job=>job.stage==='capture').payload,{scope:'preferences'});
+ }finally{await f.close()}
+});
+
+test('a replayable snapshot from an unverified client stops the update before anything is saved',async()=>{
+ const f=await fixture({clientVerified:false,ignoreScope:true});try{
+  await f.request('/action',{action:'update'});await f.wait(()=>f.states.at(-1)?.busy===false&&f.events.includes('capture'));
+  assert.deepEqual(f.events,['capture']);assert.equal(f.states.at(-1).detail,'TeamSpeak returned an unexpected session snapshot');
+ }finally{await f.close()}
+});
+
+test('malformed client reports are refused',async()=>{
+ const f=await fixture();try{
+  for(const client of [{build:'x',verified:true,failed:[]},{build:1,verified:'yes',failed:[]},{build:1,verified:true,failed:['Not A Name']},{build:1,verified:true,failed:[],extra:1}])
+   assert.equal((await f.request('/action',{action:'ready',baseline:{},client})).ok,false);
  }finally{await f.close()}
 });

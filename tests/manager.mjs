@@ -81,6 +81,28 @@ try{
  await p.getByRole('button',{name:'Restart and update…',exact:true}).click();await p.getByRole('button',{name:'Restart and update',exact:true}).click();
  assert.equal(await p.evaluate(()=>requests.at(-1).action),'update');
  checks.push('Immediate update confirmation explains the restart and restoration; Cancel is inert and confirmation requests one update');
+ // TeamSpeak updated itself to a build this version was not verified with.
+ const notice=p.locator('#tsix-manager [data-compat]');
+ if(!await dialog.isVisible())await entry.click();
+ await p.locator('#tsix-manager-tab-updates').click();
+ assert.equal(await notice.isVisible(),false);
+ await p.evaluate(()=>__tsixManager.setCompatibility({verified:false,build:1793887000,failed:['chat','streams']}));
+ await set({configured:true,version:'2.5.1',pending:'2.5.2',restartRestore:false,message:'Version 2.5.2 is ready. Restart TeamSpeak to apply it.'});
+ assert.ok(await notice.isVisible());
+ assert.equal(await notice.getAttribute('role'),'note');
+ assert.match(await notice.innerText(),/Compatibility mode/);assert.match(await notice.innerText(),/build 1793887000/);
+ assert.match(await notice.innerText(),/Couldn’t start: chat, streams\./);assert.match(await notice.innerText(),/updates still install/);
+ assert.equal(await p.locator('#tsix-manager-tab-updates').getAttribute('data-update'),'');
+ await capture('manager-compatibility');
+ await p.getByRole('button',{name:'Restart and update…',exact:true}).click();
+ assert.match(await dialog.innerText(),/reopens your saved servers/);assert.doesNotMatch(await dialog.innerText(),/restore mute state/);
+ await p.getByRole('button',{name:'Cancel',exact:true}).click();
+ await p.evaluate(()=>__tsixManager.setCompatibility({verified:true,build:1793887000,failed:['pokes']}));
+ assert.match(await notice.innerText(),/Some features are off/);assert.match(await notice.innerText(),/poke alerts/);
+ await p.evaluate(()=>__tsixManager.setCompatibility({verified:true,build:1793887000,failed:[]}));
+ await set({configured:true,version:'2.5.1',pending:null,restartRestore:true,message:'You’re up to date.'});
+ assert.equal(await notice.isVisible(),false);assert.equal(await p.locator('#tsix-manager-tab-updates').getAttribute('data-update'),null);
+ checks.push('Compatibility mode is explained on the Updates tab with the client build and any helpers that stayed off; its update restart promises only what it restores');
  await set({configured:true,version:'1.0.9',pending:'1.0.10',available:'1.0.11',message:'Version 1.0.11 is available.'});
  await p.getByRole('button',{name:'Close',exact:true}).click();
  await p.evaluate(()=>{document.querySelector('.tsv-central-toolbar').replaceChildren();document.getElementById('tsix-manager').remove()});

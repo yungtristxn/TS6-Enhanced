@@ -23,7 +23,14 @@ test('resume journal is one-use, expires, rejects stale completion and validates
  assert.equal(await journal.clear('wrong'),false);assert.equal(await journal.clear(id),true);
  const next=await journal.save(snapshot,'2.2.1');await journal.arm(next);clock+=11*60*1000;assert.equal((await journal.load()).restoreSession,false);await journal.clear(next);
  assert.throws(()=>validateSessionSnapshot({...snapshot,connections:Array(9).fill({})}),/Invalid/);
- assert.throws(()=>validateSessionSnapshot({...snapshot,build:1}),/Invalid/);
+ // Any client build may capture; the renderer replays only on the same verified one.
+ assert.equal(validateSessionSnapshot({...snapshot,build:1793887000}).build,1793887000);
+ for(const build of [-1,1.5,'1791901251',null])assert.throws(()=>validateSessionSnapshot({...snapshot,build}),/Invalid/);
+ assert.throws(()=>validateSessionSnapshot({...snapshot,scope:'everything'}),/Invalid/);
+ const preferences={...emptySnapshot(),scope:'preferences',closePolicy:{ignoreExit:true},drafts:[],views:[]};
+ assert.equal(validateSessionSnapshot(preferences).scope,'preferences');
+ for(const extra of [{activeServer:'x'},{drafts:[{connectionKey:'k',chatKey:'c',content:'d'}]},{views:[{connectionKey:'k',channelId:'1',focus:{direction:'inbound',id:'1'}}]}])
+  assert.throws(()=>validateSessionSnapshot({...preferences,...extra}),/Invalid/,'A preferences-only snapshot cannot carry replayable state');
 });
 
 test('retained offline drafts do not occupy the next update transaction and partial recovery is durable',async()=>{

@@ -24,10 +24,17 @@ try {
         $client=Join-Path $env:LOCALAPPDATA 'Programs\TeamSpeak'
         if($DeferredUpdate -and (Get-Process TeamSpeak -ErrorAction SilentlyContinue | Where-Object {$_.Path -eq (Join-Path $client 'TeamSpeak.exe')})){throw 'TeamSpeak reopened before the queued update. It was left running; retry on the next launch.'}
         if (!(Test-Path -LiteralPath (Join-Path $client 'TeamSpeak.exe'))) { throw 'Install TeamSpeak 6 for this Windows user first. Expected: %LOCALAPPDATA%\Programs\TeamSpeak. This package does not include TeamSpeak.' }
-        foreach ($p in $release.supportedClient.resourceHashes.PSObject.Properties) {
-            $file=Join-Path $client $p.Name
-            if (!(Test-Path -LiteralPath $file) -or (Get-FileHash -LiteralPath $file).Hash -ne $p.Value) {
-                throw "This package supports TS6 $($release.supportedClient.version), build $($release.supportedClient.build). Your client files do not match. Nothing was installed."
+        if ($release.supportedClient.nativeImages) {
+            if ((Get-LayoutClientCompatibility $release $client) -ne 'verified') {
+                Write-Host "This TeamSpeak build differs from TS6 $($release.supportedClient.version), which this package was verified with. TS6 Enhanced will run in compatibility mode until an update for your TeamSpeak build is available." -ForegroundColor Yellow
+            }
+        } else {
+            # Packages without native metadata (legacy fixtures) keep the exact check.
+            foreach ($p in $release.supportedClient.resourceHashes.PSObject.Properties) {
+                $file=Join-Path $client $p.Name
+                if (!(Test-Path -LiteralPath $file) -or (Get-FileHash -LiteralPath $file).Hash -ne $p.Value) {
+                    throw "This package supports TS6 $($release.supportedClient.version). Your client files do not match. Nothing was installed."
+                }
             }
         }
         Write-Host '[2/3] Checking the bundled runtime...'

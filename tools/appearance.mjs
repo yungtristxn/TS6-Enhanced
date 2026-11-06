@@ -1,4 +1,4 @@
-// Exact-build adapter for uninstall recovery. No profile database I/O.
+// Uninstall recovery through TeamSpeak's own Appearance API. No profile database I/O.
 // Use the same native controller as session recovery; no minified closure names.
 import { ownedPreferences, validateBaseline } from './install-state.mjs';
 import { readClientBuild } from './cdp.mjs';
@@ -22,7 +22,10 @@ async function withAppearance(c, operation) {
       await new Promise(r => setTimeout(r, 250));
     }
     if (!app?.objectId) throw Error('TeamSpeak did not finish loading. Wait for startup to finish and retry removal.');
-    if ((await readClientBuild(c)) !== 1791901251) throw Error('Unsupported TS6 build; no appearance settings changed');
+    // Any TeamSpeak build may be installed when removing TS6 Enhanced; the
+    // exact Appearance API check below decides whether settings can change.
+    if (!Number.isInteger(await readClientBuild(c)))
+      throw Error('TeamSpeak did not report its version; no appearance settings changed');
     await c.evaluate(`(()=>{
       if(document.fullscreenElement)throw Error('Exit fullscreen before restoring appearance');
     })()`);

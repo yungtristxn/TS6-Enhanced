@@ -1,4 +1,4 @@
-// Bundled into the DLL inside a closure with connection, release, css and
+// Bundled into the DLL inside a closure with connection, nativeClient, release, css and
 // attachFeatures/attachWorkspace/attachChat/attachPokes/attachStreams/attachManager. Never opens a debugging port.
 async function startNativeEnhanced() {
   if (
@@ -14,11 +14,15 @@ async function startNativeEnhanced() {
   const state = { version: release.version, status: 'waiting', transport: 'native', error: null };
   window.__tsixNative = state;
   const deadline = Date.now() + 60000;
-  while (
-    !document.querySelector('.tsv-window')?.__vue__?.windowLayout ||
-    typeof globalThis.tsclient_internal?.getClientLibVersion !== 'function'
-  ) {
+  const windowReady = () => !!document.querySelector('.tsv-window')?.__vue__?.windowLayout;
+  const bridgeReady = () => typeof globalThis.tsclient_internal?.getClientLibVersion === 'function';
+  let windowSince = 0;
+  while (!windowReady() || !bridgeReady()) {
+    // A later client may drop the version bridge; the window is what we need.
+    // The bridge normally exists before the window, so allow it a short grace.
+    if (windowReady() && Date.now() - (windowSince ||= Date.now()) > 10000) break;
     if (Date.now() > deadline) {
+      if (windowReady()) break;
       state.status = 'unavailable';
       state.error = 'TeamSpeak startup did not finish';
       window.__tsixSessionGuard?.dispose(true);
@@ -27,7 +31,7 @@ async function startNativeEnhanced() {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   let build = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 3 && bridgeReady(); attempt++) {
     // The native bridge can appear before its callback is ready. Keep the
     // resolver alive and bound each attempt so a lost callback cannot hang startup.
     build = await new Promise(resolve => {
@@ -45,18 +49,20 @@ async function startNativeEnhanced() {
     if (Number.isInteger(build)) break;
     if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 250));
   }
-  if (!Number.isInteger(build)) {
-    state.status = 'unavailable';
-    state.error = 'TeamSpeak did not answer its version check';
-    window.__tsixSessionGuard?.dispose(true);
-    return;
-  }
-  if (build !== release.supportedClient.build) {
-    state.status = 'unsupported';
-    window.__tsixSessionGuard?.dispose(true);
-    return;
-  }
-  window.__tsixSessionGuard?.finishSetup?.();
+  // Verified: the native loader matched the exact client images this release
+  // was tested with. Any other TeamSpeak build on the same CEF ABI runs in
+  // compatibility mode: each helper attaches in isolation, a helper that fails
+  // stays off, session replay is disabled and updates keep working, so a
+  // TeamSpeak update never requires reinstalling TS6 Enhanced.
+  const verified = typeof nativeClient === 'object' && nativeClient?.verified === true && Number.isInteger(build);
+  state.build = Number.isInteger(build) ? build : null;
+  state.compatibility = verified ? 'verified' : 'unverified';
+  state.failed = [];
+  if (!Number.isInteger(build)) state.error = 'TeamSpeak did not answer its version check';
+  if (verified) window.__tsixSessionGuard?.finishSetup?.();
+  // Replaying a session needs the verified client. Release the startup guard
+  // now so TeamSpeak's own startup reconnects run normally.
+  else window.__tsixSessionGuard?.dispose(true);
   // The former official theme can still be selected after installing the native
   // loader. It is another version of our layout, not an independent user theme.
   // Suspend only that owned sheet in this document; retain the saved preference
@@ -178,13 +184,27 @@ async function startNativeEnhanced() {
   // Runtime-owned styles leave native Appearance settings untouched. Removing
   // the DLL removes these styles on next startup, including after a failed host.
   // Feature switches load first; every helper reads them while attaching.
-  if (!window.__tsixFeatures) attachFeatures();
-  if (!window.__tsixWorkspace) attachWorkspace();
-  if (!window.__tsixChat) attachChat();
-  if (!window.__tsixPokes) attachPokes();
-  if (!window.__tsixStreams) attachStreams();
+  // A helper that throws (for example after a TeamSpeak update changed what it
+  // relies on) stays off without taking the others or update support with it.
+  const attach = (name, attached, start) => {
+    if (attached()) return;
+    try {
+      start();
+    } catch (error) {
+      state.failed.push(name);
+      console.warn(`TS6 Enhanced: ${name} could not start`, error);
+    }
+  };
+  attach('features', () => window.__tsixFeatures, attachFeatures);
+  attach('workspace', () => window.__tsixWorkspace, attachWorkspace);
+  attach('chat', () => window.__tsixChat, attachChat);
+  attach('pokes', () => window.__tsixPokes, attachPokes);
+  attach('streams', () => window.__tsixStreams, attachStreams);
+  // The update dialog is the way out of an incompatible state; it must attach.
   attachManager();
-  if (release.updates?.sessionRestore === 1 && typeof attachSession === 'function') attachSession();
+  window.__tsixManager.setCompatibility?.({ verified, build: state.build, failed: [...state.failed] });
+  if (release.updates?.sessionRestore === 1 && typeof attachSession === 'function')
+    attach('session', () => false, attachSession);
   state.status = 'ready';
   const unavailable = (message, detail = 'Run the installer again to repair native update support.') =>
     window.__tsixManager.setState({ version: release.version, configured: false, busy: false, message, detail }, '');
@@ -345,7 +365,11 @@ async function startNativeEnhanced() {
     socket = new WebSocket(connection.endpoint, `tsix.v1.${connection.token}`);
     socket.onopen = () => {
       retry = 1000;
-      void request('/action', { action: 'ready', baseline }).catch(() => {});
+      void request('/action', {
+        action: 'ready',
+        baseline,
+        client: { build: state.build, verified, failed: [...state.failed] }
+      }).catch(() => {});
       for (const [id, entry] of recoveredDrafts) sendRecovered(id, entry);
     };
     socket.onmessage = event => {

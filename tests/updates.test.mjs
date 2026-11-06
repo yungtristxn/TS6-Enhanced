@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';import {mkdtemp,readFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,stageLatestUpdate,compatible,createUpdateSession} from '../tools/updates.mjs';
+import {version,compareVersions,displayVersion,selectRelease,releaseAsset,checkUpdate,verifyBytes,verifyInstaller,fetchBytes,stageUpdate,stageLatestUpdate,compatible,offerable,createUpdateSession} from '../tools/updates.mjs';
 const repo='example/layout',config={repository:repo,channel:'stable'};
 const body=Buffer.alloc(128);body.write('MZ');body.writeUInt32LE(64,60);body.writeUInt32LE(0x4550,64);body.writeUInt16LE(0x14c,68);
 const digest=b=>'sha256:'+createHash('sha256').update(b).digest('hex');
@@ -147,4 +147,24 @@ test('the slim update package is chosen only for an exactly matching installed r
  const path=await stageUpdate(found,join(root,'updates'),{fetcher:fetchFrom(withSlim),asset:found.slim});
  assert.ok(path.endsWith('TS6-Enhanced-1.1.0-Update.exe'));assert.deepEqual(await readFile(path),slimBody);
  await assert.rejects(stageUpdate(found,join(root,'updates'),{fetcher:fetchFrom(withSlim),asset:{...found.slim,name:'other.exe'}}),/Unexpected update package/);
+});
+
+test('after a TeamSpeak update, compatible-mode releases are offered without ever downgrading a verified install',async t=>{
+ const {mkdir,writeFile,rm}=await import('node:fs/promises');const root=await mkdtemp(join(tmpdir(),'tsix-offer-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(join(root,'html/client_ui'),{recursive:true});
+ await writeFile(join(root,'html/client_ui/main.js'),'js fixture');await writeFile(join(root,'html/client_ui/main.css'),'css fixture');
+ const exact={'html/client_ui/main.js':digest(Buffer.from('js fixture')).slice(7),'html/client_ui/main.css':digest(Buffer.from('css fixture')).slice(7)};
+ const other={'html/client_ui/main.js':'a'.repeat(64),'html/client_ui/main.css':'b'.repeat(64)};
+ const target=(resourceHashes,unverifiedClients)=>({manifest:{updates:unverifiedClients?{unverifiedClients:1}:{},supportedClient:{resourceHashes}}});
+ const current=value=>async()=>value;
+ // A release verified for this exact client is always offered.
+ assert.equal(await offerable(target(exact),root,current(true)),true);
+ assert.equal(await offerable(target(exact),root,current(false)),true);
+ // TeamSpeak updated itself: the installed release is no longer verified, so a
+ // newer release that runs in compatibility mode is offered.
+ assert.equal(await offerable(target(other,true),root,current(false)),true);
+ // A verified install is never traded for one that is not.
+ assert.equal(await offerable(target(other,true),root,current(true)),false);
+ // Releases without compatibility mode keep the exact requirement.
+ assert.equal(await offerable(target(other,false),root,current(false)),false);
 });

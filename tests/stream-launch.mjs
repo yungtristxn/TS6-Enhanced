@@ -11,7 +11,10 @@ const bundle=await readFile(`${clientPath}/html/client_ui/main.js`,'utf8');
 const release=JSON.parse(await readFile(new URL('../release.json',import.meta.url),'utf8'));
 assert.equal(createHash('sha256').update(bundle).digest('hex').toUpperCase(),release.supportedClient.resourceHashes['html/client_ui/main.js']);
 const module=id=>{const signature=`${id}:(e,t,n)=>{`,start=bundle.indexOf(signature)+signature.length;assert.ok(start>=signature.length);const end=/},\d+:\(e,t,n\)=>\{/.exec(bundle.slice(start));assert.ok(end);return bundle.slice(start,start+end.index)};
-const launch=module(28312),renderStart=launch.indexOf('const D=(0,w.A)(M,')+'const D=(0,w.A)(M,'.length;
+// The component binding's minified name changes between client builds.
+const launch=module(28312),renderBinding=/const [$\w]+=\(0,w\.A\)\(M,/.exec(launch);
+assert.ok(renderBinding);
+const renderStart=renderBinding.index+renderBinding[0].length;
 assert.ok(renderStart>20);
 const render=launch.slice(renderStart,launch.lastIndexOf(',[],!1,null,'));
 assert.ok(render.startsWith('function()')&&render.endsWith('}'));

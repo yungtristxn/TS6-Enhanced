@@ -48,4 +48,9 @@ for (const [name, file] of [
     throw Error(`Missing native compatibility metadata: ${file}`);
   header += `constexpr unsigned long TSIX_${name}_STAMP=${value.timestamp}UL,TSIX_${name}_SIZE=${value.imageSize}UL;\n`;
 }
+// The loader accepts any client on this CEF major version (the C API ABI);
+// the image values above only decide whether the client counts as verified.
+const cefMajor = release.supportedClient.cefMajor;
+if (!Number.isInteger(cefMajor) || cefMajor < 1) throw Error('Missing supported CEF major version');
+header += `constexpr int TSIX_CEF_MAJOR=${cefMajor};\n`;
 await writeFile(join(output, 'compatibility.h'), header);

@@ -11,9 +11,9 @@ const browser=await chromium.launch({headless:true}),checks=[],errors=[];
 try{
  const page=await browser.newPage();page.on('pageerror',error=>errors.push(error.message));
  await page.evaluate(source=>{const exports={},require=()=>{throw Error('Unexpected Vue dependency')};require.r=()=>{};require.d=(target,props)=>{for(const [key,get]of Object.entries(props))Object.defineProperty(target,key,{get})};new Function('e','t','n',source)({},exports,require);window.Vue=Object.getOwnPropertyNames(exports).map(key=>exports[key]).find(value=>value?.version==='2.7.16');if(!Vue)throw Error('Missing native Vue runtime')},vueSource);
- async function setup({restarted=false,missingSource=false,wrongServer=false,wrongOwner=false,wrongSelf=false,wrongChannel=false,failedView=false,moveDuringCreate=false,expireDuringCreate=false}={}){
+ async function setup({restarted=false,missingSource=false,wrongServer=false,wrongOwner=false,wrongSelf=false,wrongChannel=false,failedView=false,moveDuringCreate=false,expireDuringCreate=false,client={compatibility:'verified',build:1791901251}}={}){
   await page.setContent('<main></main>');
-  await page.evaluate(({restarted,missingSource,wrongServer,wrongOwner,wrongSelf,wrongChannel,failedView,moveDuringCreate,expireDuringCreate})=>{
+  await page.evaluate(({restarted,missingSource,wrongServer,wrongOwner,wrongSelf,wrongChannel,failedView,moveDuringCreate,expireDuringCreate,client})=>{
    const events=[],workflow={restoreOpenedActivities:!restarted,autoConnectSkipActivityCheck:restarted?0:1};
    const info={address:'fixture.invalid',port:9987,identity:'identity-fixture',nickname:'Fixture',server_password:'fixture-secret',default_channel_id:'7',default_channel_password:''};
    const remote={isInbound:true,idData:{serverSessionId:'remote-session'},client:{properties:{uniqueIdentifier:wrongOwner?'different-owner':'remote-user'}},status:restarted?0:4,volume:1.7,muted:true,hidden:false,
@@ -65,11 +65,13 @@ try{
      callback({err:0,payload:{}});
     }
    };
+   // The native runtime marks the client before attaching this adapter.
+   window.__tsixNative=client;
    window.lab={app,api,events,remote,stream,recoveryCallbacks:new Set(),recovered:[]};
    window.__tsixSessionRecovered=(id,indices)=>lab.recovered.push({id,indices});
    window.__tsixStreams={volumeForSession:session=>session.volume,restoreVolume(session,value){events.push(['volume',value]);session.volume=value}};
    window.__tsixSessionGuard={supported:true,early:true,active:restarted,release(){this.active=false;return{restoreOpenedActivities:true,autoConnectSkipActivityCheck:1}}};
-  },{restarted,missingSource,wrongServer,wrongOwner,wrongSelf,wrongChannel,failedView,moveDuringCreate,expireDuringCreate});
+  },{restarted,missingSource,wrongServer,wrongOwner,wrongSelf,wrongChannel,failedView,moveDuringCreate,expireDuringCreate,client});
   await page.evaluate(source);
  }
  await setup();const snapshot=await page.evaluate(()=>__tsixUpdateSession.capture());
@@ -259,5 +261,33 @@ try{
  await page.evaluate(()=>lab.api.activeCallSessions.push({}));
  await assert.rejects(page.evaluate(()=>__tsixUpdateSession.capture()),/private or group calls/);
  checks.push('Expired journals restore preferences only; state changes and unsupported calls block restart preparation');
+ // Compatibility mode: an update restart keeps the close preference and startup
+ // workflow only. Nothing is replayed on an unverified or changed client.
+ const replay=()=>page.evaluate(()=>lab.events.some(e=>['connect','voice','capture','active','publishSession','createOutboundSession','join','view'].includes(e[0])));
+ await setup();await page.evaluate(()=>lab.api.preferences.setValue('application.ignore_exit_request',true));
+ const preferences=await page.evaluate(()=>__tsixUpdateSession.capture({scope:'preferences'}));
+ assert.deepEqual({scope:preferences.scope,build:preferences.build,connections:preferences.connections,drafts:preferences.drafts,views:preferences.views,closePolicy:preferences.closePolicy,active:preferences.activeServer},
+  {scope:'preferences',build:1791901251,connections:[],drafts:[],views:[],closePolicy:{ignoreExit:true},active:''});
+ await page.evaluate(snapshot=>__tsixUpdateSession.prepare(snapshot),preferences);
+ assert.equal(await page.evaluate(()=>lab.api.preferences.getValue('application.ignore_exit_request')),false,'Hide on Close still yields to the update restart');
+ await page.evaluate(snapshot=>__tsixUpdateSession.cancel(snapshot),preferences);
+ assert.equal(await page.evaluate(()=>lab.api.preferences.getValue('application.ignore_exit_request')),true);
+ await setup({client:{compatibility:'unverified',build:1793887000}});
+ const forced=await page.evaluate(()=>__tsixUpdateSession.capture());
+ assert.deepEqual({scope:forced.scope,build:forced.build,connections:forced.connections.length},{scope:'preferences',build:1793887000,connections:0},'An unverified client never captures a replayable session');
+ for(const [client,reason] of [[{compatibility:'unverified',build:1791901251},/not verified/],[{compatibility:'verified',build:1793887000},/updated during the restart/],[null,/not verified/]]){
+  await setup({restarted:true,client});
+  result=await page.evaluate(snapshot=>__tsixUpdateSession.restore({snapshot,restoreSession:true}),{...snapshot,closePolicy:{ignoreExit:true}});
+  assert.match(result.warnings.join(' '),reason);
+  assert.deepEqual({preferences:result.preferencesRestored,drafts:result.draftsRestored,recovered:result.recoveredDrafts},{preferences:true,drafts:false,recovered:[]});
+  assert.equal(await replay(),false);
+  assert.equal(await page.evaluate(()=>lab.api.preferences.getValue('application.ignore_exit_request')),true);
+  assert.deepEqual(await page.evaluate(()=>({guard:__tsixSessionGuard.active,tabs:lab.events.some(e=>e[0]==='tabs')})),{guard:false,tabs:true},'TeamSpeak reopens its saved tabs normally');
+ }
+ await setup({restarted:true});result=await page.evaluate(snapshot=>__tsixUpdateSession.restore({snapshot,restoreSession:true}),{...preferences,closePolicy:{ignoreExit:true}});
+ assert.deepEqual(result,{warnings:[],preferencesRestored:true,draftsRestored:true,recoveredDrafts:[]});
+ assert.equal(await replay(),false);
+ assert.equal(await page.evaluate(()=>lab.api.preferences.getValue('application.ignore_exit_request')),true);
+ checks.push('Unverified or changed clients restart with preferences only: Hide on Close is handled, nothing is replayed, drafts stay encrypted and TeamSpeak reopens its own tabs');
  assert.deepEqual(errors,[]);console.log(JSON.stringify({result:'PASS',checks,errors,scope:'Native adapter contracts with recording bridge; no live server or capture was used'},null,2));
 }finally{await browser.close()}

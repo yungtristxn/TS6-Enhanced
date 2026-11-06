@@ -224,7 +224,7 @@ export async function stageLatestUpdate(
   config,
   client,
   root,
-  { onSelected = () => {}, runtimePath = null, ...options } = {}
+  { onSelected = () => {}, runtimePath = null, accept = update => compatible(update, client), ...options } = {}
 ) {
   const update = await checkUpdate(current, config, { ...options, fresh: true });
   if (!update) return null;
@@ -233,7 +233,7 @@ export async function stageLatestUpdate(
     throw Error(
       'This release does not support session restoration. Install it manually when your session is finished.'
     );
-  if (!(await compatible(update, client))) throw Error('The latest release needs a different TeamSpeak version');
+  if (!(await accept(update))) throw Error('The latest release needs a different TeamSpeak version');
   await onSelected(update);
   const asset = await chooseInstaller(update, runtimePath);
   return { update, asset, path: await stageUpdate(update, root, { ...options, asset }) };
@@ -278,8 +278,29 @@ export async function stageUpdate(update, root, { asset = update.installer, ...o
 
 // A queued installer is bookkeeping, not a reason to stop checking for newer
 // releases. Every confirmed update installs the complete package and restarts.
-export async function createUpdateSession(release, client, root, { fetcher = fetch } = {}) {
+// A release is offered when it was verified with this exact client, or when
+// it can run in compatibility mode and the installed release is not verified
+// with this client either (TeamSpeak updated itself). A verified installation
+// is never replaced by one that is not.
+export async function offerable(update, client, currentVerified) {
+  if (await compatible(update, client)) return true;
+  if (update.manifest.updates?.unverifiedClients !== 1) return false;
+  return !(await currentVerified());
+}
+export async function createUpdateSession(
+  release,
+  client,
+  root,
+  {
+    fetcher = fetch,
+    currentVerified = () => compatible({ manifest: release }, client).catch(() => false),
+    // Whether the restart replays the session (verified client) or keeps
+    // preferences only; it decides the wording of a waiting update.
+    restoresSession = () => true
+  } = {}
+) {
   const receipt = join(root, 'pending-update.json');
+  const accept = update => offerable(update, client, currentVerified);
   let queued = await readJSON(receipt).catch(() => null),
     applyError = null;
   const readApplyError = async () => {
@@ -310,7 +331,11 @@ export async function createUpdateSession(release, client, root, { fetcher = fet
     const message = failed
       ? 'Update couldn’t finish. It will retry when you next open TeamSpeak.'
       : pending
-        ? 'Version ' + pending + ' is ready. Restart and restore your session to apply it.'
+        ? 'Version ' +
+          pending +
+          (restoresSession()
+            ? ' is ready. Restart and restore your session to apply it.'
+            : ' is ready. Restart TeamSpeak to apply it.')
         : 'You’re up to date.';
     return {
       version: displayVersion(release.version),
@@ -325,7 +350,7 @@ export async function createUpdateSession(release, client, root, { fetcher = fet
     async check() {
       await readApplyError();
       const update = await checkUpdate(newest(), release.updates, { fetcher, fresh: true });
-      if (update && !(await compatible(update, client)))
+      if (update && !(await accept(update)))
         return { ...snapshot(), message: 'This update needs a different TeamSpeak version.' };
       return update
         ? {
@@ -340,6 +365,7 @@ export async function createUpdateSession(release, client, root, { fetcher = fet
       const selected = await stageLatestUpdate(release.version, release.updates, client, join(root, 'updates'), {
         fetcher,
         allowCurrent: repair,
+        accept,
         runtimePath: join(root, 'app', 'runtime', 'node.exe'),
         onSelected: update => {
           if (compareVersions(update.version, newest()) < 0)

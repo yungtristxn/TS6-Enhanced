@@ -37,6 +37,8 @@
     #tsix-manager p{margin:0;line-height:20px;font-weight:400;overflow-wrap:anywhere}
     #tsix-manager [data-overview]{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
     #tsix-manager [data-status]{color:var(--tsix-muted)}
+    #tsix-manager [data-compat]{padding:8px 12px;border-left:3px solid var(--tsix-chrome-accent,#8bc4ff);border-radius:var(--tsix-chrome-radius,4px);background:var(--tsix-control-bg,#27374b)}
+    #tsix-manager [data-compat] strong{display:block;font-weight:600}
     #tsix-manager [data-update-action]{display:flex;gap:8px;flex-wrap:wrap}
     #tsix-manager [data-update-panel]{display:flex;flex-direction:column;gap:12px;padding-top:12px}
     #tsix-manager [data-uninstall-row]{margin-top:4px;padding-top:12px;border-top:1px solid var(--tsix-chrome-border,#3b4c61)}
@@ -73,7 +75,7 @@
     #tsix-manager [data-toast-actions]{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
     #tsix-manager [hidden]{display:none!important}
     @media(max-width:420px){#tsix-manager dialog{padding:20px}}
-    @media(forced-colors:active){#tsix-manager dialog,#tsix-manager [data-toast]{border-color:CanvasText}#tsix-manager button,[data-tsix-manager-open]{border:1px solid ButtonText}#tsix-manager [data-remove]{color:ButtonText}#tsix-manager button:disabled{opacity:1;color:GrayText;border-color:GrayText}#tsix-manager button:focus-visible,#tsix-manager summary:focus-visible,[data-tsix-manager-open]:focus-visible{outline-color:Highlight}#tsix-manager [data-status],#tsix-manager [data-version],#tsix-manager [data-consequence],#tsix-manager [data-feature] small{color:CanvasText}[data-tsix-manager-open][data-update]::after{background:Highlight}#tsix-manager [role=tab][aria-selected=true]{outline:1px solid Highlight;outline-offset:-1px}#tsix-manager [data-feature] input{border-color:ButtonText}#tsix-manager [data-feature] input::before{background:ButtonText}#tsix-manager [data-feature] input:checked{background:Highlight}#tsix-manager [data-feature] input:checked::before{background:HighlightText}}
+    @media(forced-colors:active){#tsix-manager dialog,#tsix-manager [data-toast]{border-color:CanvasText}#tsix-manager button,[data-tsix-manager-open]{border:1px solid ButtonText}#tsix-manager [data-remove]{color:ButtonText}#tsix-manager button:disabled{opacity:1;color:GrayText;border-color:GrayText}#tsix-manager button:focus-visible,#tsix-manager summary:focus-visible,[data-tsix-manager-open]:focus-visible{outline-color:Highlight}#tsix-manager [data-compat]{border:1px solid CanvasText}#tsix-manager [data-status],#tsix-manager [data-version],#tsix-manager [data-consequence],#tsix-manager [data-feature] small{color:CanvasText}[data-tsix-manager-open][data-update]::after{background:Highlight}#tsix-manager [role=tab][aria-selected=true]{outline:1px solid Highlight;outline-offset:-1px}#tsix-manager [data-feature] input{border-color:ButtonText}#tsix-manager [data-feature] input::before{background:ButtonText}#tsix-manager [data-feature] input:checked{background:Highlight}#tsix-manager [data-feature] input:checked::before{background:HighlightText}}
   `;
   const make = (tag, attribute, text) => {
     const node = document.createElement(tag);
@@ -242,8 +244,16 @@
   close.title = 'Close';
   const updatePanel = make('div', 'data-update-panel'),
     uninstallRow = make('div', 'data-uninstall-row');
+  // Shown when TeamSpeak updated itself to a build this version was not
+  // verified with. Everything that could start keeps working.
+  const compatNotice = make('div', 'data-compat'),
+    compatTitle = make('strong', null, 'Compatibility mode'),
+    compatText = make('p');
+  compatNotice.setAttribute('role', 'note');
+  compatNotice.append(compatTitle, compatText);
+  compatNotice.hidden = true;
   uninstallRow.append(remove);
-  updatePanel.append(status, updateActions, details, uninstallRow);
+  updatePanel.append(compatNotice, status, updateActions, details, uninstallRow);
   panels.get('updates').append(updatePanel);
   overview.append(tablist, ...panels.values());
   const header = make('div', 'data-header');
@@ -273,6 +283,8 @@
   host.append(style, dialog, toast);
   root.append(host);
   let state = {},
+    compatibility = { verified: true, build: null, failed: [] },
+    compatShown = false,
     nonce = '',
     pending = null,
     notified = '',
@@ -303,8 +315,11 @@
     toast.hidden = true;
     reset();
     renderFeatures();
-    // A waiting update opens on its tab; otherwise the last tab used.
-    select(state.available || state.pending || !window.__tsixFeatures ? 'updates' : selected);
+    // A waiting update opens on its tab, and so does compatibility mode once;
+    // otherwise the last tab used.
+    const compat = !compatibility.verified && !compatShown;
+    compatShown = true;
+    select(state.available || state.pending || !window.__tsixFeatures || compat ? 'updates' : selected);
     if (!dialog.open) dialog.showModal();
     button.setAttribute('aria-expanded', 'true');
     close.focus();
@@ -344,7 +359,9 @@
     dialog.setAttribute('aria-describedby', `${warning.id} ${consequence.id}`);
     consequence.textContent =
       action === 'update'
-        ? 'Reconnect to your servers and channels, restore mute state, and resume your shared streams. Watched streams may need to be rejoined.'
+        ? state.restartRestore === false
+          ? 'TeamSpeak reopens your saved servers as it normally does at startup. Mute state and streams aren’t restored on this TeamSpeak version.'
+          : 'Reconnect to your servers and channels, restore mute state, and resume your shared streams. Watched streams may need to be rejoined.'
         : 'Restores your previous appearance. Your accounts and chats stay.';
     accept.textContent = action === 'update' ? 'Restart and update' : 'Uninstall';
     accept.toggleAttribute('data-primary', action === 'update');
@@ -396,7 +413,37 @@
   const observer = new MutationObserver(mount);
   observer.observe(document.body, { childList: true, subtree: true });
   mount();
+  const helperNames = {
+    features: 'feature switches',
+    workspace: 'layout',
+    chat: 'chat',
+    pokes: 'poke alerts',
+    streams: 'streams',
+    session: 'session restore'
+  };
+  const renderCompatibility = () => {
+    const failed = compatibility.failed.map(name => helperNames[name] || name);
+    const parts = [];
+    if (!compatibility.verified)
+      parts.push(
+        `TeamSpeak was updated${compatibility.build ? ` (build ${compatibility.build})` : ''} and isn’t verified with this TS6 Enhanced version yet. Everything that starts keeps working, and updates still install here.`
+      );
+    if (failed.length) parts.push(`Couldn’t start: ${failed.join(', ')}.`);
+    if (!compatibility.verified) parts.push('Check for updates to get a version made for this TeamSpeak release.');
+    compatTitle.textContent = compatibility.verified ? 'Some features are off' : 'Compatibility mode';
+    compatText.textContent = parts.join(' ');
+    compatNotice.hidden = !parts.length;
+    tabs.get('updates').toggleAttribute('data-update', !!(state.available || state.pending || !compatNotice.hidden));
+  };
   window.__tsixManager = {
+    setCompatibility(value) {
+      compatibility = {
+        verified: value?.verified !== false,
+        build: Number.isSafeInteger(value?.build) ? value.build : null,
+        failed: Array.isArray(value?.failed) ? value.failed.filter(name => typeof name === 'string') : []
+      };
+      renderCompatibility();
+    },
     setState(next, token) {
       // Polls may refresh transport metadata without changing anything visible.
       // Avoid rewriting live status text or waking our own mount observer then.
@@ -430,7 +477,7 @@
       errorText.textContent = state.detail || '';
       if (!state.detail) details.open = false;
       button.toggleAttribute('data-update', !!state.available);
-      tabs.get('updates').toggleAttribute('data-update', !!(state.available || state.pending));
+      renderCompatibility();
       button.title = state.available ? 'TS6 Enhanced — update available' : 'TS6 Enhanced';
       button.setAttribute('aria-label', button.title);
       if (toastRunning) {
@@ -440,7 +487,10 @@
       if (!state.available) toast.hidden = true;
       if (state.available && state.available !== notified) {
         notified = state.available;
-        message.textContent = `TS6 Enhanced ${state.available}. TeamSpeak restarts briefly and restores your session.`;
+        message.textContent =
+          state.restartRestore === false
+            ? `TS6 Enhanced ${state.available}. TeamSpeak restarts briefly.`
+            : `TS6 Enhanced ${state.available}. TeamSpeak restarts briefly and restores your session.`;
         showToast();
         toast.hidden = dialog.open;
       }

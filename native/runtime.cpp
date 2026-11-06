@@ -6,6 +6,9 @@
 #include "runtime.h"
 static wchar_t rendererEndpoint[96]{},rendererToken[65]{};
 static bool rendererResumeSession=false;
+static volatile LONG clientVerified=0;
+
+void SetClientVerified(bool verified) { InterlockedExchange(&clientVerified, verified ? 1 : 0); }
 
 void SetEnhancedConnection(const char16_t* endpoint,size_t endpointLength,const char16_t* token,size_t tokenLength,bool resumeSession) {
     if(!endpoint||!token||endpointLength>=96||tokenLength!=64)return;
@@ -14,14 +17,20 @@ void SetEnhancedConnection(const char16_t* endpoint,size_t endpointLength,const 
     rendererResumeSession=resumeSession;
 }
 
-bool SupportedImage(HMODULE module, DWORD stamp, DWORD size) {
-    if (!module) return false;
+static const IMAGE_NT_HEADERS64* ImageHeaders(HMODULE module) {
+    if (!module) return nullptr;
     auto base = reinterpret_cast<const BYTE*>(module);
     auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0 || dos->e_lfanew > 4096) return false;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0 || dos->e_lfanew > 4096) return nullptr;
     auto nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
-    return nt->Signature == IMAGE_NT_SIGNATURE && nt->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64 &&
-        nt->FileHeader.TimeDateStamp == stamp && nt->OptionalHeader.SizeOfImage == size;
+    return nt->Signature == IMAGE_NT_SIGNATURE && nt->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64 ? nt : nullptr;
+}
+
+bool NativeImage(HMODULE module) { return ImageHeaders(module) != nullptr; }
+
+bool SupportedImage(HMODULE module, DWORD stamp, DWORD size) {
+    auto nt = ImageHeaders(module);
+    return nt && nt->FileHeader.TimeDateStamp == stamp && nt->OptionalHeader.SizeOfImage == size;
 }
 
 bool StartEnhancedHost(const std::wstring& directory) {
@@ -129,6 +138,9 @@ std::u16string EnhancedScript(HMODULE module) {
     std::u16string result=u"(()=>{const connection=";
     if(valid){result+=u"{endpoint:'";result.append(reinterpret_cast<char16_t*>(endpoint));result+=u"',token:'";result.append(reinterpret_cast<char16_t*>(token));result+=rendererResumeSession?u"',resumeSession:true};":u"',resumeSession:false};";}
     else result+=u"null;";
+    // Verified means the exact client images this release was tested against.
+    // Other builds of the same CEF ABI run in compatibility mode.
+    result+=InterlockedCompareExchange(&clientVerified,0,0)?u"const nativeClient={verified:true};":u"const nativeClient={verified:false};";
     // A single raw CSS resource serves early loading and the JS fallback.
     // Escape as JSON here instead of shipping another copy inside payload.js.
     result+=u"const css=";AppendJsonString(result,css);result+=u';';

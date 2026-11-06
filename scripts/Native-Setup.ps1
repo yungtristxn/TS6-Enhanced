@@ -64,12 +64,10 @@ try {
     if($Action -eq 'Install'){
         $release=Get-Content -LiteralPath (Join-Path $project 'release.json') -Raw | ConvertFrom-Json
         if($release.nativeLoader.schema -ne 1){throw 'This setup requires a native TS6 Enhanced package.'}
-        foreach($image in $release.supportedClient.nativeImages.PSObject.Properties){
-            if((Get-FileHash -LiteralPath (Join-Path $client $image.Name)).Hash -ine $image.Value.sha256){throw "Unsupported native TeamSpeak file: $($image.Name)"}
-        }
-        foreach($resource in $release.supportedClient.resourceHashes.PSObject.Properties){
-            if((Get-FileHash -LiteralPath (Join-Path $client $resource.Name)).Hash -ine $resource.Value){throw 'Unsupported or modified TS6 UI resources'}
-        }
+        # Throws for a client the loader cannot run; another build of the same
+        # CEF major version installs and runs in compatibility mode.
+        $compatibility=Get-LayoutClientCompatibility $release $client
+        if($compatibility -ne 'verified'){Write-Warning "TeamSpeak differs from the verified TS6 $($release.supportedClient.version) build; TS6 Enhanced will run in compatibility mode."}
         $payload=@('release.json','native\CEF-LICENSE.txt','runtime\node.exe','runtime\LICENSE','tools\native-manager.mjs','tools\session-state.mjs','tools\updates.mjs','tools\install-state.mjs',
             'scripts\Native-Setup.ps1','scripts\Startup-Update.ps1','scripts\Restart-Update.ps1','scripts\Update-Progress.ps1','scripts\Session-State.ps1','scripts\Runtime.ps1','scripts\Maintenance.ps1','scripts\Start-Inspection.ps1','scripts\Restore-LegacyShortcut.ps1','scripts\Remove-LegacyTheme.ps1',
             'tools\restore.mjs','tools\appearance.mjs','tools\cdp.mjs')

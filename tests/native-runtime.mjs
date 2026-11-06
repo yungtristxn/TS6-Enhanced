@@ -47,12 +47,12 @@ try{
    window.attachPokes=()=>{fixture.attaches.pokes++;window.__tsixPokes={dispose(){throw Error('Healthy poke helper must survive updates')}}};
    window.attachWorkspace=()=>{fixture.attaches.workspace++;window.__tsixWorkspace={refresh(){fixture.refreshes++},dispose(){throw Error('Healthy workspace must survive updates')}}};
    window.attachStreams=()=>{fixture.attaches.streams++;window.__tsixStreams={sync(){fixture.syncs++},dispose(){throw Error('Healthy streams must survive updates')}}};
-   window.attachManager=()=>{fixture.attaches.manager++;window.__tsixManager={setState(state,token){fixture.states.push({state,token})}}};
+   window.attachManager=()=>{fixture.attaches.manager++;window.__tsixManager={setState(state,token){fixture.states.push({state,token})},setCompatibility(value){fixture.compatibility=value}}};
   },{build,ready,dropFirst,custom,storageBlocked,theme});
  };
  // Chromium fixtures do not implement TeamSpeak's private tsui scheme. Supply
  // only that document address lexically; all runtime and DOM code is unchanged.
- const start=(address=nativeLocation,transport=connection)=>page.evaluate(`((connection,release,css,location)=>{${source}\n})(${JSON.stringify(transport)},${JSON.stringify(release)},${JSON.stringify(css)},${JSON.stringify(address)})`);
+ const start=(address=nativeLocation,transport=connection,client={verified:true})=>page.evaluate(`((connection,nativeClient,release,css,location)=>{${source}\n})(${JSON.stringify(transport)},${JSON.stringify(client)},${JSON.stringify(release)},${JSON.stringify(css)},${JSON.stringify(address)})`);
  await setup({ready:false});await start();
  assert.equal(await page.evaluate(()=>__tsixNative.status),'waiting');
  assert.deepEqual(await page.evaluate(()=>fixture.attaches),{features:0,workspace:0,chat:0,pokes:0,streams:0,manager:0});
@@ -146,13 +146,34 @@ try{
  for(const address of [{...nativeLocation,hostname:'extension'},{...nativeLocation,pathname:'/other.html'},{...nativeLocation,search:'?popup=1'}]){
   await setup();await start(address);assert.equal(await page.evaluate(()=>!!window.__tsixNative),false);
  }
- await setup({build:1});await start();await page.waitForFunction(()=>__tsixNative.status==='unsupported');
- assert.deepEqual(await page.evaluate(()=>fixture.attaches),{features:0,workspace:0,chat:0,pokes:0,streams:0,manager:0});
- assert.equal(await page.locator('#tsix-native-style').count(),0);
+ // A TeamSpeak update the loader did not verify: everything attaches, the
+ // client is reported, and update support stays connected.
+ const unverified={verified:false},all={features:1,workspace:1,chat:1,pokes:1,streams:1,manager:1};
+ await setup({build:1793887000});await start(nativeLocation,connection,unverified);
+ await page.waitForFunction(()=>__tsixNative.status==='ready'&&fixture.requests.some(r=>r.data.action==='ready'));
+ assert.deepEqual(await page.evaluate(()=>({mode:__tsixNative.compatibility,build:__tsixNative.build,failed:__tsixNative.failed})),{mode:'unverified',build:1793887000,failed:[]});
+ assert.deepEqual(await page.evaluate(()=>fixture.attaches),all);
+ assert.equal(await page.locator('#tsix-native-style').count(),1);
+ assert.deepEqual(await page.evaluate(()=>fixture.compatibility),{verified:false,build:1793887000,failed:[]});
+ assert.deepEqual(await page.evaluate(()=>fixture.requests.find(r=>r.data.action==='ready').data.client),{build:1793887000,verified:false,failed:[]});
+ assert.equal(await page.evaluate(()=>fixture.sockets.length),1);
+ // Verified images still need a reported build before session replay is allowed.
+ await setup({build:null});await start();await page.waitForFunction(()=>__tsixNative.status==='ready');
+ assert.deepEqual(await page.evaluate(()=>({mode:__tsixNative.compatibility,build:__tsixNative.build})),{mode:'unverified',build:null});
+ assert.deepEqual(await page.evaluate(()=>fixture.attaches),all);
+ // A helper that throws stays off; the others and the update dialog still attach.
+ await setup();await page.evaluate(()=>{window.attachChat=()=>{fixture.attaches.chat++;throw Error('Changed vendor API')}});
+ await start(nativeLocation,connection,unverified);await page.waitForFunction(()=>__tsixNative.status==='ready');
+ assert.deepEqual(await page.evaluate(()=>__tsixNative.failed),['chat']);
+ assert.deepEqual(await page.evaluate(()=>fixture.attaches),all);
+ assert.deepEqual(await page.evaluate(()=>fixture.compatibility.failed),['chat']);
+ await page.waitForFunction(()=>fixture.requests.some(r=>r.data.action==='ready'));
+ assert.deepEqual(await page.evaluate(()=>fixture.requests.find(r=>r.data.action==='ready').data.client.failed),['chat']);
+ checks.push('Unverified TeamSpeak builds run in compatibility mode: helpers attach in isolation, failures stay off and update support stays connected');
  await setup();await start(nativeLocation,null);await page.waitForFunction(()=>__tsixNative.status==='ready');
  assert.equal(await page.evaluate(()=>fixture.states.at(-1).state.configured),false);
  assert.equal(await page.evaluate(()=>fixture.sockets.length),0);
- checks.push('Wrong document and unsupported builds stay untouched; a missing update connection leaves the interface usable');
+ checks.push('Wrong documents stay untouched; a missing update connection leaves the interface usable');
  await setup({storageBlocked:true});await start();await page.waitForFunction(()=>__tsixNative.status==='ready');
  assert.deepEqual(await page.evaluate(()=>fixture.attaches),{features:1,workspace:1,chat:1,pokes:1,streams:1,manager:1});
  assert.equal(await page.evaluate(()=>fixture.sockets.length),0);

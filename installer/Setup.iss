@@ -222,9 +222,9 @@ begin
     Result := 'Another TS6 Enhanced operation is running, or its recovery path is unavailable. Finish it and retry.';
     exit;
   end;
-  // A queued update was verified against this release (installer checksum,
-  // TeamSpeak resource and native image hashes) before TeamSpeak closed, and
-  // the post-install step repeats every check before activating anything.
+  // A queued update was verified against this release (installer checksum and
+  // TeamSpeak compatibility) before TeamSpeak closed, and the post-install
+  // step repeats every check before activating anything.
   // Skip the separate preparation pass and its temporary package copy.
   if ExpandConstant('{param:TSIXDEFERRED|0}') = '1' then exit;
   ExtractTemporaryFiles('{tmp}\tsix-setup\*');

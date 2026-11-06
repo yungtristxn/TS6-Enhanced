@@ -16,7 +16,11 @@ export function validateSessionSnapshot(value) {
   if (
     !object(value) ||
     value.schema !== 1 ||
-    value.build !== 1791901251 ||
+    // The client build that captured it; the renderer replays only on that
+    // same verified build. 0 means the client did not report one.
+    !Number.isSafeInteger(value.build) ||
+    value.build < 0 ||
+    ![undefined, 'full', 'preferences'].includes(value.scope) ||
     !Number.isSafeInteger(value.capturedAt) ||
     !Array.isArray(value.connections) ||
     value.connections.length > 8 ||
@@ -31,6 +35,16 @@ export function validateSessionSnapshot(value) {
   )
     fail();
   if (Buffer.byteLength(JSON.stringify(value), 'utf8') > 65536) fail();
+  // A preferences-only snapshot carries nothing that could be replayed.
+  if (
+    value.scope === 'preferences' &&
+    (value.connections.length ||
+      value.activeServer ||
+      value.captureServer ||
+      value.drafts?.length ||
+      value.views?.length)
+  )
+    fail();
   if (
     value.closePolicy !== undefined &&
     (!object(value.closePolicy) ||

@@ -5,7 +5,8 @@ const native=await readFile(clientPath+'/html/client_ui/main.js','utf8');
 const release=JSON.parse(await readFile(new URL('../release.json',import.meta.url),'utf8'));
 assert.equal(createHash('sha256').update(native).digest('hex').toUpperCase(),release.supportedClient.resourceHashes['html/client_ui/main.js']);
 assert.match(native,/this\.restoreOpenedActivities=!0/);
-assert.match(native,/this\.autoConnectSkipActivityCheck=\$e\.OnlyConnectToRestoredActivity/);
+// Minified aliases change between client builds; the default value does not.
+assert.match(native,/this\.autoConnectSkipActivityCheck=[$\w]+\.OnlyConnectToRestoredActivity/);
 assert.match(native,/e\[e\.OnlyConnectToRestoredActivity=1\]/);
 assert.ok(native.includes('JsonBlobSaved:"jsonBlobSaved"'));
 assert.ok(native.includes('this.onUserPreferenceJsonChanged(e.payload)'));

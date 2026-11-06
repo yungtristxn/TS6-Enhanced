@@ -48,7 +48,9 @@ if($Test){
     $commands+=@(
         ('cl /nologo /MT /O2 /W4 /WX /EHsc /guard:cf /std:c++20 /DUNICODE /D_UNICODE /I"'+$SdkDirectory+'" /I"'+$OutputDirectory+'" "'+$project+'\tests\css-delivery.cpp" bcrypt.lib /Fe:css-delivery-test.exe /link /DYNAMICBASE /NXCOMPAT'),
         'if errorlevel 1 exit /b 1',
-        'css-delivery-test.exe',
+        # Explicit path: cmd skips the current folder when
+        # NoDefaultCurrentDirectoryInExePath is set.
+        '.\css-delivery-test.exe',
         'if errorlevel 1 exit /b 1'
     )
 }

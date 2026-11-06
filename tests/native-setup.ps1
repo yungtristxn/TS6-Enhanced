@@ -2,6 +2,7 @@
 # File-only fixture: never executes the dummy client, node or DLL.
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
+. (Join-Path $project 'scripts\Runtime.ps1')
 $scratch=Join-Path $project ('.local\native-setup-tests\'+[guid]::NewGuid().ToString('N'))
 $source=Join-Path $scratch 'package'
 $savedLocalData=$env:LOCALAPPDATA
@@ -69,5 +70,22 @@ class Fixture { static int Main(string[] args) { File.WriteAllLines(Environment.
     & $setup -Action Uninstall
     Check (!(Test-Path -LiteralPath $dll) -and !(Test-Path -LiteralPath $receipt)) 'Owned native installation was not removed'
     Check (Test-Path -LiteralPath (Join-Path $client 'TeamSpeak.exe')) 'Vendor client was removed'
-    Write-Output 'PASS: native install/update/removal, recovery ownership, and preservation of unrelated files.'
+    # TeamSpeak updated itself: a build on the same CEF engine installs in
+    # compatibility mode; another engine is refused before anything changes.
+    'patched by TeamSpeak' | Set-Content -LiteralPath (Join-Path $client 'TeamSpeak.dll')
+    $refused=$false;try{& $setup}catch{$refused=$_.Exception.Message.Contains('browser engine')}
+    Check ($refused -and !(Test-Path -LiteralPath $dll) -and !(Test-Path -LiteralPath $receipt)) 'A client without a recognised CEF engine was not refused before installing'
+    $engineSource=Join-Path $scratch 'engine.cs'
+    "[assembly: System.Reflection.AssemblyFileVersion(`"$($release.supportedClient.cefMajor).3.15.0`")] class Engine {}" | Set-Content -LiteralPath $engineSource
+    & (Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') /nologo /target:library ("/out:"+(Join-Path $client 'libcef.dll')) $engineSource
+    if($LASTEXITCODE){throw 'Fixture engine compilation failed'}
+    Check ((Get-LayoutClientCompatibility $release $client) -eq 'unverified') 'A same-engine TeamSpeak build was not reported as unverified'
+    & $setup -WarningVariable compatibilityWarning -WarningAction SilentlyContinue
+    Check ((Test-Path -LiteralPath $dll) -and (Test-Path -LiteralPath $receipt)) 'A same-engine TeamSpeak build was not installed'
+    Check (($compatibilityWarning -join ' ') -match 'compatibility mode') 'Compatibility mode was not reported'
+    & $setup -Action Uninstall
+    Remove-Item -LiteralPath (Join-Path $client 'html\client_ui\main.js')
+    $refused=$false;try{& $setup}catch{$refused=$_.Exception.Message.Contains('TeamSpeak is incomplete')}
+    Check ($refused -and !(Test-Path -LiteralPath $dll)) 'An incomplete client was not refused'
+    Write-Output 'PASS: native install/update/removal, recovery ownership, preservation of unrelated files, compatibility-mode install and other-engine refusal.'
 }finally{$env:LOCALAPPDATA=$savedLocalData;$env:TSIX_NATIVE_FIXTURE_RECORD=$savedRecord}
