@@ -1,7 +1,7 @@
 /* TS6 beta5.1 (verified); other builds run in compatibility mode. Native components retain state and ownership.
  * Shared root metrics feed both CSS and the native tree virtualizer. */
 :root {
-  --tsix-layout-version: 2.5.1;
+  --tsix-layout-version: 2.5.2;
   --tsix-workspace-api: 1;
   --tsix-stream-stage-api: 1;
   --tsix-broadcast-api: 1;
@@ -996,3 +996,18 @@
   .sidebar-pane-layout :focus-visible { outline-color: Highlight; }
   :is([data-tsix-chat-toggle],[data-tsix-tray-toggle],[data-tsix-view-action],[data-tsix-viewer-toggle],[data-tsix-preview-join]):disabled { opacity: 1; color: GrayText; border-color: GrayText; }
 }
+
+/* Scroll-to-zoom streams. An owned object-view-box on the focused/fullscreen stream
+   video crops the picture inside its own box; dragging moves the view and the
+   level chip resets it. Wheel steps apply at once, without a transition. */
+.video-stream[data-tsix-zoomed], .video-stream[data-tsix-zoomed] .screen-overlay { cursor: grab; }
+.video-stream[data-tsix-panning], .video-stream[data-tsix-panning] * { cursor: grabbing; user-select: none; }
+.video-stream > [data-tsix-zoom] {
+  position: absolute; top: 8px; left: 8px; z-index: 4; min-width: 44px; height: 26px; padding: 0 8px; box-sizing: border-box;
+  border: 1px solid var(--tsix-control-border, #526780); border-radius: var(--tsix-chrome-radius, 4px);
+  background: var(--tsix-control-bg, #27374b); color: var(--tsix-chrome-text, #edf2f7);
+  font: 600 12px/24px var(--tsv-font-family, "Segoe UI", sans-serif); cursor: pointer; opacity: .92;
+}
+.video-stream > [data-tsix-zoom]:hover { background: var(--tsix-control-hover, #344b64); opacity: 1; }
+.video-stream > [data-tsix-zoom]:focus-visible { outline: 2px solid var(--tsix-chrome-accent, #8bc4ff); outline-offset: 2px; }
+@media (forced-colors: active) { .video-stream > [data-tsix-zoom] { border-color: ButtonText; } }

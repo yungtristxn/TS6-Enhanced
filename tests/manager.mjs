@@ -31,7 +31,7 @@ try{
  assert.equal(await entry.locator('svg path').count(),3);assert.equal(await entry.locator('svg[name="settings"],svg.tsv-icon-settings').count(),0);
  checks.push('The toolbar entry uses its own sparkle artwork instead of a copy of the TeamSpeak settings cog');
  const boost=p.getByRole('switch',{name:'Stream volume up to 300%'}),memory=p.getByRole('switch',{name:'Remember volume per streamer'});
- assert.equal(await p.getByRole('switch').count(),3);assert.ok(await boost.isChecked());assert.ok(await memory.isEnabled());
+ assert.equal(await p.getByRole('switch').count(),5);assert.ok(await p.getByRole('switch',{name:'Balanced stream grid'}).isChecked());assert.ok(await p.getByRole('switch',{name:'Scroll to zoom'}).isChecked());assert.ok(await boost.isChecked());assert.ok(await memory.isEnabled());
  // Tabs: Streams, Chat and Updates. Arrow keys move between tabs; each shows only its own switches.
  assert.deepEqual(await p.getByRole('tab').allInnerTexts(),['Streams','Chat','Updates']);assert.equal(await p.getByRole('tab',{name:'Streams'}).getAttribute('aria-selected'),'true');
  await p.getByRole('tab',{name:'Streams'}).focus();await p.keyboard.press('ArrowRight');

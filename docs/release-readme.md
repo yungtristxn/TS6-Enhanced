@@ -11,6 +11,8 @@ Open TeamSpeak normally. Enhanced loads through the original application and its
 Open **TS6 Enhanced** (the sparkle button in the toolbar) to switch individual features off or on. Changes apply immediately and are kept for your Windows account:
 
 - **Click to focus a stream**: a click focuses a stream; clicking it again returns to the grid.
+- **Balanced stream grid**: every stream in the grid gets the same size, as large as the stage allows. Streams are stacked instead of placed side by side when that makes each one bigger.
+- **Scroll to zoom**: scroll over a focused or fullscreen stream (or the only stream on the stage) to zoom in up to 5× on the spot under the pointer, and drag to look around while zoomed. Scroll back to zoom out, or click the zoom level shown in the corner to reset. Zoom can't add detail, so a stream gets soft beyond its own resolution.
 - **Stream volume up to 300%** and **Remember volume per streamer**: your last volume for each person is reapplied when you watch them again. 100% and muting are left to TeamSpeak.
 - **Slim system messages**, **Group repeated join and leave messages** and **Limit chat line length** for server and channel chats. Folded join/leave runs show a **+N more** button; TeamSpeak's own option to hide system messages still applies.
 - **Poke sound** and **Flash taskbar on any poke**: every poke plays TeamSpeak's poke sound, even with message sounds off, while away or with speakers muted, and flashes the taskbar while TeamSpeak is in the background, from any server tab. TeamSpeak's own poke card is unchanged.

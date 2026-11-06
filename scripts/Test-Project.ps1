@@ -25,13 +25,13 @@ try {
             Run powershell.exe @('-NoProfile','-ExecutionPolicy','Bypass','-File','tests/bootstrap.ps1')
         }
         Browser {
-            foreach($file in @('native-runtime','native-shell','workspace-controls','stream-tray','stream-chat','stream-polish','stream-volume','broadcast')){Run node @("tests/$file.mjs")}
+            foreach($file in @('native-runtime','native-shell','workspace-controls','stream-tray','stream-chat','stream-polish','stream-volume','stream-zoom','broadcast')){Run node @("tests/$file.mjs")}
         }
         Native {
             $themeArguments=@('-NoProfile','-File','scripts/Test-Theme.ps1')
             if($env:TSIX_CLIENT_PATH){$themeArguments+=@('-ClientPath',$env:TSIX_CLIENT_PATH)}
             Run pwsh $themeArguments
-            foreach($file in @('manager','session-guard','session-runtime','broadcast-css','stream-launch','stream-volume-vue','stream-resize','stream-chat-refresh','chat-events','poke-alerts','tree-alignment')){Run node @("tests/$file.mjs")}
+            foreach($file in @('manager','session-guard','session-runtime','broadcast-css','stream-launch','stream-volume-vue','stream-resize','stream-grid','stream-chat-refresh','chat-events','poke-alerts','tree-alignment')){Run node @("tests/$file.mjs")}
             Run pwsh @('-NoProfile','-File','tests/startup-update.ps1')
             Run pwsh @('-NoProfile','-File','tests/restart-update.ps1')
         }

@@ -95,6 +95,13 @@ window.__tsixStreams = {
     document.removeEventListener('loadeddata', schedule, true);
     document.removeEventListener('fullscreenchange', onFullscreenChange);
     window.removeEventListener('tsix-features', schedule);
+    document.removeEventListener('wheel', onZoomWheel, true);
+    document.removeEventListener('pointerdown', onZoomPointerDown, true);
+    window.removeEventListener('pointermove', onZoomPointerMove, true);
+    window.removeEventListener('pointerup', onZoomPointerUp, true);
+    window.removeEventListener('pointercancel', onZoomPointerUp, true);
+    document.removeEventListener('click', onZoomClick, true);
+    for (const video of [...zoomed.keys()]) resetZoom(video);
     for (const record of records.values()) release(record);
     for (const [node, record] of buttons) releaseButton(node, record);
     delete window.__tsixStreams;

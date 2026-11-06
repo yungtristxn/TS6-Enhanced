@@ -12,6 +12,20 @@
       detail: 'Click a stream to focus it; click it again to return to the grid.'
     },
     {
+      id: 'evenGrid',
+      group: 'Streams',
+      label: 'Balanced stream grid',
+      detail:
+        'Gives every stream in the grid the same size, as large as the stage allows, stacking them when that is bigger.'
+    },
+    {
+      id: 'streamZoom',
+      group: 'Streams',
+      label: 'Scroll to zoom',
+      detail:
+        'Scroll over a focused or fullscreen stream to zoom in on the spot under the pointer, drag to look around, scroll back to zoom out.'
+    },
+    {
       id: 'volumeBoost',
       group: 'Streams',
       label: 'Stream volume up to 300%',

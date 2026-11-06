@@ -3,7 +3,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-export const streamParts = ['state.js', 'layout.js', 'controls.js', 'volume.js', 'broadcast.js', 'api.js'];
+export const streamParts = ['state.js', 'layout.js', 'controls.js', 'volume.js', 'broadcast.js', 'zoom.js', 'api.js'];
 const header = `// Embedded in the native loader payload for the verified main client context.
 // Native media/session objects stay intact. The exact-build player ref adapter
 // caps HTML volume; amplification uses native gain or Web Audio after input.

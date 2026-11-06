@@ -263,19 +263,67 @@ function syncChatRail(record, enabled) {
   const top = Math.round(Math.max(4, Math.min(y, r.height - 32))) + 'px';
   if (bar.style.getPropertyValue('--tsix-chat-top') !== top) bar.style.setProperty('--tsix-chat-top', top);
 }
-// beta5's card grid maximises tile area. Once the stage is taller than one
-// full-width 16:9 tile plus a minimum row (which happens here because hidden
-// chat gives the stage the whole height; natively it stops at 66%), it puts
-// one stream across the full width and shrinks the others to a thin row, so
-// the grid looks like that stream is focused. In the grid (auto) only, keep
-// the rows even: lay out at the tallest height that does, centred vertically.
-// Focus, fullscreen and pop-outs keep the native result.
+// beta5's card grid maximises total tile area. That makes two kinds of poor
+// grid once hidden chat gives the stage the whole height (natively it stops
+// at 66%): one stream across the full width over a thin row, which looks like
+// a focused stream, and streams kept side by side although stacking them would
+// make each one larger. In the grid (auto) only, also run the native layout in
+// narrower and shorter boxes and keep the even arrangement (no row more than
+// 1.5x taller than another, same tiles on the page) whose smallest stream is
+// largest, centred in the stage. The native result stays unless the best one
+// is at least 5% larger. Focus, fullscreen and pop-outs keep the native result.
+const videoTiles = result =>
+  result.blocks.flatMap(b => b.positioned.flatMap(p => p.tiles.filter(t => t.tile?.payload?.kind === 'video')));
 const evenRows = result => {
-  const heights = result.blocks.flatMap(b =>
-    b.positioned.flatMap(p => p.tiles.filter(t => t.tile?.payload?.kind === 'video').map(t => t.h))
-  );
+  const heights = videoTiles(result).map(t => t.h);
   return heights.length < 2 || Math.max(...heights) <= Math.min(...heights) * 1.5;
 };
+const tileScore = result => {
+  const tiles = videoTiles(result);
+  return tiles.length * Math.min(...tiles.map(t => t.w * t.h));
+};
+function bestEvenBox(run, box, native) {
+  const count = videoTiles(native).length;
+  const fits = result =>
+    result.pageCount === native.pageCount && videoTiles(result).length === count && evenRows(result);
+  let best = fits(native) ? { box, score: tileScore(native) * 1.05 } : null;
+  const consider = candidate => {
+    const result = run(candidate);
+    if (!fits(result)) return;
+    const score = tileScore(result);
+    if (!best || score > best.score) best = { box: candidate, score };
+  };
+  // Coarse steps over both dimensions, then refine the winning one.
+  for (let f = 0.9; f >= 0.3; f *= 0.9) {
+    consider({ ...box, w: box.w * f });
+    consider({ ...box, h: box.h * f });
+  }
+  if (best && best.box !== box) {
+    const key = best.box.w !== box.w ? 'w' : 'h',
+      value = best.box[key];
+    for (let step = -6; step <= 6; step++)
+      if (step && value * (1 + step / 60) <= box[key]) consider({ ...box, [key]: value * (1 + step / 60) });
+  }
+  return best?.box ?? box;
+}
+// Centre the tiles' extent in the stage (the native result starts top-left).
+function centreLayout(result, box) {
+  let left = Infinity,
+    right = -Infinity,
+    bottom = 0;
+  for (const block of result.blocks) {
+    bottom = Math.max(bottom, block.origin.y + block.size.h);
+    for (const row of block.positioned)
+      for (const tile of row.tiles) {
+        left = Math.min(left, block.origin.x + tile.x);
+        right = Math.max(right, block.origin.x + tile.x + tile.w);
+      }
+  }
+  const dx = Number.isFinite(left) ? Math.floor(Math.max(0, box.w - (right - left)) / 2 - left) : 0,
+    dy = Math.floor(Math.max(0, box.h - bottom) / 2);
+  for (const block of result.blocks) block.origin = { x: block.origin.x + dx, y: block.origin.y + dy };
+  return result;
+}
 function installEvenGrid(record) {
   const { vm } = record;
   if (record.evenGrid || typeof vm.runLayout !== 'function') return;
@@ -289,7 +337,8 @@ function installEvenGrid(record) {
       this.isPopout ||
       (this.item?.layoutMode?.kind ?? 'auto') !== 'auto' ||
       !(box?.h > 0) ||
-      evenRows(result)
+      !(box?.w > 0) ||
+      videoTiles(result).length < 2
     )
       return result;
     const key = [
@@ -298,32 +347,12 @@ function installEvenGrid(record) {
       box.page,
       box.gapX,
       box.gapY,
+      result.pageCount,
       ...result.blocks.flatMap(b => b.positioned.flatMap(p => p.tiles.map(t => t.tile?.id)))
     ].join('|');
-    let height = cache?.key === key ? cache.height : 0;
-    if (!height) {
-      // Step down to an even layout, then search for the tallest one.
-      let good = 0,
-        bad = box.h;
-      for (let h = box.h * 0.9; h >= box.h * 0.3; h *= 0.9)
-        if (evenRows(original.call(this, { ...box, h }))) {
-          good = h;
-          break;
-        } else bad = h;
-      if (!good) return result;
-      for (let i = 0; i < 8 && bad - good > 2; i++) {
-        const h = (good + bad) / 2;
-        if (evenRows(original.call(this, { ...box, h }))) good = h;
-        else bad = h;
-      }
-      height = good;
-      cache = { key, height };
-    }
-    const even = original.call(this, { ...box, h: height });
-    const bottom = Math.max(0, ...even.blocks.map(b => b.origin.y + b.size.h));
-    const offset = Math.floor(Math.max(0, box.h - bottom) / 2);
-    for (const block of even.blocks) block.origin = { ...block.origin, y: block.origin.y + offset };
-    return even;
+    if (cache?.key !== key) cache = { key, box: bestEvenBox(candidate => original.call(this, candidate), box, result) };
+    if (cache.box === box || (cache.box.w === box.w && cache.box.h === box.h)) return result;
+    return centreLayout(original.call(this, { ...box, w: cache.box.w, h: cache.box.h }), box);
   };
   vm.runLayout = layout;
   record.evenGrid = { original, layout };
@@ -341,7 +370,8 @@ function update(record, enabled) {
   syncChatLayout(record, enabled);
   if (enabled) {
     holdGridIntent(record);
-    installEvenGrid(record);
+    if (feature('evenGrid')) installEvenGrid(record);
+    else releaseEvenGrid(record);
   }
   const state = layoutState(vm);
   const active =

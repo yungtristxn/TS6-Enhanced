@@ -726,4 +726,5 @@ function sync() {
   syncFallbackVolumes(enabled);
   syncButtons(enabled);
   syncPreviewJoins(enabled);
+  syncZoom();
 }
